@@ -1,0 +1,1 @@
+任何对对话前都要参考一遍AGENTS.md。AGENTS.md和CLAUDE.md一样重要。

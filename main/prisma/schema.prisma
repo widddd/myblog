@@ -1,0 +1,123 @@
+// MyBlog 数据模型 — 字段说明见 docs/data-models.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Post {
+  id           Int          @id @default(autoincrement())
+  slug         String       @unique
+  title        String
+  content      String
+  excerpt      String?
+  cover        String?
+  bannerStyle  String       @default("cover") // cover | solid | gradient
+  bannerColor  String?
+  bannerColor2 String?
+  passwordHash String?
+  status       String       @default("draft") // draft | scheduled | published
+  publishedAt  DateTime?
+  pinned       Boolean      @default(false)
+  recommend    Boolean      @default(false)
+  views        Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  categoryId   Int?
+  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags         PostTag[]
+
+  @@index([status, publishedAt])
+  @@index([categoryId])
+}
+
+model Category {
+  id    Int       @id @default(autoincrement())
+  slug  String    @unique
+  name  String
+  posts Post[]
+}
+
+model Tag {
+  id    Int       @id @default(autoincrement())
+  slug  String    @unique
+  name  String
+  posts PostTag[]
+}
+
+model PostTag {
+  postId Int
+  tagId  Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId])
+}
+
+model Moment {
+  id        Int          @id @default(autoincrement())
+  content   String      
+  images    String       @default("[]") // JSON: [{key, thumb, width, height}]
+  createdAt DateTime     @default(now())
+  likes     MomentLike[]
+}
+
+model MomentLike {
+  id          Int     @id @default(autoincrement())
+  momentId    Int
+  fingerprint String
+  moment      Moment  @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@unique([momentId, fingerprint])
+}
+
+// SQLite 不支持 Prisma enum，用字符串常量约束（见 docs/data-models.md）
+model Comment {
+  id         Int     @id @default(autoincrement())
+  targetType String // post | moment | board
+  targetId   Int     @default(0) // board 时固定 0
+  nickname   String
+  email      String?
+  content    String 
+  parentId   Int?
+  parent     Comment? @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    Comment[] @relation("CommentThread")
+  status     String  @default("pending") // pending | approved
+  isAdmin    Boolean @default(false)
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([targetType, targetId, status])
+  @@index([parentId])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model AdminUser {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Upload {
+  id        Int      @id @default(autoincrement())
+  hash      String   @unique
+  driver    String   @default("local") // local | oss
+  key       String // posix style relative path
+  mime      String
+  width     Int?
+  height    Int?
+  size      Int
+  variants  String   @default("{}") // JSON: {thumb, content}
+  createdAt DateTime @default(now())
+}

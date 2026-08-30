@@ -1,0 +1,25 @@
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
+  better-sqlite3: false
+  esbuild: true
+  msgpackr-extract: true
+  workerd: true
+  '@prisma/client': true
+  prisma: true
+  '@prisma/engines': true
+
+overrides:
+  '@prisma/adapter-better-sqlite3>better-sqlite3': 13.0.3
+  lexical: 0.48.0
+  '@lexical/clipboard': 0.48.0
+  '@lexical/extension': 0.48.0
+  '@lexical/history': 0.48.0
+  '@lexical/link': 0.48.0
+  '@lexical/list': 0.48.0
+  '@lexical/markdown': 0.48.0
+  '@lexical/plain-text': 0.48.0
+  '@lexical/react': 0.48.0
+  '@lexical/rich-text': 0.48.0
+  '@lexical/selection': 0.48.0
+  '@lexical/utils': 0.48.0
