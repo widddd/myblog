@@ -1,15 +1,23 @@
-import Link from "next/link";
+import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 
-import { EmptyState } from "@/components/common/EmptyState";
-import { Pagination } from "@/components/common/Pagination";
-import { HomeBanner } from "@/components/home/HomeBanner";
-import { HomeDashboard } from "@/components/home/HomeDashboard";
-import { PostList } from "@/components/home/PostCard";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { resolveHomeBanner } from "@/lib/banner/resolve";
-import { listCategories, listPublishedPosts, listRecommendPosts } from "@/lib/posts/query";
+import { HomeGrid } from "@/components/home/HomeGrid";
+import { loadHomeData } from "@/lib/home/data";
+import { getHomeLayout } from "@/lib/home/layout";
+import { publicMetadata } from "@/lib/seo/site";
 import { getPublicSettings } from "@/lib/settings";
+import { cn } from "@/lib/utils/cn";
 import { parsePage } from "@/lib/utils/page";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { siteName } = await getPublicSettings();
+  const metadata = await publicMetadata({
+    title: siteName,
+    description: "记录思考，也记录生活。",
+    path: "/",
+  });
+  return { ...metadata, title: { absolute: siteName } };
+}
 
 export default async function Home({
   searchParams,
@@ -18,53 +26,24 @@ export default async function Home({
 }) {
   const params = await searchParams;
   const page = parsePage(params.page);
-  const [settings, banner, recommend, listing, categories] = await Promise.all([
-    getPublicSettings(),
-    resolveHomeBanner(),
-    listRecommendPosts(6),
-    listPublishedPosts({ page }),
-    listCategories(),
-  ]);
+  const items = await getHomeLayout();
+  const data = await loadHomeData(items, page);
+
+  // 固定底图与更透的玻璃卡只在 Banner 模块启用时生效，否则透明 body 会露出空背景。
+  const hasBanner = items.some((item) => item.module.builtinKey === "banner");
 
   return (
-    <div className="home-page">
-      <HomeBanner banner={banner} siteName={settings.siteName} />
-      <div className="home-below" id="home-content">
-        <HomeDashboard posts={recommend} />
-        <div className="layout">
-          <div className="layout__main">
-            {categories.length > 0 ? (
-              <nav className="category-bar glass-card" aria-label="分类">
-                <Link className="is-active" href="/">
-                  全部
-                </Link>
-                {categories.map((item) => (
-                  <Link href={`/categories/${item.slug}`} key={item.slug}>
-                    {item.name}
-                  </Link>
-                ))}
-              </nav>
-            ) : null}
-            {listing.posts.length === 0 ? (
-              <EmptyState
-                title="还没有已发布的文章"
-                description="运行 pnpm db:seed 写入演示数据，或到后台发布第一篇。"
-              />
-            ) : (
-              <PostList posts={listing.posts} />
-            )}
-            <Pagination
-              basePath="/"
-              page={listing.page}
-              pageSize={listing.pageSize}
-              total={listing.total}
-            />
-          </div>
-          <aside className="layout__aside">
-            <Sidebar />
-          </aside>
-        </div>
-      </div>
+    <div
+      className={cn("home-shell", hasBanner && "home-page")}
+      style={
+        {
+          "--home-module-fill": `${data.homeModuleOpacity}%`,
+          "--home-backdrop-opacity": data.homeBackdropOpacity / 100,
+        } as CSSProperties
+      }
+    >
+      <style>{`html:has(.home-page){--home-module-fill:${data.homeModuleOpacity}%;--home-backdrop-opacity:${data.homeBackdropOpacity / 100}}`}</style>
+      <HomeGrid data={data} items={items} />
     </div>
   );
 }

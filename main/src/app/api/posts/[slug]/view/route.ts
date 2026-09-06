@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { prisma } from "@/lib/db";
-import { publishedWhere } from "@/lib/posts/query";
+import { findPublishedPostByRef } from "@/lib/posts/query";
 import { getClientIp } from "@/lib/utils/fingerprint";
 import { logger } from "@/lib/utils/logger";
 
@@ -17,10 +17,7 @@ type ViewRouteContext = {
 export async function POST(request: Request, context: ViewRouteContext) {
   try {
     const { slug } = await context.params;
-    const post = await prisma.post.findFirst({
-      where: { slug, ...publishedWhere() },
-      select: { id: true, views: true },
-    });
+    const post = await findPublishedPostByRef(slug);
     if (!post) {
       return NextResponse.json(
         { code: "POST_NOT_FOUND", message: "文章不存在" },
@@ -29,7 +26,7 @@ export async function POST(request: Request, context: ViewRouteContext) {
     }
 
     const ip = getClientIp(request.headers);
-    const result = rateLimit(`post-view:${ip}:${slug}`, 1, VIEW_WINDOW_MS);
+    const result = rateLimit(`post-view:${ip}:${post.publicId}`, 1, VIEW_WINDOW_MS);
     if (!result.allowed) {
       return NextResponse.json(
         { data: { views: post.views, counted: false } },

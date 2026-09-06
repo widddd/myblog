@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { postHref } from "@/lib/posts/path";
 import type { SearchHit } from "@/lib/search/types";
 
 type SearchResponse = {
@@ -122,8 +123,8 @@ function SearchDialogPanel() {
           ) : null}
           <ul>
             {(keyword ? hits : []).map((hit) => (
-              <li key={hit.slug}>
-                <Link href={`/posts/${hit.slug}`} onClick={() => setOpen(false)}>
+              <li key={hit.publicId}>
+                <Link href={postHref(hit)} onClick={() => setOpen(false)}>
                   <span>{hit.title}</span>
                   {hit.locked ? (
                     <span className="chip chip--locked">密码</span>

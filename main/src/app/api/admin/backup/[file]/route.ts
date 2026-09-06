@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/auth/guard";
 import { deleteBackup } from "@/lib/backup/backup";
-import { isBackupFileName } from "@/lib/backup/filename";
+import { isManagedBackupFileName } from "@/lib/backup/filename";
 import {
   AdminHttpError,
   handleAdminError,
@@ -18,7 +18,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     await requireAdmin();
     const { file } = await context.params;
     const name = decodeURIComponent(file);
-    if (!isBackupFileName(name)) {
+    if (!isManagedBackupFileName(name)) {
       throw new AdminHttpError("VALIDATION_ERROR", "备份文件名不合法", 400);
     }
     await deleteBackup(name);

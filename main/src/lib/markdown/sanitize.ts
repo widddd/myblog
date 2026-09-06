@@ -101,6 +101,83 @@ function videoProperties(attributes: MdxAttribute[] | undefined) {
   return typeof properties.src === "string" ? properties : null;
 }
 
+function audioProperties(attributes: MdxAttribute[] | undefined) {
+  const properties: Record<string, unknown> = {
+    controls: true,
+    preload: "metadata",
+  };
+
+  for (const attribute of attributes ?? []) {
+    if (
+      attribute.type !== "mdxJsxAttribute" ||
+      typeof attribute.name !== "string"
+    ) {
+      continue;
+    }
+    if (
+      (attribute.name === "controls" || attribute.name === "loop") &&
+      (attribute.value === null || typeof attribute.value === "boolean")
+    ) {
+      properties[attribute.name] = attribute.value ?? true;
+      continue;
+    }
+    if (attribute.name === "src" && typeof attribute.value === "string") {
+      const safeValue = safeMediaUrl(attribute.value);
+      if (safeValue) {
+        properties.src = safeValue;
+      }
+      continue;
+    }
+    if (attribute.name === "title" && typeof attribute.value === "string") {
+      properties.title = attribute.value.slice(0, 200);
+      continue;
+    }
+    if (
+      attribute.name === "preload" &&
+      typeof attribute.value === "string" &&
+      ["none", "metadata", "auto"].includes(attribute.value)
+    ) {
+      properties.preload = attribute.value;
+    }
+  }
+
+  return typeof properties.src === "string" ? properties : null;
+}
+
+function asAudioElement(node: TreeNode, properties: Record<string, unknown>) {
+  const src = properties.src;
+  const host = typeof src === "string" ? mediaSourceHost(src) : null;
+  properties.className = ["post-audio"];
+  delete node.name;
+  delete node.attributes;
+
+  if (!host) {
+    node.type = "element";
+    node.tagName = "audio";
+    node.properties = properties;
+    node.children = [];
+    return;
+  }
+
+  node.type = "element";
+  node.tagName = "figure";
+  node.properties = { className: ["post-audio-wrap"] };
+  node.children = [
+    {
+      type: "element",
+      tagName: "audio",
+      properties,
+      children: [],
+    },
+    {
+      type: "element",
+      tagName: "figcaption",
+      properties: { className: ["post-video-mark"] },
+      children: [{ type: "text", value: `外链 · ${host}` }],
+    },
+  ];
+}
+
 function asVideoElement(node: TreeNode, properties: Record<string, unknown>) {
   const src = properties.src;
   const host = typeof src === "string" ? mediaSourceHost(src) : null;
@@ -135,7 +212,41 @@ function asVideoElement(node: TreeNode, properties: Record<string, unknown>) {
   ];
 }
 
-function transformVideoNodes(node: TreeNode): void {
+function transformMediaNodes(node: TreeNode): void {
+  if (
+    (node.type === "mdxJsxFlowElement" ||
+      node.type === "mdxJsxTextElement") &&
+    node.name === "Audio"
+  ) {
+    const properties = audioProperties(node.attributes);
+    if (properties) {
+      asAudioElement(node, properties);
+    } else {
+      node.type = "text";
+      node.value = "";
+      node.children = [];
+      delete node.name;
+      delete node.attributes;
+    }
+    return;
+  }
+
+  if (node.type === "element" && node.tagName === "audio") {
+    const src = node.properties?.src;
+    if (typeof src === "string") {
+      const safe = safeMediaUrl(src);
+      if (safe) {
+        asAudioElement(node, {
+          ...node.properties,
+          src: safe,
+          controls: true,
+          preload: "metadata",
+        });
+      }
+    }
+    return;
+  }
+
   if (
     (node.type === "mdxJsxFlowElement" ||
       node.type === "mdxJsxTextElement") &&
@@ -172,23 +283,30 @@ function transformVideoNodes(node: TreeNode): void {
   }
 
   for (const child of node.children ?? []) {
-    transformVideoNodes(child);
+    transformMediaNodes(child);
   }
 }
 
 export function rehypeAllowVideo() {
   return (tree: TreeNode) => {
-    transformVideoNodes(tree);
+    transformMediaNodes(tree);
   };
 }
 
 export const sanitizeSchema: Options = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames ?? []), "video", "figure", "figcaption"],
+  tagNames: [
+    ...(defaultSchema.tagNames ?? []),
+    "video",
+    "audio",
+    "figure",
+    "figcaption",
+  ],
   attributes: {
     ...defaultSchema.attributes,
     figure: ["className"],
     figcaption: ["className"],
+    audio: ["controls", "loop", "preload", "src", "title"],
     video: [
       "controls",
       "height",
@@ -205,6 +323,6 @@ export const sanitizeSchema: Options = {
   protocols: {
     ...defaultSchema.protocols,
     poster: ["https"],
-    src: ["http", "https"],
+    src: ["https"],
   },
 };

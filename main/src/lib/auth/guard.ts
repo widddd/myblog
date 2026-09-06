@@ -1,3 +1,4 @@
+import { hasPendingCredentialChange } from "@/lib/auth/must-change";
 import {
   getSession,
   isAuthenticatedSession,
@@ -13,11 +14,34 @@ export class UnauthorizedError extends Error {
   }
 }
 
-export async function requireAdmin(): Promise<AuthenticatedSession> {
+export class CredentialsChangeRequiredError extends Error {
+  readonly status = 403;
+  readonly code = "CREDENTIALS_CHANGE_REQUIRED";
+
+  constructor() {
+    super("请先修改初始账号密码");
+    this.name = "CredentialsChangeRequiredError";
+  }
+}
+
+export type RequireAdminOptions = {
+  allowMustChange?: boolean;
+};
+
+export async function requireAdmin(
+  options: RequireAdminOptions = {},
+): Promise<AuthenticatedSession> {
   const session = await getSession();
 
   if (!isAuthenticatedSession(session)) {
     throw new UnauthorizedError();
+  }
+
+  if (
+    !options.allowMustChange &&
+    (await hasPendingCredentialChange(session.adminId))
+  ) {
+    throw new CredentialsChangeRequiredError();
   }
 
   return session;

@@ -13,7 +13,7 @@ type MomentCardProps = {
 
 export function MomentCard({ moment, comments, commentTotal }: MomentCardProps) {
   return (
-    <article className="moment-card glass-card">
+    <article className="moment-card glass-card" id={`moment-${moment.id}`}>
       <time>{formatPostDate(moment.createdAt)}</time>
       <p>{moment.content}</p>
       <MomentGrid alt="瞬间图片" images={moment.images} />
@@ -25,6 +25,7 @@ export function MomentCard({ moment, comments, commentTotal }: MomentCardProps) 
         />
       </div>
       <CommentSection
+        collapsible
         initialComments={comments}
         targetId={moment.id}
         targetType="moment"

@@ -18,7 +18,10 @@ export function DeleteButton({
   const [busy, setBusy] = useState(false);
 
   async function onClick() {
-    if (!window.confirm(confirmText) || busy) {
+    const message = confirmText.includes("无法恢复")
+      ? confirmText
+      : `${confirmText}\n删除后无法恢复。`;
+    if (!window.confirm(message) || busy) {
       return;
     }
     setBusy(true);

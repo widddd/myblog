@@ -12,10 +12,10 @@ type ViewResponse = {
 
 export function ViewTracker({
   initialViews,
-  slug,
+  publicId,
 }: {
   initialViews: number;
-  slug: string;
+  publicId: string;
 }) {
   const [views, setViews] = useState(initialViews);
 
@@ -26,7 +26,7 @@ export function ViewTracker({
       try {
         const csrfToken = await fetchCsrfToken();
         const response = await fetch(
-          `/api/posts/${encodeURIComponent(slug)}/view`,
+          `/api/posts/${encodeURIComponent(publicId)}/view`,
           {
             method: "POST",
             headers: { "x-csrf-token": csrfToken },
@@ -49,7 +49,7 @@ export function ViewTracker({
     return () => {
       active = false;
     };
-  }, [slug]);
+  }, [publicId]);
 
   return <span>热度 {views}</span>;
 }

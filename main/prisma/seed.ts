@@ -1,6 +1,7 @@
 import { initializeApplication } from "../src/lib/bootstrap";
 import { hashPassword } from "../src/lib/auth/password";
 import { prisma } from "../src/lib/db";
+import { allocatePublicId } from "../src/lib/posts/public-id";
 import { getSetting, setSetting } from "../src/lib/settings";
 import { logger } from "../src/lib/utils/logger";
 
@@ -46,9 +47,9 @@ function daysLater(days: number): Date {
 const POSTS: SeedPost[] = [
   {
     slug: "welcome",
-    title: "欢迎来到 MyBlog",
+    title: "欢迎来到这里",
     excerpt: "这是站点的第一篇文章：记录思考，也记录生活。",
-    content: `# 欢迎来到 MyBlog
+    content: `# 欢迎来到这里
 
 这是演示数据里的开篇文章。正文将在 MDX sanitize 管线接入后渲染。
 
@@ -244,6 +245,7 @@ async function seedPosts() {
 
     const created = await prisma.post.create({
       data: {
+        publicId: await allocatePublicId(),
         slug: post.slug,
         title: post.title,
         excerpt: post.excerpt,
@@ -298,7 +300,7 @@ async function seedAnnouncement() {
 
   await setSetting(
     "announcement",
-    "欢迎来到 MyBlog。前台骨架已接入，正文渲染、上传与密码解锁仍待完成。",
+    "欢迎。前台骨架已接入，正文渲染、上传与密码解锁仍待完成。",
   );
 }
 

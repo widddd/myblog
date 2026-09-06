@@ -30,6 +30,8 @@ import {
 
 import { AdminImageToolbar } from "@/components/admin/AdminImageToolbar";
 import { editorZhTranslation } from "@/components/admin/editor-i18n";
+import { AudioJsxEditor } from "@/components/admin/AudioJsxEditor";
+import { InsertAudio } from "@/components/admin/InsertAudio";
 import { InsertImages } from "@/components/admin/InsertImages";
 import { InsertVideo } from "@/components/admin/InsertVideo";
 import { VideoJsxEditor } from "@/components/admin/VideoJsxEditor";
@@ -51,8 +53,21 @@ const VIDEO_DESCRIPTOR = {
   Editor: VideoJsxEditor,
 };
 
+const AUDIO_DESCRIPTOR = {
+  name: "Audio",
+  kind: "flow" as const,
+  props: [
+    { name: "src", type: "string" as const, required: true },
+    { name: "title", type: "string" as const },
+  ],
+  hasChildren: false,
+  Editor: AudioJsxEditor,
+};
+
 async function uploadEditorImage(file: File): Promise<string> {
-  const uploaded = await uploadAdminFile(file, "image");
+  const uploaded = await uploadAdminFile(file, "image", undefined, {
+    defer: true,
+  });
   return editorImageUrl(uploaded);
 }
 
@@ -95,7 +110,7 @@ export default function MdxEditorClient({
           imageUploadHandler: uploadEditorImage,
           EditImageToolbar: AdminImageToolbar,
         }),
-        jsxPlugin({ jsxComponentDescriptors: [VIDEO_DESCRIPTOR] }),
+        jsxPlugin({ jsxComponentDescriptors: [VIDEO_DESCRIPTOR, AUDIO_DESCRIPTOR] }),
         diffSourcePlugin({ viewMode: "rich-text" }),
         toolbarPlugin({
           toolbarContents: () => (
@@ -110,6 +125,7 @@ export default function MdxEditorClient({
               <CreateLink />
               <InsertImages />
               <InsertVideo />
+              <InsertAudio />
               <InsertTable />
               <InsertThematicBreak />
               <InsertCodeBlock />

@@ -26,7 +26,9 @@ export function InsertVideo() {
     }
     setBusy(true);
     try {
-      const uploaded = await uploadAdminFiles(Array.from(files), "video");
+      const uploaded = await uploadAdminFiles(Array.from(files), "video", undefined, {
+        defer: true,
+      });
       for (const item of uploaded) {
         insertVideo(insertJsx, item.original.url);
       }
@@ -41,8 +43,10 @@ export function InsertVideo() {
     <MediaInsertMenu
       accept="video/mp4,video/webm,.mp4,.webm"
       busy={busy}
+      kind="video"
       label="视频"
       onLink={(url) => insertVideo(insertJsx, url)}
+      onPick={(item) => insertVideo(insertJsx, item.original.url)}
       onUpload={(files) => void handleFiles(files)}
     />
   );

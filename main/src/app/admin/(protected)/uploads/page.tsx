@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
-import { DeleteButton } from "@/components/admin/DeleteButton";
+import { Pagination } from "@/components/common/Pagination";
+import { UploadCard } from "@/components/admin/UploadCard";
+import { UploadsToolbar } from "@/components/admin/UploadsToolbar";
 import { listAdminUploads } from "@/lib/uploads/admin";
 import { parsePage } from "@/lib/utils/page";
 
@@ -19,30 +21,25 @@ export default async function AdminUploadsPage({ searchParams }: PageProps) {
   return (
     <section className="heo-card admin-panel">
       <h2>媒体库</h2>
+      <p className="admin-danger">
+        默认删除会同时清掉本机原图、一级/二级缩略图和 COS。也可以只删本地、保留云端。若文章或瞬间还在用，删除前会警告。
+      </p>
+      <UploadsToolbar />
       {result.data.length === 0 ? (
-        <p>还没有上传文件。</p>
+        <p>还没有上传文件。用上面的按钮上传图片、视频或音频。</p>
       ) : (
         <ul className="admin-media-grid">
           {result.data.map((file) => (
-            <li key={file.id}>
-              {file.mime.startsWith("image/") && (file.thumb?.url || file.original.url) ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  alt={file.hash.slice(0, 8)}
-                  src={file.thumb?.url ?? file.original.url}
-                />
-              ) : (
-                <p>{file.mime}</p>
-              )}
-              <p className="admin-muted">{Math.round(file.size / 1024)} KB</p>
-              <DeleteButton
-                confirmText="确定删除这个文件？被引用的文件会拒绝删除。"
-                url={`/api/admin/uploads/${file.id}`}
-              />
-            </li>
+            <UploadCard file={file} key={file.id} />
           ))}
         </ul>
       )}
+      <Pagination
+        basePath="/admin/uploads"
+        page={result.page}
+        pageSize={result.pageSize}
+        total={result.total}
+      />
     </section>
   );
 }

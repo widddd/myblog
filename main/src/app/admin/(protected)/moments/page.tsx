@@ -19,23 +19,33 @@ export default async function AdminMomentsPage({ searchParams }: PageProps) {
 
   return (
     <section className="heo-card admin-panel">
-      <h2>瞬间</h2>
-      <MomentForm />
-      <ul className="admin-moment-list">
-        {result.data.map((moment) => (
-          <li key={moment.id}>
-            <p>{moment.content}</p>
-            <p className="admin-muted">
-              {new Date(moment.createdAt).toLocaleString("zh-CN")} ·{" "}
-              {moment.images.length} 张图
-            </p>
-            <DeleteButton
-              confirmText="确定删除这条瞬间？"
-              url={`/api/admin/moments/${moment.id}`}
-            />
-          </li>
-        ))}
-      </ul>
+      <div className="admin-section">
+        <h2 className="admin-section__title">写新瞬间</h2>
+        <MomentForm />
+      </div>
+      <div className="admin-section">
+        <h2 className="admin-section__title">已发布</h2>
+        <p className="admin-danger">删除瞬间后无法恢复。</p>
+        {result.data.length === 0 ? (
+          <p className="admin-muted">还没有瞬间。</p>
+        ) : (
+          <ul className="admin-moment-list">
+            {result.data.map((moment) => (
+              <li key={moment.id}>
+                <p>{moment.content}</p>
+                <p className="admin-muted">
+                  {new Date(moment.createdAt).toLocaleString("zh-CN")} ·{" "}
+                  {moment.images.length} 张图
+                </p>
+                <DeleteButton
+                  confirmText="确定删除这条瞬间？删除后无法恢复。"
+                  url={`/api/admin/moments/${moment.id}`}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

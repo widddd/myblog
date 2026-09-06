@@ -9,15 +9,19 @@ import rehypeSanitize from "rehype-sanitize";
 import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
 
+import { Audio } from "@/components/post/Audio";
 import { Video } from "@/components/post/Video";
+import { prisma } from "@/lib/db";
+import { loadCosSettings, localUploadUrl, publicMediaUrl } from "@/lib/storage";
+import { parseVariants } from "@/lib/upload/handle";
+import { collectMediaHashes } from "@/lib/uploads/hashes";
 
 import { rehypeAllowVideo, sanitizeSchema } from "./sanitize";
 import { createTocCollector, type TocItem } from "./toc";
 
 export type { TocItem } from "./toc";
 
-const LOCAL_IMAGE_VARIANT =
-  /^\/api\/uploads\/images\/([a-f0-9]{64})-(?:thumb|content)\.webp$/;
+const ANY_HASH = /([a-f0-9]{64})/;
 
 function safeImageUrl(value: unknown): string | null {
   if (typeof value !== "string") {
@@ -42,47 +46,105 @@ function numericDimension(value: string | number | undefined) {
     : undefined;
 }
 
-function MdxImage({
-  src,
-  alt,
-  title,
-  width,
-  height,
-}: ComponentPropsWithoutRef<"img">) {
-  const safeSrc = safeImageUrl(src);
-  if (!safeSrc) {
-    return null;
+function createMdxImage(
+  originals: Map<string, string>,
+  thumbs: Map<string, string>,
+  keys: Map<string, string>,
+) {
+  return function MdxImage({
+    src,
+    alt,
+    title,
+    width,
+    height,
+  }: ComponentPropsWithoutRef<"img">) {
+    const safeSrc = safeImageUrl(src);
+    if (!safeSrc) {
+      return null;
+    }
+
+    const hash = ANY_HASH.exec(safeSrc)?.[1];
+    const displaySrc = (hash && thumbs.get(hash)) || safeSrc;
+    const originalSrc = (hash && originals.get(hash)) || displaySrc;
+    const storageKey = hash ? keys.get(hash) : undefined;
+
+    return (
+      <img
+        alt={typeof alt === "string" ? alt : ""}
+        data-lightbox-key={storageKey}
+        data-lightbox-src={originalSrc}
+        data-lightbox-thumb={displaySrc}
+        decoding="async"
+        height={numericDimension(height)}
+        loading="lazy"
+        role="button"
+        src={displaySrc}
+        tabIndex={0}
+        title={typeof title === "string" ? title : undefined}
+        width={numericDimension(width)}
+      />
+    );
+  };
+}
+
+async function loadMediaUrls(source: string): Promise<{
+  originals: Map<string, string>;
+  thumbs: Map<string, string>;
+  keys: Map<string, string>;
+}> {
+  const unique = collectMediaHashes(source);
+  const originals = new Map<string, string>();
+  const thumbs = new Map<string, string>();
+  const keys = new Map<string, string>();
+  if (unique.length === 0) {
+    return { originals, thumbs, keys };
   }
 
-  const localMatch = LOCAL_IMAGE_VARIANT.exec(safeSrc);
-  const originalSrc = localMatch
-    ? `/api/uploads/images/${localMatch[1]}-original`
-    : safeSrc;
-
-  // The wrapper handles click/keyboard events through delegation.
-  return (
-    <img
-      alt={typeof alt === "string" ? alt : ""}
-      data-lightbox-src={originalSrc}
-      decoding="async"
-      height={numericDimension(height)}
-      loading="lazy"
-      role="button"
-      src={safeSrc}
-      tabIndex={0}
-      title={typeof title === "string" ? title : undefined}
-      width={numericDimension(width)}
-    />
-  );
+  await loadCosSettings();
+  const rows = await prisma.upload.findMany({
+    where: { hash: { in: unique } },
+    select: { hash: true, key: true, variants: true, driver: true, mime: true },
+  });
+  for (const row of rows) {
+    keys.set(row.hash, row.key);
+    const variants = parseVariants(row.variants);
+    const pending = row.mime.startsWith("image/")
+      ? !variants.thumb
+      : row.driver !== "cos" && row.driver !== "oss";
+    const originalHref = pending
+      ? localUploadUrl(row.key)
+      : (() => {
+          try {
+            return publicMediaUrl(row.key);
+          } catch {
+            return localUploadUrl(row.key);
+          }
+        })();
+    originals.set(row.hash, originalHref);
+    const thumbKey = variants.thumb?.key;
+    if (thumbKey) {
+      try {
+        thumbs.set(
+          row.hash,
+          pending ? localUploadUrl(thumbKey) : publicMediaUrl(thumbKey),
+        );
+      } catch {
+        thumbs.set(row.hash, localUploadUrl(thumbKey));
+      }
+    }
+  }
+  return { originals, thumbs, keys };
 }
 
 async function compilePostMdx(source: string) {
   const toc: TocItem[] = [];
+  const { originals, thumbs, keys } = await loadMediaUrls(source);
   const { content } = await compileMDX({
     source,
     components: {
-      img: MdxImage,
+      img: createMdxImage(originals, thumbs, keys),
       video: Video,
+      audio: Audio,
     },
     options: {
       blockJS: true,

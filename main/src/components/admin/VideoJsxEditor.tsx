@@ -83,7 +83,9 @@ export function VideoJsxEditor({ mdastNode }: JsxEditorProps) {
     }
     setBusy(true);
     try {
-      const uploaded = await uploadAdminFile(file, "video");
+      const uploaded = await uploadAdminFile(file, "video", undefined, {
+        defer: true,
+      });
       applySrc(uploaded.original.url);
       setLinkMode(false);
     } catch (error) {

@@ -10,9 +10,12 @@ const LINKS = [
   { href: "/admin/posts", label: "文章", short: "文" },
   { href: "/admin/posts/new", label: "写文章", short: "写" },
   { href: "/admin/moments", label: "瞬间", short: "瞬" },
+  { href: "/admin/home", label: "首页管理", short: "首" },
+  { href: "/admin/modules", label: "模块管理", short: "块" },
   { href: "/admin/comments", label: "评论", short: "评" },
   { href: "/admin/uploads", label: "媒体库", short: "媒" },
   { href: "/admin/backups", label: "备份", short: "备" },
+  { href: "/admin/updates", label: "更新", short: "更" },
   { href: "/admin/settings", label: "设置", short: "设" },
 ] as const;
 

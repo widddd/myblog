@@ -52,3 +52,62 @@ test("MDX sanitizer removes active nodes and preserves safe Video props", () => 
   assert.match(serialized, /外链 · example.com/);
   assert.match(serialized, /https:\/\/example\.com\/demo\.mp4/);
 });
+
+test("MDX sanitizer drops http video sources", () => {
+  const tree = {
+    type: "root",
+    children: [
+      {
+        type: "mdxJsxFlowElement",
+        name: "Video",
+        attributes: [
+          { type: "mdxJsxAttribute", name: "src", value: "http://evil.example/x.mp4" },
+        ],
+        children: [],
+      },
+    ],
+  };
+
+  rehypeAllowVideo()(tree);
+  const sanitize = rehypeSanitize(sanitizeSchema) as unknown as (
+    value: typeof tree,
+  ) => typeof tree;
+  const result = sanitize(tree);
+  const serialized = JSON.stringify(result);
+  assert.doesNotMatch(serialized, /http:\/\/evil\.example/);
+});
+
+test("MDX sanitizer preserves safe Audio props and drops http sources", () => {
+  const tree = {
+    type: "root",
+    children: [
+      {
+        type: "mdxJsxFlowElement",
+        name: "Audio",
+        attributes: [
+          { type: "mdxJsxAttribute", name: "src", value: "https://cdn.example.com/a.mp3" },
+          { type: "mdxJsxAttribute", name: "onerror", value: "alert(1)" },
+        ],
+        children: [],
+      },
+      {
+        type: "mdxJsxFlowElement",
+        name: "Audio",
+        attributes: [
+          { type: "mdxJsxAttribute", name: "src", value: "http://evil.example/x.mp3" },
+        ],
+        children: [],
+      },
+    ],
+  };
+
+  rehypeAllowVideo()(tree);
+  const sanitize = rehypeSanitize(sanitizeSchema) as unknown as (
+    value: typeof tree,
+  ) => typeof tree;
+  const result = sanitize(tree);
+  const serialized = JSON.stringify(result);
+  assert.match(serialized, /"tagName":"audio"/);
+  assert.match(serialized, /https:\/\/cdn\.example\.com\/a\.mp3/);
+  assert.doesNotMatch(serialized, /onerror|http:\/\/evil\.example/);
+});

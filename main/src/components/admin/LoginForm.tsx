@@ -50,6 +50,7 @@ export function LoginForm() {
 
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
+      <p className="admin-muted">用你设好的管理员用户名和密码登录。</p>
       <label className="form-field">
         用户名
         <input

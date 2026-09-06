@@ -5,12 +5,8 @@ import {
   handleAdminError,
   jsonData,
 } from "@/lib/admin/http";
-import {
-  DEFAULT_SETTINGS,
-  getSetting,
-  setSetting,
-  type SettingKey,
-} from "@/lib/settings";
+import { getAdminSettings, setSetting } from "@/lib/settings";
+import { clearCosSettingsCache, loadCosSettings } from "@/lib/storage";
 import {
   isWritableSettingKey,
   settingsPutSchema,
@@ -18,18 +14,10 @@ import {
 
 export const runtime = "nodejs";
 
-async function readAllSettings() {
-  const keys = Object.keys(DEFAULT_SETTINGS) as SettingKey[];
-  const entries = await Promise.all(
-    keys.map(async (key) => [key, await getSetting(key)] as const),
-  );
-  return Object.fromEntries(entries);
-}
-
 export async function GET() {
   try {
     await requireAdmin();
-    return jsonData(await readAllSettings());
+    return jsonData(await getAdminSettings());
   } catch (error) {
     return handleAdminError(error, "读取设置失败");
   }
@@ -57,11 +45,19 @@ export async function PUT(request: Request) {
       if (!isWritableSettingKey(key) || value === undefined) {
         continue;
       }
+      if (
+        (key === "cosSecretId" || key === "cosSecretKey") &&
+        String(value).trim() === ""
+      ) {
+        continue;
+      }
       await setSetting(key, value);
     }
 
+    clearCosSettingsCache();
+    await loadCosSettings();
     revalidatePublicContent();
-    return jsonData(await readAllSettings());
+    return jsonData(await getAdminSettings());
   } catch (error) {
     return handleAdminError(error, "保存设置失败");
   }

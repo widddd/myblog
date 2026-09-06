@@ -3,8 +3,7 @@ import { z } from "zod";
 
 import { verifyPassword } from "@/lib/auth/password";
 import { clearRateLimit, rateLimit } from "@/lib/auth/rateLimit";
-import { prisma } from "@/lib/db";
-import { publishedWhere } from "@/lib/posts/query";
+import { findPublishedPostByRef } from "@/lib/posts/query";
 import { issuePostUnlockCookie } from "@/lib/posts/unlock";
 import { getClientIp } from "@/lib/utils/fingerprint";
 import { logger } from "@/lib/utils/logger";
@@ -58,10 +57,7 @@ export async function POST(request: Request, context: UnlockRouteContext) {
       );
     }
 
-    const post = await prisma.post.findFirst({
-      where: { slug, ...publishedWhere() },
-      select: { passwordHash: true },
-    });
+    const post = await findPublishedPostByRef(slug);
     if (!post) {
       return NextResponse.json(
         { code: "POST_NOT_FOUND", message: "文章不存在" },
@@ -81,7 +77,7 @@ export async function POST(request: Request, context: UnlockRouteContext) {
       );
     }
 
-    await issuePostUnlockCookie(slug);
+    await issuePostUnlockCookie(post.publicId);
     clearRateLimit(limitKey);
     return NextResponse.json(
       { data: { unlocked: true, expiresIn: 2 * 60 * 60 } },

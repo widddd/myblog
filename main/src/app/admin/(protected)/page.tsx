@@ -54,8 +54,8 @@ export default async function AdminDashboardPage() {
     <section className="admin-dash">
       <div className="admin-dash__head">
         <div>
-          <h2>仪表盘</h2>
-          <p className="admin-muted">站点内容一眼看完，点卡片进入对应管理页。</p>
+          <h2>概览</h2>
+          <p className="admin-muted">点卡片进入对应管理页。</p>
         </div>
         <Link className="heo-button" href="/admin/posts/new">
           写新文章

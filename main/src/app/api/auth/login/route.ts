@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { issueCsrfToken } from "@/lib/auth/csrf";
-import { verifyPassword } from "@/lib/auth/password";
+import { verifyPasswordAgainstKnownOrDummy } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/utils/logger";
@@ -41,9 +41,18 @@ export async function POST(request: Request) {
     });
 
     if (
-      !admin ||
-      !(await verifyPassword(payload.data.password, admin.passwordHash))
+      !(await verifyPasswordAgainstKnownOrDummy(
+        payload.data.password,
+        admin?.passwordHash,
+      ))
     ) {
+      return NextResponse.json(
+        { code: "INVALID_CREDENTIALS", message: "用户名或密码错误" },
+        { status: 401 },
+      );
+    }
+
+    if (!admin) {
       return NextResponse.json(
         { code: "INVALID_CREDENTIALS", message: "用户名或密码错误" },
         { status: 401 },

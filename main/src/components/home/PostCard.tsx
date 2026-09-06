@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useRef, useState, type PointerEvent } from "react";
 
 import { CoverMedia } from "@/components/common/CoverMedia";
+import { postHref } from "@/lib/posts/path";
 import type { PostCardModel } from "@/lib/posts/types";
 import { formatPostDate } from "@/lib/utils/date";
 
@@ -53,7 +54,7 @@ export function PostCard({ post, index = 0 }: PostCardProps) {
         <Link
           aria-label={post.title}
           className="post-card__hit"
-          href={`/posts/${post.slug}`}
+          href={postHref(post)}
         />
         <div aria-hidden="true" className="post-card__ripples">
           {ripples.map((ripple) => (

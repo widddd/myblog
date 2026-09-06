@@ -11,6 +11,7 @@ datasource db {
 
 model Post {
   id           Int          @id @default(autoincrement())
+  publicId     String       @unique
   slug         String       @unique
   title        String
   content      String
@@ -102,22 +103,68 @@ model Setting {
 }
 
 model AdminUser {
-  id           Int      @id @default(autoincrement())
-  username     String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                     Int      @id @default(autoincrement())
+  username               String   @unique
+  passwordHash           String
+  mustChangeCredentials  Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model BackupSecret {
+  name      String   @id
+  keyHash   String
+  algo      String   @default("aes-256-gcm")
+  createdAt DateTime @default(now())
 }
 
 model Upload {
   id        Int      @id @default(autoincrement())
   hash      String   @unique
-  driver    String   @default("local") // local | oss
+  driver    String   @default("local") // local | cos（历史值 oss 当 cos）
   key       String // posix style relative path
   mime      String
   width     Int?
   height    Int?
   size      Int
-  variants  String   @default("{}") // JSON: {thumb, content}
+  variants  String   @default("{}") // JSON: {thumb, thumb2, content}
   createdAt DateTime @default(now())
+}
+
+// 首页模块目录：内置模块 + 管理员自建模块（见 docs/home-modules-spec.md）
+model HomeModule {
+  id         Int            @id @default(autoincrement())
+  slug       String         @unique
+  name       String
+  kind       String         @default("builtin") // builtin | custom
+  builtinKey String? // banner | welcome | recommend | moments | posts | announcement | site | categories | tags | recent | uptime
+  html       String         @default("")
+  css        String         @default("")
+  js         String         @default("")
+  blocks     String         @default("[]") // JSON: HomeBlock[]
+  config     String         @default("{}") // JSON: 模块实例配置
+  system     Boolean        @default(false) // 内置模块不可删除，只能关闭
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  placement  HomePlacement?
+}
+
+// 首页格点：电脑/手机两套几何，rowSpan 恒为 1
+model HomePlacement {
+  id             Int        @id @default(autoincrement())
+  moduleId       Int        @unique
+  module         HomeModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  enabled        Boolean    @default(true)
+  col            Int        @default(1)
+  colSpan        Int        @default(12)
+  row            Int        @default(1)
+  rowSpan        Int        @default(1)
+  hPct           Int        @default(0)
+  mobileCol      Int        @default(1)
+  mobileColSpan  Int        @default(12)
+  mobileRow      Int        @default(1)
+  mobileHPct     Int        @default(0)
+  sort           Int        @default(0)
+
+  @@index([row, col])
 }

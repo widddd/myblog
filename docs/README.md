@@ -30,7 +30,17 @@
 | `m3-spec.md` | M3 编辑器 vendor + 后台管理的待审批/实施方案 | AI + 用户 | M3 规划与实施 |
 | `m4-spec.md` | M4 评论系统实施方案与验收 | AI + 用户 | M4 规划与实施 |
 | `m6-spec.md` | M6 备份系统 + 首页透明度/后台写文章布局实施方案 | AI + 用户 | M6 规划与实施 |
+| `backup-restore-spec.md` | 一键恢复：面板预约并重启 + `pnpm restore` | AI + 用户 | 改备份恢复前必读 |
+| `app-update-spec.md` | 程序更新：导入 tar.gz、boot.cjs 覆盖程序文件 | AI + 用户 | 改程序更新或启动入口前必读 |
+| `linux-deploy-spec.md` | Linux 精简安装：更新包首装一次，以后只换包 | AI + 用户 | 部署或发版流程前必读 |
+| `backup-encryption-spec.md` | 拆分密钥备份：主机半钥 + 包内半钥、scrypt、`pnpm setup` | AI + 用户 | 改备份加密或投产初始化前必读 |
+| `home-modules-spec.md` | M8 首页模块化：格点模型、内置 11 模块、自定义代码边界、后台画布 | AI + 用户 | 改首页结构或首页模块前必读 |
+| `responsive-layout-spec.md` | 双视口自适应：盒子决定内容、电脑/手机两套几何、走手机套含横屏 | AI + 用户 | 改首页格点、内页侧栏或瞬间页高度前必读 |
+| `moments-home-spec.md` | 瞬间首页模块、二级缩略图、朋友圈宫格展开 | AI + 用户 | 改瞬间展示或首页瞬间模块前必读 |
+| `cos-storage-spec.md` | 腾讯云 COS：加密备份上云、媒体双写、访客 thumb 走 COS | AI + 用户 | 改存储驱动、上传或备份上云前必读 |
+| `media-layout-spec.md` | 本地媒体限额、目录对齐、缩略图定位、文章 publicId URL | AI + 用户 | 改上传路径、缩略图或文章地址前必读 |
 | `readme-requirements.md` | README 必备章节清单 | AI | 用户可见功能变更时对照更新根 README |
+| `user-manual.md` | 站长手册：高级用途与注意事项（不含基本发文） | AI + 用户 | 给人看；改备份/更新/COS/开箱行为时同步 |
 
 ## 活文档维护说明
 

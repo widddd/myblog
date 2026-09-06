@@ -77,7 +77,7 @@ export function CommentRowActions({ comment }: { comment: AdminCommentView }) {
         className="admin-link-button"
         disabled={busy}
         onClick={() => {
-          if (!window.confirm("确定删除这条评论？回复会一并删除。")) {
+          if (!window.confirm("确定删除这条评论？回复会一并删除，删除后无法恢复。")) {
             return;
           }
           void run(() =>

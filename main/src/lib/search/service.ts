@@ -10,6 +10,7 @@ export type { SearchHit } from "@/lib/search/types";
 const MAX_QUERY_LENGTH = 80;
 
 type SearchRow = {
+  publicId: string;
   slug: string;
   title: string;
   excerpt: string | null;
@@ -38,6 +39,7 @@ function publishedLikeWhere(pattern: string, now: Date) {
 function toHit(row: SearchRow): SearchHit {
   const locked = Boolean(row.passwordHash);
   return {
+    publicId: row.publicId,
     slug: row.slug,
     title: row.title,
     excerpt: locked ? null : row.excerpt,
@@ -75,7 +77,7 @@ export async function searchPosts(
       WHERE ${where}
     `,
     prisma.$queryRaw<SearchRow[]>`
-      SELECT slug, title, excerpt, passwordHash, publishedAt
+      SELECT publicId, slug, title, excerpt, passwordHash, publishedAt
       FROM Post
       WHERE ${where}
       ORDER BY pinned DESC, publishedAt DESC

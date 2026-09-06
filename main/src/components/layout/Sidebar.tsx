@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import {
   getSidebarStats,
   listCategories,
@@ -7,13 +5,23 @@ import {
   listTags,
 } from "@/lib/posts/query";
 import { getPublicSettings } from "@/lib/settings";
-import { formatPostDate } from "@/lib/utils/date";
 
-import { CoverMedia } from "@/components/common/CoverMedia";
+import { PostSidebar } from "@/components/layout/PostSidebar";
 import { Toc } from "@/components/post/Toc";
+import { AnnouncementWidget } from "@/components/widgets/AnnouncementWidget";
+import { CategoriesWidget } from "@/components/widgets/CategoriesWidget";
+import { RecentPostsWidget } from "@/components/widgets/RecentPostsWidget";
+import { SiteStatsWidget } from "@/components/widgets/SiteStatsWidget";
+import { TagsWidget } from "@/components/widgets/TagsWidget";
 import type { TocItem } from "@/lib/markdown/toc";
 
-export async function Sidebar({ toc }: { toc?: TocItem[] }) {
+export async function Sidebar({
+  reading = false,
+  toc,
+}: {
+  reading?: boolean;
+  toc?: TocItem[];
+}) {
   const [settings, stats, categories, tags, recent] = await Promise.all([
     getPublicSettings(),
     getSidebarStats(),
@@ -22,86 +30,28 @@ export async function Sidebar({ toc }: { toc?: TocItem[] }) {
     listRecentPosts(5),
   ]);
 
+  const extras = (
+    <>
+      <AnnouncementWidget body={settings.announcement} />
+      <SiteStatsWidget stats={stats} />
+      <CategoriesWidget categories={categories} />
+      <TagsWidget tags={tags} />
+      <RecentPostsWidget posts={recent} />
+    </>
+  );
+
+  if (reading) {
+    return <PostSidebar extras={extras} toc={toc ? <Toc items={toc} /> : null} />;
+  }
+
   return (
     <div className="sticky-stack">
-      {settings.announcement ? (
-        <section className="widget glass-card">
-          <h2 className="widget__title">公告</h2>
-          <p>{settings.announcement}</p>
-        </section>
-      ) : null}
-
-      <section className="widget glass-card">
-        <h2 className="widget__title">站点</h2>
-        <div className="widget-stat">
-          <div>
-            <strong>{stats.postCount}</strong>
-            <span>文章</span>
-          </div>
-          <div>
-            <strong>{stats.categoryCount}</strong>
-            <span>分类</span>
-          </div>
-          <div>
-            <strong>{stats.tagCount}</strong>
-            <span>标签</span>
-          </div>
-        </div>
-      </section>
-
+      <AnnouncementWidget body={settings.announcement} />
+      <SiteStatsWidget stats={stats} />
       {toc ? <Toc items={toc} /> : null}
-
-      <section className="widget glass-card">
-        <h2 className="widget__title">分类</h2>
-        {categories.length === 0 ? (
-          <p className="widget__empty">还没有分类。</p>
-        ) : (
-          <ul className="widget-list">
-            {categories.map((item) => (
-              <li key={item.slug}>
-                <Link href={`/categories/${item.slug}`}>
-                  <span>{item.name}</span>
-                  <span className="count">{item.count}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="widget glass-card">
-        <h2 className="widget__title">标签</h2>
-        {tags.length === 0 ? (
-          <p className="widget__empty">还没有标签。</p>
-        ) : (
-          <div className="tag-cloud">
-            {tags.map((item) => (
-              <Link key={item.slug} href={`/tags/${item.slug}`}>
-                {item.name}
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="widget glass-card">
-        <h2 className="widget__title">最近发布</h2>
-        {recent.length === 0 ? (
-          <p className="widget__empty">还没有文章。</p>
-        ) : (
-          <div>
-            {recent.map((post) => (
-              <Link className="recent-item" href={`/posts/${post.slug}`} key={post.slug}>
-                <CoverMedia alt={post.title} src={post.cover} title={post.title} />
-                <div>
-                  <div className="recent-item__title">{post.title}</div>
-                  <time>{formatPostDate(post.publishedAt)}</time>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+      <CategoriesWidget categories={categories} />
+      <TagsWidget tags={tags} />
+      <RecentPostsWidget posts={recent} />
     </div>
   );
 }

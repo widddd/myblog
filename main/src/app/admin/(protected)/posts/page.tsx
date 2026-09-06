@@ -32,7 +32,7 @@ export default async function AdminPostsPage({ searchParams }: PageProps) {
   return (
     <section className="heo-card admin-panel">
       <div className="admin-panel-head">
-        <h2>文章</h2>
+        <h2>文章列表</h2>
         <Link className="heo-button" href="/admin/posts/new">
           写文章
         </Link>
@@ -49,6 +49,7 @@ export default async function AdminPostsPage({ searchParams }: PageProps) {
           筛选
         </button>
       </form>
+      <p className="admin-danger">删除文章后无法恢复。</p>
       {result.data.length === 0 ? (
         <p>还没有文章。</p>
       ) : (
@@ -75,7 +76,7 @@ export default async function AdminPostsPage({ searchParams }: PageProps) {
                 <td className="admin-table-actions">
                   <Link href={`/admin/posts/${post.id}/edit`}>编辑</Link>
                   <DeleteButton
-                    confirmText={`确定删除「${post.title}」？`}
+                    confirmText={`确定删除「${post.title}」？删除后无法恢复。`}
                     url={`/api/admin/posts/${post.id}`}
                   />
                 </td>

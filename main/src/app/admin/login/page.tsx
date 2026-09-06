@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/admin/LoginForm";
+import { hasAdminUser } from "@/lib/auth/initial-setup";
 import {
   getSession,
   isAuthenticatedSession,
@@ -12,6 +13,10 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminLoginPage() {
+  if (!(await hasAdminUser())) {
+    redirect("/admin/setup");
+  }
+
   const session = await getSession();
 
   if (isAuthenticatedSession(session)) {
@@ -22,7 +27,7 @@ export default async function AdminLoginPage() {
     <div className="auth-shell">
       <section className="auth-card heo-card">
         <h1>管理员登录</h1>
-        <p className="auth-card__subtitle">登录后进入 MyBlog 管理后台。</p>
+        <p className="auth-card__subtitle">登录后进入管理后台。</p>
         <LoginForm />
       </section>
     </div>

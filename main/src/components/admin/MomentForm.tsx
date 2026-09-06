@@ -5,8 +5,14 @@ import { useState } from "react";
 
 import { SortableImageGrid } from "@/components/admin/SortableImageGrid";
 import { adminJson } from "@/lib/client/admin";
-import { uploadAdminFiles } from "@/lib/client/upload";
+import {
+  finalizeAdminUploads,
+  hasActiveTransfers,
+  uploadAdminFiles,
+  UploadCancelledError,
+} from "@/lib/client/upload";
 import type { MomentImage } from "@/lib/moments/types";
+import { firstMediaHash } from "@/lib/uploads/hashes";
 
 type GridImage = MomentImage & { id: string; src: string };
 
@@ -53,6 +59,7 @@ export function MomentForm() {
         selected,
         "image",
         (done, total) => setUploading(`上传中 ${done}/${total}`),
+        { defer: true },
       );
       setImages((current) => [
         ...current,
@@ -64,6 +71,9 @@ export function MomentForm() {
         })),
       ]);
     } catch (caught) {
+      if (caught instanceof UploadCancelledError) {
+        return;
+      }
       setError(caught instanceof Error ? caught.message : "图片上传失败");
     } finally {
       setUploading("");
@@ -72,11 +82,33 @@ export function MomentForm() {
 
   async function handleSubmit() {
     setError("");
+    if (hasActiveTransfers()) {
+      setError("请等待图片上传完成后再发布");
+      return;
+    }
     setSaving(true);
     try {
+      const hashes = images
+        .map((image) => firstMediaHash(image.key))
+        .filter((hash): hash is string => Boolean(hash));
+      const finalized = await finalizeAdminUploads(hashes);
+      const byHash = new Map(finalized.map((item) => [item.hash, item]));
+      const nextImages = images.map((image) => {
+        const hash = firstMediaHash(image.key);
+        const match = hash ? byHash.get(hash) : undefined;
+        if (!match) {
+          return image;
+        }
+        return {
+          key: match.original.key,
+          thumb: match.thumb?.url ?? match.original.url,
+          width: match.original.width ?? image.width,
+          height: match.original.height ?? image.height,
+        };
+      });
       await adminJson("/api/admin/moments", {
         method: "POST",
-        body: JSON.stringify({ content, images }),
+        body: JSON.stringify({ content, images: nextImages }),
       });
       setContent("");
       setImages([]);
@@ -130,7 +162,7 @@ export function MomentForm() {
         </p>
       ) : null}
       <button className="heo-button" disabled={saving || Boolean(uploading)} type="submit">
-        {saving ? "发布中…" : "发布瞬间"}
+        {saving ? "正在发布中" : "发布瞬间"}
       </button>
     </form>
   );

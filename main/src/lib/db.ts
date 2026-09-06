@@ -4,28 +4,9 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
-function resolveDatabasePath(): string {
-  const configuredPath = process.env.DATABASE_PATH?.trim();
-  if (configuredPath) {
-    return path.resolve(/* turbopackIgnore: true */ process.cwd(), configuredPath);
-  }
+import { DATABASE_PATH } from "@/lib/db-path";
 
-  const databaseUrl = process.env.DATABASE_URL?.trim();
-  if (databaseUrl?.startsWith("file:")) {
-    const urlPath = databaseUrl.slice("file:".length);
-    return path.isAbsolute(urlPath)
-      ? path.normalize(urlPath)
-      : path.resolve(
-          /* turbopackIgnore: true */ process.cwd(),
-          "prisma",
-          urlPath,
-        );
-  }
-
-  return path.resolve(process.cwd(), "data", "blog.db");
-}
-
-export const DATABASE_PATH = resolveDatabasePath();
+export { DATABASE_PATH, resolveDatabasePath } from "@/lib/db-path";
 
 function createPrismaClient() {
   mkdirSync(path.dirname(DATABASE_PATH), { recursive: true });
@@ -58,4 +39,10 @@ export function getSqliteHandle(): Database.Database {
   const db = new Database(DATABASE_PATH);
   db.pragma("busy_timeout = 5000");
   return db;
+}
+
+/** 进程退出前松开 Prisma 连接，避免 Windows 上 blog.db 仍被占用 */
+export async function disconnectDatabase(): Promise<void> {
+  await prisma.$disconnect();
+  delete globalForPrisma.prisma;
 }

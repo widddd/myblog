@@ -35,6 +35,10 @@ export function registerScheduler(): void {
     void (async () => {
       const { scanScheduledPosts } = await import("@/lib/scheduler/publish");
       await runSafe("publish", scanScheduledPosts);
+      const { purgeExpiredPlainBackups } = await import("@/lib/backup/plain");
+      await runSafe("plain-backup-purge", purgeExpiredPlainBackups);
+      await runSafe("restore-due", checkDueRestoreRestart);
+      await runSafe("update-due", checkDueUpdateRestart);
     })();
   }, PUBLISH_INTERVAL_MS);
 
@@ -51,4 +55,28 @@ export function registerScheduler(): void {
   }, BACKUP_INTERVAL_MS);
 
   logger.info("定时任务调度器已注册");
+}
+
+async function checkDueUpdateRestart(): Promise<void> {
+  const { isPendingUpdateDue, readPendingUpdate } = await import(
+    "@/lib/update/pending"
+  );
+  const pending = await readPendingUpdate();
+  if (!isPendingUpdateDue(pending)) {
+    return;
+  }
+  const { scheduleAppRestart } = await import("@/lib/backup/restart");
+  scheduleAppRestart();
+}
+
+async function checkDueRestoreRestart(): Promise<void> {
+  const { isPendingRestoreDue, readPendingRestore } = await import(
+    "@/lib/backup/restore"
+  );
+  const pending = await readPendingRestore();
+  if (!isPendingRestoreDue(pending)) {
+    return;
+  }
+  const { scheduleAppRestart } = await import("@/lib/backup/restart");
+  scheduleAppRestart();
 }

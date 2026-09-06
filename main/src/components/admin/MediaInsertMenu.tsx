@@ -3,6 +3,8 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
+import { MediaLibraryPicker } from "@/components/admin/MediaLibraryPicker";
+import type { AdminUploadKind, AdminUploadResult } from "@/lib/client/upload";
 import { isSafeMediaUrl } from "@/lib/media/url";
 
 function subscribeNoop() {
@@ -12,24 +14,29 @@ function subscribeNoop() {
 type MediaInsertMenuProps = {
   label: string;
   accept: string;
+  kind: AdminUploadKind;
   multiple?: boolean;
   busy?: boolean;
   onUpload: (files: FileList) => void;
   onLink: (url: string) => void;
+  onPick: (file: AdminUploadResult) => void;
 };
 
 export function MediaInsertMenu({
   label,
   accept,
+  kind,
   multiple = true,
   busy = false,
   onUpload,
   onLink,
+  onPick,
 }: MediaInsertMenuProps) {
   const titleId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [linkMode, setLinkMode] = useState(false);
+  const [libraryMode, setLibraryMode] = useState(false);
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
@@ -55,6 +62,7 @@ export function MediaInsertMenu({
   function closeDialog() {
     setOpen(false);
     setLinkMode(false);
+    setLibraryMode(false);
     setError("");
     setUrl("");
   }
@@ -82,14 +90,18 @@ export function MediaInsertMenu({
             <div
               aria-labelledby={titleId}
               aria-modal="true"
-              className="admin-media-dialog__panel"
+              className={
+                libraryMode
+                  ? "admin-media-dialog__panel is-wide"
+                  : "admin-media-dialog__panel"
+              }
               role="dialog"
             >
               <h3 id={titleId}>插入{label}</h3>
               <p className="admin-media-dialog__lead">
-                从本地上传，或填入 https 外链，插入后可在正文里拖到其他位置。
+                从本地上传、从媒体库导入，或填入 https 外链。插入后可在正文里拖到其他位置。
               </p>
-              <div className="admin-media-dialog__actions">
+              <div className="admin-media-dialog__actions is-triple">
                 <button
                   className="heo-button"
                   disabled={busy}
@@ -102,7 +114,20 @@ export function MediaInsertMenu({
                   className="heo-button heo-button--ghost"
                   disabled={busy}
                   onClick={() => {
+                    setLibraryMode(true);
+                    setLinkMode(false);
+                    setError("");
+                  }}
+                  type="button"
+                >
+                  从媒体库导入
+                </button>
+                <button
+                  className="heo-button heo-button--ghost"
+                  disabled={busy}
+                  onClick={() => {
                     setLinkMode(true);
+                    setLibraryMode(false);
                     setError("");
                   }}
                   type="button"
@@ -110,6 +135,16 @@ export function MediaInsertMenu({
                   使用外链
                 </button>
               </div>
+              {libraryMode ? (
+                <MediaLibraryPicker
+                  disabled={busy}
+                  kind={kind}
+                  onPick={(file) => {
+                    onPick(file);
+                    closeDialog();
+                  }}
+                />
+              ) : null}
               {linkMode ? (
                 <div className="admin-media-insert__link">
                   <input
@@ -152,6 +187,7 @@ export function MediaInsertMenu({
         onClick={() => {
           setOpen(true);
           setLinkMode(false);
+          setLibraryMode(false);
           setError("");
         }}
         title={`插入${label}`}

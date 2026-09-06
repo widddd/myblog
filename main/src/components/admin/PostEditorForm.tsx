@@ -6,7 +6,13 @@ import { useRouter } from "next/navigation";
 import { EditorLoader } from "@/components/admin/EditorLoader";
 import { EditorPreview } from "@/components/admin/EditorPreview";
 import { adminJson } from "@/lib/client/admin";
-import { editorImageUrl, uploadAdminFile } from "@/lib/client/upload";
+import {
+  editorImageUrl,
+  finalizeAdminUploads,
+  hasActiveTransfers,
+  uploadAdminFile,
+  UploadCancelledError,
+} from "@/lib/client/upload";
 import { bannerFill } from "@/lib/posts/banner";
 import type { AdminPostView } from "@/lib/posts/admin-types";
 import {
@@ -14,7 +20,9 @@ import {
   parseMarkdownImport,
 } from "@/lib/posts/import-markdown";
 import { normalizePostContent } from "@/lib/posts/normalize-content";
+import { collectMediaHashes, firstMediaHash } from "@/lib/uploads/hashes";
 import { cn } from "@/lib/utils/cn";
+import { slugify } from "@/lib/utils/slugify";
 
 type TaxonomyOption = {
   id: number;
@@ -56,7 +64,12 @@ function SettingsFold({
 }) {
   return (
     <section className={cn("admin-fold", open && "is-open")}>
-      <button className="admin-fold__head" onClick={onToggle} type="button">
+      <button
+        aria-expanded={open}
+        className="admin-fold__head"
+        onClick={onToggle}
+        type="button"
+      >
         <span>{title}</span>
         <span aria-hidden="true" className="admin-fold__mark" />
       </button>
@@ -99,6 +112,13 @@ export function PostEditorForm({
   const [categoryId, setCategoryId] = useState(
     post?.category?.id ? String(post.category.id) : "",
   );
+  const [categoryOptions, setCategoryOptions] = useState(categories);
+  const [tagOptions, setTagOptions] = useState(tags);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newTagName, setNewTagName] = useState("");
+  const [creatingTaxonomy, setCreatingTaxonomy] = useState<
+    "category" | "tag" | null
+  >(null);
   const [tagIds, setTagIds] = useState<number[]>(
     post?.tags.map((tag) => tag.id) ?? [],
   );
@@ -106,7 +126,7 @@ export function PostEditorForm({
     normalizePostContent(post?.content ?? "# 新文章\n\n"),
   );
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [savingAs, setSavingAs] = useState<string | null>(null);
   const [view, setView] = useState<"edit" | "preview">("edit");
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [folds, setFolds] = useState<Record<FoldKey, boolean>>({
@@ -132,12 +152,102 @@ export function PostEditorForm({
     );
   }
 
+  async function resolveTaxonomy(
+    kind: "categories" | "tags",
+    name: string,
+  ): Promise<TaxonomyOption> {
+    const trimmed = name.trim();
+    try {
+      const payload = await adminJson<{ data: TaxonomyOption }>(
+        `/api/admin/${kind}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ name: trimmed }),
+        },
+      );
+      return payload.data;
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      if (!message.includes("已被占用")) {
+        throw caught;
+      }
+      const listed = await adminJson<{ data: TaxonomyOption[] }>(
+        `/api/admin/${kind}`,
+      );
+      const slug = slugify(trimmed).toLowerCase();
+      const existing = listed.data.find(
+        (item) => item.slug === slug || item.name === trimmed,
+      );
+      if (!existing) {
+        throw caught;
+      }
+      return existing;
+    }
+  }
+
+  async function handleCreateCategory() {
+    const name = newCategoryName.trim();
+    if (!name || creatingTaxonomy) {
+      return;
+    }
+    setError("");
+    setCreatingTaxonomy("category");
+    try {
+      const created = await resolveTaxonomy("categories", name);
+      setCategoryOptions((current) =>
+        current.some((item) => item.id === created.id)
+          ? current
+          : [...current, created].sort((a, b) => a.name.localeCompare(b.name, "zh")),
+      );
+      setCategoryId(String(created.id));
+      setNewCategoryName("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "创建分类失败");
+    } finally {
+      setCreatingTaxonomy(null);
+    }
+  }
+
+  async function handleCreateTag() {
+    const name = newTagName.trim();
+    if (!name || creatingTaxonomy) {
+      return;
+    }
+    setError("");
+    setCreatingTaxonomy("tag");
+    try {
+      const created = await resolveTaxonomy("tags", name);
+      setTagOptions((current) =>
+        current.some((item) => item.id === created.id)
+          ? current
+          : [...current, created].sort((a, b) => a.name.localeCompare(b.name, "zh")),
+      );
+      setTagIds((current) =>
+        current.includes(created.id) ? current : [...current, created.id],
+      );
+      setNewTagName("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "创建标签失败");
+    } finally {
+      setCreatingTaxonomy(null);
+    }
+  }
+
   async function handleCover(file: File | undefined) {
     if (!file) {
       return;
     }
-    const uploaded = await uploadAdminFile(file, "image");
-    setCover(editorImageUrl(uploaded));
+    try {
+      const uploaded = await uploadAdminFile(file, "image", undefined, {
+        defer: true,
+      });
+      setCover(editorImageUrl(uploaded));
+    } catch (caught) {
+      if (caught instanceof UploadCancelledError) {
+        return;
+      }
+      setError(caught instanceof Error ? caught.message : "封面上传失败");
+    }
   }
 
   async function handleMarkdownFile(file: File | undefined) {
@@ -165,14 +275,33 @@ export function PostEditorForm({
 
   async function handleSubmit(nextStatus = status) {
     setError("");
-    setSaving(true);
+    if (hasActiveTransfers()) {
+      setError("请等待文件上传完成后再保存");
+      return;
+    }
+    const publishing = nextStatus === "published" || nextStatus === "scheduled";
+    setSavingAs(nextStatus);
     try {
+      let nextCover = cover;
+      if (publishing) {
+        const hashes = collectMediaHashes(content, cover);
+        const finalized = await finalizeAdminUploads(hashes);
+        const coverHash = firstMediaHash(cover);
+        const match = coverHash
+          ? finalized.find((item) => item.hash === coverHash)
+          : undefined;
+        if (match) {
+          nextCover = editorImageUrl(match);
+          setCover(nextCover);
+        }
+      }
+
       const payload: Record<string, unknown> = {
         title,
         slug: slug || null,
         content,
         excerpt: excerpt || null,
-        cover: cover || null,
+        cover: nextCover || null,
         bannerStyle,
         bannerColor: bannerStyle === "cover" ? null : bannerColor,
         bannerColor2: bannerStyle === "gradient" ? bannerColor2 : null,
@@ -200,9 +329,12 @@ export function PostEditorForm({
       router.push("/admin/posts");
       router.refresh();
     } catch (caught) {
+      if (caught instanceof UploadCancelledError) {
+        return;
+      }
       setError(caught instanceof Error ? caught.message : "保存失败");
     } finally {
-      setSaving(false);
+      setSavingAs(null);
     }
   }
 
@@ -215,15 +347,20 @@ export function PostEditorForm({
       }}
     >
       <aside className={cn("post-workspace__rail", !settingsOpen && "is-collapsed")}>
-        <button
-          aria-expanded={settingsOpen}
-          className="post-workspace__rail-toggle"
-          onClick={() => setSettingsOpen((current) => !current)}
-          title={settingsOpen ? "收起设置" : "展开设置"}
-          type="button"
-        >
-          {settingsOpen ? "收起设置" : "设"}
-        </button>
+        <div className="post-workspace__rail-head">
+          <button
+            aria-expanded={settingsOpen}
+            className="admin-pane-toggle"
+            onClick={() => setSettingsOpen((current) => !current)}
+            title={settingsOpen ? "收起设置" : "展开设置"}
+            type="button"
+          >
+            <span aria-hidden="true" className="admin-pane-toggle__icon" />
+            <span className="visually-hidden">
+              {settingsOpen ? "收起设置" : "展开设置"}
+            </span>
+          </button>
+        </div>
         <div className="post-workspace__rail-body">
           <SettingsFold
             onToggle={() => toggleFold("publish")}
@@ -294,18 +431,39 @@ export function PostEditorForm({
                 value={categoryId}
               >
                 <option value="">无</option>
-                {categories.map((category) => (
+                {categoryOptions.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.name}
                   </option>
                 ))}
               </select>
             </label>
+            <div className="admin-inline-create">
+              <input
+                onChange={(event) => setNewCategoryName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleCreateCategory();
+                  }
+                }}
+                placeholder="新分类名称"
+                value={newCategoryName}
+              />
+              <button
+                className="form-field__reset"
+                disabled={!newCategoryName.trim() || creatingTaxonomy !== null}
+                onClick={() => void handleCreateCategory()}
+                type="button"
+              >
+                {creatingTaxonomy === "category" ? "创建中…" : "新建"}
+              </button>
+            </div>
             <div className="admin-chip-row">
-              {tags.length === 0 ? (
-                <span className="admin-muted">暂无标签</span>
+              {tagOptions.length === 0 ? (
+                <span className="admin-muted">暂无标签，可在下方新建</span>
               ) : (
-                tags.map((tag) => (
+                tagOptions.map((tag) => (
                   <label
                     className={cn("admin-chip", tagIds.includes(tag.id) && "is-on")}
                     key={tag.id}
@@ -319,6 +477,27 @@ export function PostEditorForm({
                   </label>
                 ))
               )}
+            </div>
+            <div className="admin-inline-create">
+              <input
+                onChange={(event) => setNewTagName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleCreateTag();
+                  }
+                }}
+                placeholder="新标签名称"
+                value={newTagName}
+              />
+              <button
+                className="form-field__reset"
+                disabled={!newTagName.trim() || creatingTaxonomy !== null}
+                onClick={() => void handleCreateTag()}
+                type="button"
+              >
+                {creatingTaxonomy === "tag" ? "创建中…" : "新建"}
+              </button>
             </div>
           </SettingsFold>
 
@@ -490,16 +669,22 @@ export function PostEditorForm({
             >
               预览
             </button>
-            <button className="heo-button heo-button--ghost" disabled={saving} type="submit">
-              {saving ? "保存中…" : "保存"}
+            <button className="heo-button heo-button--ghost" disabled={Boolean(savingAs)} type="submit">
+              {savingAs && savingAs !== "published" && savingAs !== "scheduled"
+                ? "保存中…"
+                : savingAs
+                  ? "正在发布中"
+                  : "保存"}
             </button>
             <button
               className="heo-button"
-              disabled={saving}
+              disabled={Boolean(savingAs)}
               onClick={() => void handleSubmit("published")}
               type="button"
             >
-              保存并发布
+              {savingAs === "published" || savingAs === "scheduled"
+                ? "正在发布中"
+                : "保存并发布"}
             </button>
           </div>
         </div>

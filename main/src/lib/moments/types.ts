@@ -18,3 +18,18 @@ export type PublicMoment = {
   likeCount: number;
   liked: boolean;
 };
+
+export type HomeMomentImage = {
+  key: string;
+  src: string;
+  thumbSrc: string;
+  thumb2Src: string;
+  width?: number;
+  height?: number;
+};
+
+export type HomeMoment = {
+  id: number;
+  content: string;
+  images: HomeMomentImage[];
+};

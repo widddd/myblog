@@ -30,7 +30,7 @@ export function PostHero({ post }: PostHeroProps) {
         <h1>{post.title}</h1>
         <div className="post-hero__meta">
           <span>{formatPostDate(post.publishedAt)}</span>
-          <ViewTracker initialViews={post.views} slug={post.slug} />
+          <ViewTracker initialViews={post.views} publicId={post.publicId} />
           {post.tags.map((tag) => (
             <span key={tag.slug}>#{tag.name}</span>
           ))}
