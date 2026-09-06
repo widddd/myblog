@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "myblog",
       cwd: __dirname,
-      script: "node_modules/next/dist/bin/next",
+      script: "scripts/boot.cjs",
       args: "start --hostname 127.0.0.1 --port 3000",
       exec_mode: "fork",
       instances: 1,

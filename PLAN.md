@@ -54,8 +54,54 @@
 - 验收：解包恢复冒烟通过；定时自动备份；文件名白名单拦截穿越
 
 ### M7 — 打磨与部署
-- [ ] 安全渗透手测 / SEO / 缓存优化 / Linux 部署演练 / 动效打磨
-- 验收：pm2 24h 稳定；Lighthouse ≥90；备份恢复成功
+- [x] 安全复查与修复（CSRF/穿越/伪造类型/强制改密 API/XFF/密码文评论/登录计时）
+- [x] SEO（generateMetadata / sitemap / robots / RSS，密码文排除正文）
+- [x] 缓存（`unstable_cache` + `revalidateTag`；密码文页 `noStore`；next/image 透传 loader）
+- [x] 动效打磨（骨架屏 / 空状态入场；404 已有）
+- [ ] Linux 部署演练（方案已写：更新包 + `install.sh` 一次，以后只换包；上机由用户执行，见 [docs/linux-deploy-spec.md](docs/linux-deploy-spec.md)）
+- 验收：安全手测与单测已做；备份恢复沿用 M6；pm2 24h / Lighthouse ≥90 / Linux 演练待部署时补
+
+### M8 — 首页模块化 ✅（2026-08-30）
+- [x] `HomeModule` / `HomePlacement` + 12 列格点（同格堆叠；桌面两侧留白；电脑/手机两套几何）
+- [x] 9 个内置模块抽出；侧栏五块与首页共用 `components/widgets/*`
+- [x] 后台 `/admin/home`（左设置 + 右真实数据画布，电脑/手机画框，可拖动/改宽/改高）与 `/admin/modules`（积木 + HTML/CSS/JS 注入）
+- [x] 双视口自适应：电脑/手机两套几何、盒子决定内容；内页侧栏下沉；瞬间单张高度上限；横屏矮视口仍走手机套
+- 验收：默认布局与改造前视觉一致；关模块后其它格不乱；自定义 HTML/CSS 注入生效且评论仍纯文本
+- 方案：[docs/home-modules-spec.md](docs/home-modules-spec.md)
+
+### M9 — 程序更新（0.1.0 本地发行，2026-09-04）
+
+目标：后台导入一份新的博客程序包（`tar.gz`），预约重启后自动换上程序文件；`data/`、`.env`、备份密钥不动。方案：[docs/app-update-spec.md](docs/app-update-spec.md)。
+
+**已落地（0.1.0）**
+- [x] 更新包格式：`meta.json`（`kind: app-update`）+ 拒绝名单打包（`data/` `.env` `node_modules/` `.next/` 等不进包；新目录自动进包）
+- [x] `lib/update/*`：打包、检视、解包、覆盖、预约、应用（dev 不构建；`start` 才 `prisma migrate deploy` + `next build`）
+- [x] 单测：更新包拒绝名单、临时目录往返覆盖、含 `data/` 的包被拒、relaunch 走 `boot.cjs`、GitHub 仓库解析
+- [x] 启动统一入口：`scripts/boot.cjs`（先应用到期更新再拉起 Next）；`pnpm dev` / `pnpm start` / pm2 / relaunch 都走它
+- [x] 后台 `/admin/updates`：打包当前程序、导入包、从 GitHub 检查公开 Release、下载/删除、预约应用、设定重启时间或立刻重启
+- [x] API：`/api/admin/update` 列表/打包/上传/下载/删除/预约；与预约恢复互斥
+- [x] scheduler 到期后走同一套进程重启；`queueAppRestart` 与恢复共用
+
+**收尾（做完才算 M9 交付）**
+- [x] 文档同步：`docs/ai/module.md`、`docs/api-contracts.md`、`docs/architecture.md`、`docs/pitfalls.md`（P-064）、`docs/README.md`、根 README、AGENTS §3/§6 与命令行
+- [x] Windows 上 `pnpm dev` 经 `boot.cjs` 能起来（启动前会检查预约更新；tsx CJS 下脚本禁止顶层 await）
+- [x] 后台更新页手测：打开 `/admin/updates` → 打包 → 列表出现包（本机 `myblog-update-20260904-220534.tar.gz`，509 文件）；含 `data/` 的包被 `inspectUpdatePackage` 拒绝（`INVALID_ARCHIVE`）。**不要在正在开发的这份 `main/` 上点「立刻重启并更新」**
+- [ ] 整包冒烟（另开目录或用户确认后再做）：`pnpm pack:update` 打出含 editor 的包，在副本目录应用后 `data/blog.db` 与 `.env` 仍在
+
+**已知风险（收尾时可收紧，不挡文档）**
+- 覆盖 `src/` 时会删掉包里没有的文件：正规包必须是完整 `src/` 树；残缺小包可能掏空源码。可考虑「仅当包内 src 文件数超过阈值才同步删除」。
+- Windows 上正在跑的 `boot.cjs` 覆盖可能 EBUSY，当前是尽量覆盖、失败记日志。
+- 生产 `next build` 在 1GB 上可能 OOM；失败会尝试把 `.next.bak` 拷回。
+
+**本轮不做**
+- [ ] Linux 生产机上的 `start` + migrate + build（1GB RAM 下构建可能紧；随 M7 部署演练一起做）
+- [ ] 更新包上 COS、自动从上一包回滚（失败时手动再导入上一份即可）
+
+**建议执行顺序**
+1. 补文档（不改行为，先让下一会话能按规章接着做）
+2. `pnpm dev` 确认 boot 入口
+3. 登录后台走更新页（打包/列表/非法包），不点立刻应用
+4. 需要真机换程序时：先打包并下载当前包，再在副本或停服后的生产机上应用
 
 ## 变更记录
 
@@ -75,4 +121,12 @@
 | 2026-08-29 | 后台仪表盘改卡片；深色模式幽灵按钮对比度；写文章工具栏改回编辑区顶部；Post.recommend 首页推荐；视频节点可更换；图片/瞬间多选与拖拽排序 | 用户 |
 | 2026-08-29 | 深色模式覆盖 mdx-editor 浅色 token：正文浅字、工具栏深底（不改 vendor） | 用户 |
 | 2026-08-29 | 编辑器标题字号、成稿预览、图片/视频上传或外链、顶部拖动换位、外链视频标记 | 用户 |
-| 待办 | 腾讯云 OSS：用户提供 apikey 与用法后实现 OssDriver + 备份上传 OSS + 编辑器直传 OSS | 用户 |
+| 2026-08-30 | 后台各栏收起按钮改到右上角 chevron 图标；各栏独立滚动 | 用户 |
+| 2026-08-30 | 否决替换为 Halo 编辑器：Vue 3 + GPL-3.0，产出 HTML 与本项目 MDX 管线不兼容 | 评估结论 |
+| 2026-08-30 | M8 首页模块化（新增里程碑）：首页拆成可注册模块 + 12 列格点，后台新增首页管理与模块管理；自定义 HTML/CSS/JS 按用户决策直接注入 | 用户批准 docs/home-modules-spec.md |
+| 2026-08-30 | M7 打磨：安全复查修复 + SEO/RSS + 公开查询缓存；Linux 演练按用户要求暂缓 | 用户 |
+| 2026-08-30 | 腾讯云 COS：CosDriver + 加密备份上云 + 新媒体原图/音视频上 COS、本地缩略图 | 用户批准 docs/cos-storage-spec.md |
+| 2026-08-30 | 媒体目录对齐 + 本地限额 + 访客 thumb 走 COS + 文章 `/posts/{publicId}/{name}` | 用户批准媒体目录与文章 URL Spec |
+| 2026-08-30 | 首页双视口自适应：电脑/手机两套几何，盒子决定内容；内页侧栏下沉；瞬间单张高度上限 | 用户批准计划稿 |
+| 2026-09-04 | Linux 精简安装：发版只换 tar.gz，不改 install.sh；`apply-update --file` 预约重启 | 用户要简易更新 |
+| 2026-09-04 | 发行 0.1.0：拒绝名单更新包、GitHub 检查、开箱创建页、站长手册；清空内容数据 | 用户批准计划 |

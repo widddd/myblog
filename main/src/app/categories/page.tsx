@@ -5,10 +5,15 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SiteShell } from "@/components/layout/SiteShell";
 import { listCategories } from "@/lib/posts/query";
+import { publicMetadata } from "@/lib/seo/site";
 
-export const metadata: Metadata = {
-  title: "分类",
-};
+export function generateMetadata(): Promise<Metadata> {
+  return publicMetadata({
+    title: "分类",
+    description: "按分类浏览文章。",
+    path: "/categories",
+  });
+}
 
 export default async function CategoriesPage() {
   const categories = await listCategories();

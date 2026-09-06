@@ -8,7 +8,7 @@ import {
 
 const secret = "test-secret-that-is-at-least-32-characters-long";
 
-test("post unlock token binds slug and expiry", () => {
+test("post unlock token binds publicId and expiry", () => {
   const token = createPostUnlockToken("locked-garden", 2_000, secret);
   assert.equal(
     verifyPostUnlockToken(token, "locked-garden", 1_000, secret),

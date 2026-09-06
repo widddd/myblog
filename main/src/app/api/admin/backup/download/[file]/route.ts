@@ -3,8 +3,8 @@ import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 
 import { requireAdmin } from "@/lib/auth/guard";
-import { getBackupFilePath } from "@/lib/backup/backup";
-import { isBackupFileName } from "@/lib/backup/filename";
+import { ensureLocalBackup } from "@/lib/backup/backup";
+import { isManagedBackupFileName } from "@/lib/backup/filename";
 import {
   AdminHttpError,
   handleAdminError,
@@ -21,11 +21,11 @@ export async function GET(_request: Request, context: RouteContext) {
     await requireAdmin();
     const { file } = await context.params;
     const name = decodeURIComponent(file);
-    if (!isBackupFileName(name)) {
+    if (!isManagedBackupFileName(name)) {
       throw new AdminHttpError("VALIDATION_ERROR", "备份文件名不合法", 400);
     }
 
-    const filePath = getBackupFilePath(name);
+    const filePath = await ensureLocalBackup(name);
     let metadata;
     try {
       metadata = await stat(filePath);

@@ -1,16 +1,78 @@
 "use client";
 
-import { useEffect } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useState, type SyntheticEvent } from "react";
 
 import { ScrollDown } from "@/components/home/ScrollDown";
 import type { HomeBanner as HomeBannerModel } from "@/lib/banner/resolve";
+import {
+  cancelHomeLoad,
+  finishHomeLoad,
+  setHomeLoadPercent,
+  startHomeLoad,
+} from "@/lib/client/transfer-hud";
+import { cn } from "@/lib/utils/cn";
 
 type HomeBannerProps = {
   siteName: string;
   banner: HomeBannerModel;
+  subtitle?: string;
+  height?: "full" | "large" | "medium";
+  trackLoad?: boolean;
 };
 
-export function HomeBanner({ siteName, banner }: HomeBannerProps) {
+export function HomeBanner({
+  siteName,
+  banner,
+  subtitle,
+  height = "full",
+  trackLoad = true,
+}: HomeBannerProps) {
+  const [readySrc, setReadySrc] = useState<string | null>(null);
+  const imageReady = readySrc === banner.src;
+
+  const onImageLoad = useCallback(
+    async (event: SyntheticEvent<HTMLImageElement>) => {
+      const img = event.currentTarget;
+      try {
+        if (typeof img.decode === "function") {
+          await img.decode();
+        }
+      } catch {
+        // decode() can reject if the node is gone; still reveal if pixels exist
+      }
+      if (img.naturalWidth > 0) {
+        setReadySrc(banner.src);
+      }
+    },
+    [banner.src],
+  );
+
+  useEffect(() => {
+    if (!trackLoad) {
+      return;
+    }
+    if (imageReady) {
+      finishHomeLoad();
+      return;
+    }
+    startHomeLoad();
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      const elapsed = Date.now() - started;
+      const percent = Math.min(90, Math.round(8 + 82 * (1 - Math.exp(-elapsed / 1600))));
+      setHomeLoadPercent(percent);
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [banner.src, imageReady, trackLoad]);
+
+  useEffect(() => {
+    if (!trackLoad) {
+      return;
+    }
+    return () => cancelHomeLoad();
+  }, [banner.src, trackLoad]);
+
   useEffect(() => {
     let frame = 0;
 
@@ -51,21 +113,27 @@ export function HomeBanner({ siteName, banner }: HomeBannerProps) {
     <>
       <div aria-hidden="true" className="home-backdrop">
         <div className="home-backdrop__frame">
-          {/* Banner may be Setting/Bing/fallback; native img avoids broad remotePatterns. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="home-backdrop__img" src={banner.src} />
+          <Image
+            alt=""
+            className={cn("home-backdrop__img", imageReady && "is-ready")}
+            fill
+            onLoad={onImageLoad}
+            priority
+            sizes="100vw"
+            src={banner.src}
+          />
         </div>
         <div className="home-backdrop__veil" />
       </div>
-      <section className="home-banner">
+      <section className={cn("home-banner", `home-banner--${height}`)}>
         <div className="home-banner__mask" />
         <div className="home-banner__copy">
           <div>
             <h1>{siteName}</h1>
-            <p>记录思考，也记录生活。</p>
+            {subtitle ? <p>{subtitle}</p> : null}
           </div>
         </div>
-        <ScrollDown />
+        {height === "full" ? <ScrollDown /> : null}
       </section>
     </>
   );

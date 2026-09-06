@@ -7,6 +7,7 @@ import { PostList } from "@/components/home/PostCard";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SiteShell } from "@/components/layout/SiteShell";
 import { getTag, listPublishedPosts } from "@/lib/posts/query";
+import { publicMetadata } from "@/lib/seo/site";
 import { parsePage } from "@/lib/utils/page";
 
 type TagPageProps = {
@@ -17,7 +18,12 @@ type TagPageProps = {
 export async function generateMetadata({ params }: TagPageProps): Promise<Metadata> {
   const { slug } = await params;
   const tag = await getTag(slug);
-  return { title: tag ? `#${tag.name}` : "标签" };
+  return publicMetadata({
+    title: tag ? `#${tag.name}` : "标签",
+    description: tag ? `标签 ${tag.name} 下的文章` : "标签",
+    path: `/tags/${slug}`,
+    index: Boolean(tag),
+  });
 }
 
 export default async function TagPage({ params, searchParams }: TagPageProps) {

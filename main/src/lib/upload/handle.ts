@@ -2,15 +2,40 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 
 import type { Upload } from "@prisma/client";
-import sharp, { type Metadata } from "sharp";
+import sharp, { type OutputInfo, type Sharp } from "sharp";
 
 import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
-import { getDriver } from "@/lib/storage";
+import {
+  getDriver,
+  loadCosSettings,
+  localOriginalCandidates,
+  localUploadUrl,
+  originalMediaKey,
+  publicMediaUrl,
+  thumb2MediaKey,
+  thumbMediaKey,
+  type StorageDriverName,
+  type StorageObject,
+} from "@/lib/storage";
+import {
+  compressImageToMaxBytes,
+  ImageCompressError,
+  MAX_INPUT_PIXELS,
+  orientedDimensions,
+  readImageDimensions,
+  withSharpLock,
+} from "@/lib/upload/compress";
+import {
+  IMAGE_INTAKE_MAX_BYTES,
+  IMAGE_ORIGINAL_MAX_BYTES,
+} from "@/lib/upload/limits";
+import { logger } from "@/lib/utils/logger";
+import { parseUploadDuration } from "@/lib/uploads/locations";
+import { pruneLocalMedia } from "@/lib/uploads/quota";
 
 const MAX_FILES_PER_REQUEST = 1;
 const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
-const MAX_INPUT_PIXELS = 40_000_000;
 
 const IMAGE_TYPES: Record<string, readonly string[]> = {
   "image/avif": ["avif"],
@@ -25,7 +50,19 @@ const VIDEO_TYPES: Record<string, readonly string[]> = {
   "video/webm": ["webm"],
 };
 
-type UploadKind = "image" | "video";
+const AUDIO_TYPES: Record<string, readonly string[]> = {
+  "audio/aac": ["aac"],
+  "audio/mpeg": ["mp3"],
+  "audio/mp4": ["m4a", "mp4"],
+  "audio/x-m4a": ["m4a"],
+  "audio/ogg": ["ogg"],
+  "audio/opus": ["opus", "ogg"],
+  "audio/wav": ["wav"],
+  "audio/x-wav": ["wav"],
+  "audio/webm": ["weba", "webm"],
+};
+
+export type UploadKind = "image" | "video" | "audio";
 
 type StoredVariant = {
   key: string;
@@ -35,9 +72,11 @@ type StoredVariant = {
   size: number;
 };
 
-type StoredVariants = {
+export type StoredVariants = {
   thumb?: StoredVariant;
+  thumb2?: StoredVariant;
   content?: StoredVariant;
+  duration?: number;
 };
 
 export type UploadResult = {
@@ -48,9 +87,17 @@ export type UploadResult = {
   width: number | null;
   height: number | null;
   size: number;
+  duration: number | null;
+  createdAt: string;
   original: StoredVariant & { url: string };
   thumb: (StoredVariant & { url: string }) | null;
   content: (StoredVariant & { url: string }) | null;
+  pending: boolean;
+};
+
+type WrittenObject = {
+  driver: StorageDriverName;
+  key: string;
 };
 
 export class UploadError extends Error {
@@ -64,33 +111,9 @@ export class UploadError extends Error {
   }
 }
 
-const globalForSharp = globalThis as typeof globalThis & {
-  myblogSharpQueue?: Promise<void>;
-  myblogSharpConfigured?: boolean;
-};
+export { MAX_INPUT_PIXELS, withSharpLock } from "@/lib/upload/compress";
 
-if (!globalForSharp.myblogSharpConfigured) {
-  sharp.cache({ memory: 32, files: 0, items: 50 });
-  sharp.concurrency(1);
-  globalForSharp.myblogSharpConfigured = true;
-}
-
-async function withSharpLock<T>(task: () => Promise<T>): Promise<T> {
-  const previous = globalForSharp.myblogSharpQueue ?? Promise.resolve();
-  let release: () => void = () => {};
-  globalForSharp.myblogSharpQueue = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-
-  await previous;
-  try {
-    return await task();
-  } finally {
-    release();
-  }
-}
-
-function parseVariants(raw: string): StoredVariants {
+export function parseVariants(raw: string): StoredVariants {
   try {
     const parsed = JSON.parse(raw) as StoredVariants;
     return parsed && typeof parsed === "object" ? parsed : {};
@@ -99,16 +122,42 @@ function parseVariants(raw: string): StoredVariants {
   }
 }
 
-function withUrl(variant: StoredVariant, driverName: string) {
+function kindOfMime(mime: string): UploadKind {
+  if (mime.startsWith("video/")) {
+    return "video";
+  }
+  if (mime.startsWith("audio/")) {
+    return "audio";
+  }
+  return "image";
+}
+
+function mediaUrl(key: string, pending: boolean) {
+  return pending ? localUploadUrl(key) : publicMediaUrl(key);
+}
+
+function withPublicUrl(variant: StoredVariant, pending: boolean) {
   return {
     ...variant,
-    url: getDriver(driverName).getUrl(variant.key),
+    url: mediaUrl(variant.key, pending),
   };
 }
 
-function toUploadResult(row: Upload): UploadResult {
-  const driver = getDriver(row.driver);
+export function isUploadPending(row: Upload): boolean {
+  const kind = kindOfMime(row.mime);
   const variants = parseVariants(row.variants);
+  if (kind === "image" && !variants.thumb) {
+    return true;
+  }
+  const driver = row.driver.trim().toLowerCase();
+  return driver !== "cos" && driver !== "oss";
+}
+
+export { parseUploadDuration } from "@/lib/uploads/locations";
+
+export function toUploadResult(row: Upload): UploadResult {
+  const variants = parseVariants(row.variants);
+  const pending = isUploadPending(row);
   const original: StoredVariant = {
     key: row.key,
     mime: row.mime,
@@ -120,14 +169,17 @@ function toUploadResult(row: Upload): UploadResult {
   return {
     id: row.id,
     hash: row.hash,
-    kind: row.mime.startsWith("video/") ? "video" : "image",
+    kind: kindOfMime(row.mime),
     mime: row.mime,
     width: row.width,
     height: row.height,
     size: row.size,
-    original: { ...original, url: driver.getUrl(row.key) },
-    thumb: variants.thumb ? withUrl(variants.thumb, row.driver) : null,
-    content: variants.content ? withUrl(variants.content, row.driver) : null,
+    duration: parseUploadDuration(variants.duration),
+    createdAt: row.createdAt.toISOString(),
+    original: { ...original, url: mediaUrl(row.key, pending) },
+    thumb: variants.thumb ? withPublicUrl(variants.thumb, pending) : null,
+    content: variants.content ? withPublicUrl(variants.content, pending) : null,
+    pending,
   };
 }
 
@@ -145,20 +197,36 @@ function validateDetectedType(
     ? "image"
     : VIDEO_TYPES[mime]
       ? "video"
-      : null;
+      : AUDIO_TYPES[mime]
+        ? "audio"
+        : null;
 
   if (!kind) {
-    throw new UploadError("UNSUPPORTED_MEDIA_TYPE", "只允许上传受支持的图片或视频");
+    throw new UploadError(
+      "UNSUPPORTED_MEDIA_TYPE",
+      "只允许上传受支持的图片、视频或音频",
+    );
   }
   if (requestedKind && requestedKind !== kind) {
     throw new UploadError("MEDIA_KIND_MISMATCH", "上传类型与文件内容不匹配");
   }
 
-  const allowedExtensions = kind === "image" ? IMAGE_TYPES[mime] : VIDEO_TYPES[mime];
+  const allowedExtensions =
+    kind === "image"
+      ? IMAGE_TYPES[mime]
+      : kind === "video"
+        ? VIDEO_TYPES[mime]
+        : AUDIO_TYPES[mime];
   const suppliedExtension = extensionOf(fileName);
   if (
-    !allowedExtensions.includes(detectedExtension) ||
+    !allowedExtensions.includes(detectedExtension) &&
     !allowedExtensions.includes(suppliedExtension)
+  ) {
+    throw new UploadError("FILE_EXTENSION_MISMATCH", "文件扩展名与实际内容不匹配");
+  }
+  if (
+    !allowedExtensions.includes(detectedExtension) ||
+    (suppliedExtension && !allowedExtensions.includes(suppliedExtension))
   ) {
     throw new UploadError("FILE_EXTENSION_MISMATCH", "文件扩展名与实际内容不匹配");
   }
@@ -166,15 +234,40 @@ function validateDetectedType(
   return kind;
 }
 
-function orientedDimensions(metadata: Metadata) {
-  const swap = metadata.orientation ? metadata.orientation >= 5 : false;
-  return {
-    width: swap ? (metadata.height ?? null) : (metadata.width ?? null),
-    height: swap ? (metadata.width ?? null) : (metadata.height ?? null),
-  };
+export async function readThumbMaxPx(): Promise<number> {
+  const configured = await getSetting<number>("thumbMaxPx");
+  if (!configured || !Number.isFinite(configured)) {
+    return 480;
+  }
+  return Math.min(1280, Math.max(128, Math.round(configured)));
 }
 
-async function processImage(hash: string, extension: string, buffer: Buffer) {
+export async function readThumb2MaxPx(): Promise<number> {
+  const configured = await getSetting<number>("thumb2MaxPx");
+  if (!configured || !Number.isFinite(configured)) {
+    return 320;
+  }
+  return Math.min(640, Math.max(128, Math.round(configured)));
+}
+
+function resizeWebp(
+  input: Sharp,
+  maxPx: number,
+): Promise<{ data: Buffer; info: OutputInfo }> {
+  return input
+    .clone()
+    .rotate()
+    .resize({
+      width: maxPx,
+      height: maxPx,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .webp({ quality: 78 })
+    .toBuffer({ resolveWithObject: true });
+}
+
+export async function makeThumbBuffer(buffer: Buffer, maxPx: number) {
   return withSharpLock(async () => {
     const input = sharp(buffer, {
       animated: false,
@@ -185,89 +278,93 @@ async function processImage(hash: string, extension: string, buffer: Buffer) {
     if (!metadata.width || !metadata.height) {
       throw new UploadError("INVALID_IMAGE", "无法读取图片尺寸");
     }
-
-    const dimensions = orientedDimensions(metadata);
-    const thumb = await input
-      .clone()
-      .rotate()
-      .resize({ width: 480, withoutEnlargement: true })
-      .webp({ quality: 78 })
-      .toBuffer({ resolveWithObject: true });
-    const content = await input
-      .clone()
-      .rotate()
-      .resize({
-        width: 1600,
-        height: 1600,
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .webp({ quality: 84 })
-      .toBuffer({ resolveWithObject: true });
-
-    const originalKey = `images/${hash}-original.${extension}`;
-    const thumbKey = `images/${hash}-thumb.webp`;
-    const contentKey = `images/${hash}-content.webp`;
-    const driver = getDriver("local");
-
-    await Promise.all([
-      driver.put(originalKey, buffer),
-      driver.put(thumbKey, thumb.data),
-      driver.put(contentKey, content.data),
-    ]);
-
+    const thumb = await resizeWebp(input, maxPx);
     return {
-      originalKey,
-      dimensions,
-      variants: {
-        thumb: {
-          key: thumbKey,
-          mime: "image/webp",
-          width: thumb.info.width,
-          height: thumb.info.height,
-          size: thumb.info.size,
-        },
-        content: {
-          key: contentKey,
-          mime: "image/webp",
-          width: content.info.width,
-          height: content.info.height,
-          size: content.info.size,
-        },
-      } satisfies StoredVariants,
-      writtenKeys: [originalKey, thumbKey, contentKey],
+      dimensions: orientedDimensions(metadata),
+      thumb,
     };
   });
 }
 
-async function processVideo(hash: string, extension: string, buffer: Buffer) {
-  const originalKey = `videos/${hash}-original.${extension}`;
-  await getDriver("local").put(originalKey, buffer);
+export async function makeImageThumbs(
+  buffer: Buffer,
+  maxPx: number,
+  max2Px: number,
+) {
+  return withSharpLock(async () => {
+    const input = sharp(buffer, {
+      animated: false,
+      failOn: "error",
+      limitInputPixels: MAX_INPUT_PIXELS,
+    });
+    const metadata = await input.metadata();
+    if (!metadata.width || !metadata.height) {
+      throw new UploadError("INVALID_IMAGE", "无法读取图片尺寸");
+    }
+    const [thumb, thumb2] = await Promise.all([
+      resizeWebp(input, maxPx),
+      resizeWebp(input, max2Px),
+    ]);
+    return {
+      dimensions: orientedDimensions(metadata),
+      thumb,
+      thumb2,
+    };
+  });
+}
+
+async function ingestLocal(
+  hash: string,
+  mime: string,
+  extension: string,
+  buffer: Buffer,
+  kind: UploadKind,
+) {
+  const originalKey = originalMediaKey(hash, mime, extension);
+  const written = [{ driver: "local" as const, key: originalKey }] satisfies WrittenObject[];
+  try {
+    await getDriver("local").put(originalKey, buffer);
+  } catch (error) {
+    await getDriver("local").delete(originalKey).catch(() => undefined);
+    throw error;
+  }
+
+  const dimensions =
+    kind === "image"
+      ? await readImageDimensions(buffer, mime)
+      : { width: null, height: null };
+
   return {
     originalKey,
-    dimensions: { width: null, height: null },
+    driver: "local" as const,
+    dimensions,
     variants: {} satisfies StoredVariants,
-    writtenKeys: [originalKey],
+    written,
   };
 }
 
+function looksLikeImage(file: File) {
+  if (file.type.startsWith("image/")) {
+    return true;
+  }
+  return /\.(avif|gif|jpe?g|png|webp)$/i.test(file.name);
+}
+
 export async function handleUpload(request: Request): Promise<UploadResult> {
+  await loadCosSettings();
   const configuredMax = await getSetting<number>("uploadMaxSizeMB");
   const maxSizeMB =
     configuredMax && Number.isFinite(configuredMax) && configuredMax > 0
-      ? Math.min(configuredMax, 100)
+      ? Math.min(configuredMax, 50)
       : 10;
   const maxBytes = Math.floor(maxSizeMB * 1024 * 1024);
+  const imageStoredMax = Math.min(maxBytes, IMAGE_ORIGINAL_MAX_BYTES);
   const contentLength = Number(request.headers.get("content-length") ?? 0);
   if (
     Number.isFinite(contentLength) &&
-    contentLength > maxBytes + MULTIPART_OVERHEAD_BYTES
+    contentLength > IMAGE_INTAKE_MAX_BYTES + MULTIPART_OVERHEAD_BYTES
   ) {
-    throw new UploadError(
-      "FILE_TOO_LARGE",
-      `文件不能超过 ${maxSizeMB} MB`,
-      413,
-    );
+    throw new UploadError("FILE_TOO_LARGE", "文件不能超过 50 MB", 413);
   }
 
   let formData: FormData;
@@ -285,15 +382,18 @@ export async function handleUpload(request: Request): Promise<UploadResult> {
   }
 
   const file = files[0];
-  if (file.size < 1 || file.size > maxBytes) {
+  const intakeLimit = looksLikeImage(file) ? IMAGE_INTAKE_MAX_BYTES : maxBytes;
+  if (file.size < 1 || file.size > intakeLimit) {
     throw new UploadError(
       "FILE_TOO_LARGE",
-      `文件不能超过 ${maxSizeMB} MB`,
-      file.size > maxBytes ? 413 : 400,
+      looksLikeImage(file)
+        ? "图片不能超过 50 MB"
+        : `文件不能超过 ${maxSizeMB} MB`,
+      file.size > intakeLimit ? 413 : 400,
     );
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  let buffer = Buffer.from(await file.arrayBuffer());
   const { fileTypeFromBuffer } = await import("file-type");
   const detected = await fileTypeFromBuffer(buffer);
   if (!detected) {
@@ -311,40 +411,188 @@ export async function handleUpload(request: Request): Promise<UploadResult> {
     file.name,
     requestedKind,
   );
+  if (kind !== "image" && buffer.length > maxBytes) {
+    throw new UploadError(
+      "FILE_TOO_LARGE",
+      `文件不能超过 ${maxSizeMB} MB`,
+      413,
+    );
+  }
+  if (kind === "image" && buffer.length > imageStoredMax) {
+    try {
+      const compressed = await compressImageToMaxBytes(
+        buffer,
+        detected.mime,
+        imageStoredMax,
+      );
+      buffer = compressed.buffer;
+    } catch (error) {
+      if (error instanceof ImageCompressError) {
+        throw new UploadError("FILE_TOO_LARGE", error.message, 413);
+      }
+      throw error;
+    }
+  }
+
   const hash = createHash("sha256").update(buffer).digest("hex");
+  const duration =
+    kind === "audio" ? parseUploadDuration(formData.get("duration")) : null;
 
   const existing = await prisma.upload.findUnique({ where: { hash } });
   if (existing) {
-    return toUploadResult(existing);
+    if (kind === "image" && !isUploadPending(existing)) {
+      await ensureLocalThumb2(existing, buffer).catch((error) => {
+        logger.warn("补写二级缩略图失败", {
+          hash,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+    if (duration) {
+      const variants = parseVariants(existing.variants);
+      if (parseUploadDuration(variants.duration) == null) {
+        await prisma.upload.update({
+          where: { id: existing.id },
+          data: { variants: JSON.stringify({ ...variants, duration }) },
+        });
+      }
+    }
+    const latest = await prisma.upload.findUnique({ where: { hash } });
+    return toUploadResult(latest ?? existing);
   }
 
-  const processed =
-    kind === "image"
-      ? await processImage(hash, detected.ext, buffer)
-      : await processVideo(hash, detected.ext, buffer);
+  const processed = await ingestLocal(
+    hash,
+    detected.mime,
+    detected.ext,
+    buffer,
+    kind,
+  );
+  const variants = duration
+    ? { ...processed.variants, duration }
+    : processed.variants;
 
   try {
     const row = await prisma.upload.upsert({
       where: { hash },
       create: {
         hash,
-        driver: "local",
+        driver: processed.driver,
         key: processed.originalKey,
         mime: detected.mime,
         width: processed.dimensions.width,
         height: processed.dimensions.height,
-        size: file.size,
-        variants: JSON.stringify(processed.variants),
+        size: buffer.length,
+        variants: JSON.stringify(variants),
       },
       update: {},
+    });
+    await pruneLocalMedia().catch((error) => {
+      logger.warn("上传后清理本地媒体缓存失败", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
     return toUploadResult(row);
   } catch (error) {
     await Promise.all(
-      processed.writtenKeys.map((key) =>
-        getDriver("local").delete(key).catch(() => undefined),
+      processed.written.map((item) =>
+        getDriver(item.driver).delete(item.key).catch(() => undefined),
       ),
     );
     throw error;
   }
+}
+
+async function bufferFromObject(object: StorageObject): Promise<Buffer> {
+  const chunks: Uint8Array[] = [];
+  const reader = object.body.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (value) {
+      chunks.push(value);
+    }
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function readOriginalBuffer(row: Upload): Promise<Buffer> {
+  const local = getDriver("local");
+  const variants = parseVariants(row.variants);
+  const localKeys = [
+    ...localOriginalCandidates(row),
+    variants.content?.key ?? "",
+  ].filter(Boolean);
+  const seen = new Set<string>();
+  for (const key of localKeys) {
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    if (await local.stat(key)) {
+      return bufferFromObject(await local.get(key));
+    }
+  }
+
+  await loadCosSettings();
+  const cos = getDriver("cos");
+  const remoteKeys = [row.key, ...localOriginalCandidates(row)];
+  for (const key of remoteKeys) {
+    if (seen.has(`cos:${key}`)) {
+      continue;
+    }
+    seen.add(`cos:${key}`);
+    try {
+      if (await cos.stat(key)) {
+        return bufferFromObject(await cos.get(key));
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+
+  throw new Error("找不到原图");
+}
+
+function variantFromThumb(
+  key: string,
+  thumb: { info: { width: number; height: number; size: number } },
+) {
+  return {
+    key,
+    mime: "image/webp",
+    width: thumb.info.width,
+    height: thumb.info.height,
+    size: thumb.info.size,
+  };
+}
+
+/** Write a missing local-only secondary thumb. Does not touch COS. */
+export async function ensureLocalThumb2(row: Upload, buffer?: Buffer) {
+  const key = thumb2MediaKey(row.hash);
+  const local = getDriver("local");
+  if (await local.stat(key)) {
+    const variants = parseVariants(row.variants);
+    if (variants.thumb2?.key === key) {
+      return;
+    }
+  }
+
+  const source = buffer ?? (await readOriginalBuffer(row));
+  const maxPx = await readThumb2MaxPx();
+  const { thumb } = await makeThumbBuffer(source, maxPx);
+  await local.delete(key).catch(() => undefined);
+  await local.put(key, thumb.data);
+  const variants = parseVariants(row.variants);
+  await prisma.upload.update({
+    where: { id: row.id },
+    data: {
+      variants: JSON.stringify({
+        ...variants,
+        thumb2: variantFromThumb(key, thumb),
+      }),
+    },
+  });
 }

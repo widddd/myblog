@@ -1,3 +1,6 @@
+"use client";
+
+import Image from "next/image";
 import type { CSSProperties } from "react";
 
 type CoverMediaProps = {
@@ -10,9 +13,12 @@ export function CoverMedia({ src, title, alt }: CoverMediaProps) {
   if (src) {
     return (
       <div className="cover-media">
-        {/* Cover URLs may be local StorageDriver or remote OSS; keep native img until the host policy is fixed. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt={alt ?? title} src={src} />
+        <Image
+          alt={alt ?? title}
+          fill
+          sizes="(max-width: 768px) 100vw, 720px"
+          src={src}
+        />
       </div>
     );
   }

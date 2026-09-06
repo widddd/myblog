@@ -32,7 +32,7 @@ export default async function AdminCommentsPage({ searchParams }: PageProps) {
   return (
     <section className="heo-card admin-panel">
       <div className="admin-panel-head">
-        <h2>评论</h2>
+        <h2>评论列表</h2>
       </div>
       <form className="admin-filter" method="get">
         <select defaultValue={params.status ?? "all"} name="status">
@@ -50,6 +50,7 @@ export default async function AdminCommentsPage({ searchParams }: PageProps) {
           筛选
         </button>
       </form>
+      <p className="admin-danger">删除评论后无法恢复，回复会一并删掉。</p>
       <AdminCommentCompose />
       {result.data.length === 0 ? (
         <p>没有符合条件的评论。</p>

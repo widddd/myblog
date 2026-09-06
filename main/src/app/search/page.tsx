@@ -4,13 +4,20 @@ import Link from "next/link";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Pagination } from "@/components/common/Pagination";
 import { SiteShell } from "@/components/layout/SiteShell";
+import { postHref } from "@/lib/posts/path";
 import { searchPosts } from "@/lib/search/service";
 import { formatPostDate } from "@/lib/utils/date";
+import { publicMetadata } from "@/lib/seo/site";
 import { parsePage } from "@/lib/utils/page";
 
-export const metadata: Metadata = {
-  title: "搜索",
-};
+export function generateMetadata(): Promise<Metadata> {
+  return publicMetadata({
+    title: "搜索",
+    description: "搜索已发布文章。密码文章只按标题匹配。",
+    path: "/search",
+    index: false,
+  });
+}
 
 export default async function SearchPage({
   searchParams,
@@ -48,8 +55,8 @@ export default async function SearchPage({
         {result.data.length > 0 ? (
           <ul className="search-results">
             {result.data.map((hit) => (
-              <li key={hit.slug}>
-                <Link href={`/posts/${hit.slug}`}>
+              <li key={hit.publicId}>
+                <Link href={postHref(hit)}>
                   <span className="search-results__title">
                     {hit.title}
                     {hit.locked ? (

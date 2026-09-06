@@ -3,10 +3,15 @@ import type { Metadata } from "next";
 import { CommentSection } from "@/components/comment/CommentSection";
 import { SiteShell } from "@/components/layout/SiteShell";
 import { listApprovedComments } from "@/lib/comments/service";
+import { publicMetadata } from "@/lib/seo/site";
 
-export const metadata: Metadata = {
-  title: "留言板",
-};
+export function generateMetadata(): Promise<Metadata> {
+  return publicMetadata({
+    title: "留言板",
+    description: "给站长留言。",
+    path: "/messages",
+  });
+}
 
 export default async function MessagesPage() {
   const comments = await listApprovedComments({

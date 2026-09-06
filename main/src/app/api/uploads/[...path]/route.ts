@@ -3,9 +3,13 @@ import { NextResponse } from "next/server";
 import {
   contentTypeFromStorageKey,
   getDriver,
+  CosNotConfiguredError,
   InvalidStorageKeyError,
   InvalidStorageRangeError,
   isImmutableStorageKey,
+  isThumb2Key,
+  loadCosSettings,
+  normalizeDriverName,
   normalizeStorageKey,
   StorageObjectNotFoundError,
   type StorageByteRange,
@@ -54,13 +58,37 @@ function parseRange(value: string | null, size: number): StorageByteRange | unde
   return { start, end: Math.min(requestedEnd, size - 1) };
 }
 
+function cosPublicUrl(key: string): string | null {
+  try {
+    return getDriver("cos").getUrl(key);
+  } catch {
+    return null;
+  }
+}
+
 async function resolveStoredObject(key: string) {
-  const originalAlias = /^images\/([a-f0-9]{64})-original$/.exec(key);
+  if (key.startsWith("media/")) {
+    const redirectUrl = cosPublicUrl(key);
+    if (!redirectUrl) {
+      throw new CosNotConfiguredError();
+    }
+    return {
+      driver: getDriver("cos"),
+      key,
+      mime: contentTypeFromStorageKey(key),
+      redirectUrl,
+    };
+  }
+
+  const originalAlias = /^images\/([a-f0-9]{64})-original(?:\.[a-z0-9]+)?$/.exec(
+    key,
+  );
   if (!originalAlias) {
     return {
       driver: getDriver("local"),
       key,
       mime: contentTypeFromStorageKey(key),
+      redirectUrl: null,
     };
   }
 
@@ -75,6 +103,10 @@ async function resolveStoredObject(key: string) {
     driver: getDriver(upload.driver),
     key: upload.key,
     mime: upload.mime,
+    redirectUrl:
+      normalizeDriverName(upload.driver) === "cos"
+        ? cosPublicUrl(upload.key)
+        : null,
   };
 }
 
@@ -86,14 +118,33 @@ async function serve(
   try {
     const { path: segments } = await context.params;
     const requestedKey = normalizeStorageKey(segments.join("/"));
+    const proxy = new URL(request.url).searchParams.get("proxy") === "1";
+    await loadCosSettings();
     const stored = await resolveStoredObject(requestedKey);
-    const metadata = await stored.driver.stat(stored.key);
+    if (stored.redirectUrl && !proxy) {
+      return Response.redirect(stored.redirectUrl, 302);
+    }
+    let driver = stored.driver;
+    let metadata = await driver.stat(stored.key);
+    if (!metadata && !isThumb2Key(stored.key)) {
+      const fallbackName = driver.name === "local" ? "cos" : "local";
+      try {
+        const fallback = getDriver(fallbackName);
+        const alt = await fallback.stat(stored.key);
+        if (alt) {
+          driver = fallback;
+          metadata = alt;
+        }
+      } catch {
+        // keep the original miss
+      }
+    }
     if (!metadata) {
       throw new StorageObjectNotFoundError();
     }
 
     const range = parseRange(request.headers.get("range"), metadata.size);
-    const object = headOnly ? null : await stored.driver.get(stored.key, range);
+    const object = headOnly ? null : await driver.get(stored.key, range);
     const contentLength = range
       ? range.end - range.start + 1
       : metadata.size;
@@ -119,6 +170,9 @@ async function serve(
       headers,
     });
   } catch (caught) {
+    if (caught instanceof CosNotConfiguredError) {
+      return error(503, "COS_NOT_CONFIGURED", caught.message);
+    }
     if (caught instanceof InvalidStorageKeyError) {
       return error(400, "INVALID_STORAGE_PATH", caught.message);
     }

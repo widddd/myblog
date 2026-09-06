@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { UnauthorizedError } from "@/lib/auth/guard";
+import {
+  CredentialsChangeRequiredError,
+  UnauthorizedError,
+} from "@/lib/auth/guard";
+import { BackupError } from "@/lib/backup/errors";
 import { logger } from "@/lib/utils/logger";
+import { UpdateError } from "@/lib/update/errors";
 
 export class AdminHttpError extends Error {
   constructor(
@@ -44,7 +49,16 @@ export function handleAdminError(error: unknown, fallbackMessage: string) {
   if (error instanceof UnauthorizedError) {
     return jsonError("UNAUTHORIZED", error.message, 401);
   }
+  if (error instanceof CredentialsChangeRequiredError) {
+    return jsonError(error.code, error.message, error.status);
+  }
   if (error instanceof AdminHttpError) {
+    return jsonError(error.code, error.message, error.status);
+  }
+  if (error instanceof BackupError) {
+    return jsonError(error.code, error.message, error.status);
+  }
+  if (error instanceof UpdateError) {
     return jsonError(error.code, error.message, error.status);
   }
 

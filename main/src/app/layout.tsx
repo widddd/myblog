@@ -1,43 +1,60 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { Footer } from "@/components/layout/Footer";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { AppChrome } from "@/components/layout/AppChrome";
+import { ThemeInit } from "@/components/layout/ThemeInit";
+import { hasAdminUser } from "@/lib/auth/initial-setup";
 import { getPublicSettings } from "@/lib/settings";
+import { getSiteOrigin } from "@/lib/seo/site";
 
 import "./globals.css";
 
-const themeScript = `
-(() => {
-  try {
-    const stored = localStorage.getItem("myblog-theme");
-    const theme = stored === "light" || stored === "dark"
-      ? stored
-      : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-  } catch {}
-})();
-`;
-
 export async function generateMetadata(): Promise<Metadata> {
-  const { siteName } = await getPublicSettings();
+  const [{ siteName }, origin] = await Promise.all([
+    getPublicSettings(),
+    getSiteOrigin(),
+  ]);
+  const description = "记录思考，也记录生活。";
   return {
+    metadataBase: new URL(origin),
     title: {
       default: siteName,
       template: `%s · ${siteName}`,
     },
-    description: "记录思考，也记录生活。",
+    description,
+    alternates: {
+      canonical: origin,
+      types: {
+        "application/rss+xml": "/rss.xml",
+      },
+    },
+    openGraph: {
+      title: siteName,
+      description,
+      url: origin,
+      siteName,
+      locale: "zh_CN",
+      type: "website",
+    },
+    robots: { index: true, follow: true },
   };
 }
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const pathname = (await headers()).get("x-myblog-pathname") ?? "";
+  const onSetup =
+    pathname === "/admin/setup" || pathname.startsWith("/admin/setup/");
+  if (!onSetup && !(await hasAdminUser())) {
+    redirect("/admin/setup");
+  }
+
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
       <body>
+        <ThemeInit />
         <AppChrome />
         <SiteHeader />
         {children}

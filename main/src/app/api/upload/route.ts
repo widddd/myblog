@@ -5,6 +5,7 @@ import { handleUpload, UploadError } from "@/lib/upload/handle";
 import { logger } from "@/lib/utils/logger";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   try {

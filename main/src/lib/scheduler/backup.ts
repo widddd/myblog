@@ -1,4 +1,6 @@
 import { isBackupRunning, runBackup } from "@/lib/backup/backup";
+import { hostSecretExists } from "@/lib/backup/host-secret";
+import { resolveBackupEncrypt } from "@/lib/backup/encrypt-policy";
 import { getSetting } from "@/lib/settings";
 import { logger } from "@/lib/utils/logger";
 
@@ -10,6 +12,12 @@ export async function checkBackupDue(): Promise<void> {
   }
   if (isBackupRunning()) {
     logger.info("跳过周期备份：已有任务在进行");
+    return;
+  }
+
+  const policy = await resolveBackupEncrypt();
+  if (policy.enabled && !(await hostSecretExists())) {
+    logger.warn("跳过周期备份：已打开加密但未设定备份口令");
     return;
   }
 

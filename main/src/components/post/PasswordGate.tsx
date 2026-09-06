@@ -9,7 +9,13 @@ type ApiError = {
   message?: string;
 };
 
-export function PasswordGate({ slug, title }: { slug: string; title: string }) {
+export function PasswordGate({
+  publicId,
+  title,
+}: {
+  publicId: string;
+  title: string;
+}) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -25,7 +31,7 @@ export function PasswordGate({ slug, title }: { slug: string; title: string }) {
     try {
       const csrfToken = await fetchCsrfToken();
       const response = await fetch(
-        `/api/posts/${encodeURIComponent(slug)}/unlock`,
+        `/api/posts/${encodeURIComponent(publicId)}/unlock`,
         {
           method: "POST",
           headers: {

@@ -4,12 +4,18 @@ import Link from "next/link";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SiteShell } from "@/components/layout/SiteShell";
+import { postHref } from "@/lib/posts/path";
 import { listArchivePosts } from "@/lib/posts/query";
+import { publicMetadata } from "@/lib/seo/site";
 import { formatArchiveMonth, formatPostDate } from "@/lib/utils/date";
 
-export const metadata: Metadata = {
-  title: "归档",
-};
+export function generateMetadata(): Promise<Metadata> {
+  return publicMetadata({
+    title: "归档",
+    description: "按月份浏览已发布文章。",
+    path: "/archives",
+  });
+}
 
 export default async function ArchivesPage() {
   const posts = await listArchivePosts();
@@ -37,8 +43,8 @@ export default async function ArchivesPage() {
             </h2>
             <ul>
               {items.map((post) => (
-                <li key={post.slug}>
-                  <Link href={`/posts/${post.slug}`}>
+                <li key={post.publicId}>
+                  <Link href={postHref(post)}>
                     {post.locked ? `🔒 ${post.title}` : post.title}
                   </Link>
                   <time>{formatPostDate(post.publishedAt)}</time>

@@ -6,6 +6,7 @@ export type AdminTaxonomy = {
 
 export type AdminPostView = {
   id: number;
+  publicId: string;
   slug: string;
   title: string;
   content: string;

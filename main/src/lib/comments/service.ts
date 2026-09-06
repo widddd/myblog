@@ -2,7 +2,9 @@ import { revalidatePath } from "next/cache";
 
 import { AdminHttpError } from "@/lib/admin/http";
 import { prisma } from "@/lib/db";
+import { postHref } from "@/lib/posts/path";
 import { publishedWhere } from "@/lib/posts/query";
+import { isPostUnlocked } from "@/lib/posts/unlock";
 import { parsePage, parsePageSize } from "@/lib/utils/page";
 import {
   type AdminCommentView,
@@ -47,7 +49,7 @@ async function assertTargetExists(
   if (targetType === "post") {
     const post = await prisma.post.findFirst({
       where: { id: targetId, ...publishedWhere() },
-      select: { id: true },
+      select: { id: true, slug: true, publicId: true, passwordHash: true },
     });
     if (!post) {
       throw new AdminHttpError("NOT_FOUND", "文章不存在或未发布", 404);
@@ -103,6 +105,20 @@ async function assertParent(
   return parent;
 }
 
+async function canReadPostComments(postId: number): Promise<boolean> {
+  const post = await prisma.post.findFirst({
+    where: { id: postId, ...publishedWhere() },
+    select: { publicId: true, passwordHash: true },
+  });
+  if (!post) {
+    return false;
+  }
+  if (post.passwordHash && !(await isPostUnlocked(post.publicId))) {
+    return false;
+  }
+  return true;
+}
+
 async function revalidateCommentTarget(
   targetType: CommentTargetType,
   targetId: number,
@@ -117,10 +133,11 @@ async function revalidateCommentTarget(
   }
   const post = await prisma.post.findUnique({
     where: { id: targetId },
-    select: { slug: true },
+    select: { slug: true, publicId: true },
   });
   if (post) {
     revalidatePath(`/posts/${post.slug}`);
+    revalidatePath(postHref(post));
   }
 }
 
@@ -137,6 +154,14 @@ export async function listApprovedComments(options: {
 }> {
   const page = parsePage(String(options.page ?? 1));
   const pageSize = parsePageSize(String(options.pageSize ?? 50), 50, 50);
+
+  if (
+    options.targetType === "post" &&
+    !(await canReadPostComments(options.targetId))
+  ) {
+    return { data: [], total: 0, page, pageSize };
+  }
+
   const where = {
     targetType: options.targetType,
     targetId: options.targetId,
@@ -195,6 +220,12 @@ export async function submitGuestComment(
   ip: string,
 ): Promise<{ ok: true; pending: true }> {
   await assertTargetExists(input.targetType, input.targetId);
+  if (
+    input.targetType === "post" &&
+    !(await canReadPostComments(input.targetId))
+  ) {
+    throw new AdminHttpError("LOCKED", "请先解锁文章后再发表评论", 401);
+  }
   await assertParent(input.parentId, input.targetType, input.targetId);
 
   await prisma.comment.create({

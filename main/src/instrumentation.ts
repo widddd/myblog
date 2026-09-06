@@ -9,11 +9,30 @@ export async function register(): Promise<void> {
 
   if (!globalForInstrumentation.myblogInstrumentationPromise) {
     globalForInstrumentation.myblogInstrumentationPromise = (async () => {
-      const [{ initializeApplication }, { registerScheduler }, { logger }] =
+      const { logger } = await import("@/lib/utils/logger");
+      const { applyPendingRestore } = await import("@/lib/backup/restore");
+
+      try {
+        const { purgeExpiredPlainBackups } = await import("@/lib/backup/plain");
+        await purgeExpiredPlainBackups();
+      } catch (error) {
+        logger.warn("清理过期非加密备份失败", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      try {
+        await applyPendingRestore();
+      } catch (error) {
+        logger.error("预约恢复失败", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      const [{ initializeApplication }, { registerScheduler }] =
         await Promise.all([
           import("@/lib/bootstrap"),
           import("@/lib/scheduler"),
-          import("@/lib/utils/logger"),
         ]);
 
       try {

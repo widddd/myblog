@@ -19,8 +19,8 @@ function sessionSecret(): string {
   return secret;
 }
 
-function cookieName(slug: string): string {
-  const digest = createHash("sha256").update(slug).digest("hex").slice(0, 24);
+function cookieName(publicId: string): string {
+  const digest = createHash("sha256").update(publicId).digest("hex").slice(0, 24);
   return `${COOKIE_PREFIX}${digest}`;
 }
 
@@ -40,12 +40,12 @@ function safeEqual(left: string, right: string): boolean {
 }
 
 export function createPostUnlockToken(
-  slug: string,
+  publicId: string,
   expiresAtSeconds: number,
   secret = sessionSecret(),
 ): string {
   const encoded = Buffer.from(
-    JSON.stringify({ slug, exp: expiresAtSeconds }),
+    JSON.stringify({ publicId, exp: expiresAtSeconds }),
   ).toString("base64url");
   const payload = `${TOKEN_VERSION}.${encoded}`;
   return `${payload}.${signature(payload, secret)}`;
@@ -53,7 +53,7 @@ export function createPostUnlockToken(
 
 export function verifyPostUnlockToken(
   token: string,
-  slug: string,
+  publicId: string,
   nowSeconds = Math.floor(Date.now() / 1000),
   secret = sessionSecret(),
 ): boolean {
@@ -76,9 +76,15 @@ export function verifyPostUnlockToken(
   try {
     const parsed = JSON.parse(
       Buffer.from(encoded, "base64url").toString("utf8"),
-    ) as { slug?: unknown; exp?: unknown };
+    ) as { publicId?: unknown; slug?: unknown; exp?: unknown };
+    const bound =
+      typeof parsed.publicId === "string"
+        ? parsed.publicId
+        : typeof parsed.slug === "string"
+          ? parsed.slug
+          : null;
     return (
-      parsed.slug === slug &&
+      bound === publicId &&
       Number.isSafeInteger(parsed.exp) &&
       (parsed.exp as number) > nowSeconds
     );
@@ -87,10 +93,10 @@ export function verifyPostUnlockToken(
   }
 }
 
-export async function issuePostUnlockCookie(slug: string): Promise<void> {
+export async function issuePostUnlockCookie(publicId: string): Promise<void> {
   const expiresAt = Math.floor(Date.now() / 1000) + POST_UNLOCK_TTL_SECONDS;
   const cookieStore = await cookies();
-  cookieStore.set(cookieName(slug), createPostUnlockToken(slug, expiresAt), {
+  cookieStore.set(cookieName(publicId), createPostUnlockToken(publicId, expiresAt), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -99,8 +105,8 @@ export async function issuePostUnlockCookie(slug: string): Promise<void> {
   });
 }
 
-export async function isPostUnlocked(slug: string): Promise<boolean> {
+export async function isPostUnlocked(publicId: string): Promise<boolean> {
   const cookieStore = await cookies();
-  const token = cookieStore.get(cookieName(slug))?.value;
-  return token ? verifyPostUnlockToken(token, slug) : false;
+  const token = cookieStore.get(cookieName(publicId))?.value;
+  return token ? verifyPostUnlockToken(token, publicId) : false;
 }

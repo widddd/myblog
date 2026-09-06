@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 
@@ -81,6 +81,25 @@ export class LocalDriver implements StorageDriver {
     }
   }
 
+  async putFile(key: string, filePath: string): Promise<void> {
+    const destination = resolveKey(key);
+    if (await fileStat(destination)) {
+      return;
+    }
+    await mkdir(path.dirname(destination), { recursive: true });
+    const temporary = `${destination}.${randomUUID()}.tmp`;
+    await copyFile(filePath, temporary);
+    try {
+      await rename(temporary, destination);
+    } catch (error) {
+      await unlink(temporary).catch(() => undefined);
+      if (await fileStat(destination)) {
+        return;
+      }
+      throw error;
+    }
+  }
+
   async get(key: string, range?: StorageByteRange): Promise<StorageObject> {
     const filePath = resolveKey(key);
     const metadata = await fileStat(filePath);
@@ -109,6 +128,15 @@ export class LocalDriver implements StorageDriver {
     };
   }
 
+  async getToFile(key: string, destPath: string): Promise<void> {
+    const source = resolveKey(key);
+    if (!(await fileStat(source))) {
+      throw new StorageObjectNotFoundError();
+    }
+    await mkdir(path.dirname(destPath), { recursive: true });
+    await copyFile(source, destPath);
+  }
+
   getUrl(key: string): string {
     const normalized = normalizeStorageKey(key);
     const encoded = normalized.split("/").map(encodeURIComponent).join("/");
@@ -129,7 +157,7 @@ export class LocalDriver implements StorageDriver {
     return fileStat(resolveKey(key));
   }
 
-  async listKeys(): Promise<string[]> {
+  async listKeys(prefix?: string): Promise<string[]> {
     const keys: string[] = [];
 
     const walk = async (dir: string, posixPrefix: string) => {
@@ -165,7 +193,10 @@ export class LocalDriver implements StorageDriver {
     };
 
     await walk(UPLOAD_ROOT, "");
-    return keys;
+    if (!prefix) {
+      return keys;
+    }
+    return keys.filter((key) => key === prefix || key.startsWith(`${prefix}`));
   }
 
   openReadStream(key: string): Readable {

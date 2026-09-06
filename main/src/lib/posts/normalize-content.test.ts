@@ -24,6 +24,27 @@ test("normalizePostContent turns HTML video and video images into Video JSX", ()
   assert.doesNotMatch(normalized, /<video[\s>]/);
 });
 
+test("normalizePostContent turns HTML audio and audio images into Audio JSX", () => {
+  const source = [
+    '<audio src="https://bucket.cos.ap-shanghai.myqcloud.com/media/audio/a-original.mp3" controls></audio>',
+    '![clip](https://cdn.example.com/song.m4a "Demo")',
+    '<Audio src="https://cdn.example.com/keep.mp3" />',
+  ].join("\n\n");
+
+  const normalized = normalizePostContent(source);
+
+  assert.match(
+    normalized,
+    /<Audio src="https:\/\/bucket\.cos\.ap-shanghai\.myqcloud\.com\/media\/audio\/a-original\.mp3" \/>/,
+  );
+  assert.match(
+    normalized,
+    /<Audio src="https:\/\/cdn\.example\.com\/song\.m4a" title="Demo" \/>/,
+  );
+  assert.match(normalized, /<Audio src="https:\/\/cdn\.example\.com\/keep\.mp3" \/>/);
+  assert.doesNotMatch(normalized, /<audio[\s>]/);
+});
+
 test("normalizePostContent rejects unsafe video URLs", () => {
   const source = '<video src="javascript:alert(1)"></video>';
   assert.equal(normalizePostContent(source), source);

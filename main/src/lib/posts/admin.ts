@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db";
 import { slugify } from "@/lib/utils/slugify";
 import type { AdminPostView } from "@/lib/posts/admin-types";
 import { normalizePostContent } from "@/lib/posts/normalize-content";
+import { ARTICLE_SEGMENT } from "@/lib/posts/path";
+import { allocatePublicId } from "@/lib/posts/public-id";
 import type { postPatchSchema, postWriteSchema } from "@/lib/validation/post";
 import type { z } from "zod";
 
@@ -25,6 +27,7 @@ function toAdminPost(
 ) {
   return {
     id: row.id,
+    publicId: row.publicId,
     slug: row.slug,
     title: row.title,
     content: row.content,
@@ -48,10 +51,7 @@ function toAdminPost(
 
 function resolveSlug(title: string, requested?: string | null) {
   const slug = (requested?.trim() ? requested.trim() : slugify(title)).toLowerCase();
-  if (!slug) {
-    throw new AdminHttpError("VALIDATION_ERROR", "无法生成 slug", 400);
-  }
-  return slug;
+  return slug || ARTICLE_SEGMENT;
 }
 
 function parsePublishedAt(value: string | null | undefined): Date | null {
@@ -128,6 +128,7 @@ export async function listAdminPosts(options: {
     where.OR = [
       { title: { contains: options.q } },
       { slug: { contains: options.q } },
+      { publicId: { contains: options.q } },
     ];
   }
 
@@ -173,6 +174,7 @@ export async function createAdminPost(input: PostWrite) {
   const row = await prisma.post.create({
     data: {
       title: input.title,
+      publicId: await allocatePublicId(),
       slug,
       content: normalizePostContent(input.content),
       excerpt: input.excerpt ?? null,
@@ -193,14 +195,21 @@ export async function createAdminPost(input: PostWrite) {
     include: adminPostInclude,
   });
 
-  revalidatePublicContent(row.slug);
+  revalidatePublicContent({ slug: row.slug, publicId: row.publicId });
   return toAdminPost(row);
 }
 
 export async function updateAdminPost(id: number, input: PostPatch) {
   const current = await prisma.post.findUnique({
     where: { id },
-    select: { id: true, slug: true, title: true, status: true, publishedAt: true },
+    select: {
+      id: true,
+      publicId: true,
+      slug: true,
+      title: true,
+      status: true,
+      publishedAt: true,
+    },
   });
   if (!current) {
     throw new AdminHttpError("NOT_FOUND", "文章不存在", 404);
@@ -264,9 +273,9 @@ export async function updateAdminPost(id: number, input: PostPatch) {
     });
   });
 
-  revalidatePublicContent(current.slug);
+  revalidatePublicContent({ slug: current.slug, publicId: current.publicId });
   if (row.slug !== current.slug) {
-    revalidatePublicContent(row.slug);
+    revalidatePublicContent({ slug: row.slug, publicId: row.publicId });
   }
   return toAdminPost(row);
 }
@@ -274,7 +283,7 @@ export async function updateAdminPost(id: number, input: PostPatch) {
 export async function deleteAdminPost(id: number) {
   const current = await prisma.post.findUnique({
     where: { id },
-    select: { id: true, slug: true },
+    select: { id: true, slug: true, publicId: true },
   });
   if (!current) {
     throw new AdminHttpError("NOT_FOUND", "文章不存在", 404);
@@ -286,5 +295,5 @@ export async function deleteAdminPost(id: number) {
     }),
     prisma.post.delete({ where: { id } }),
   ]);
-  revalidatePublicContent(current.slug);
+  revalidatePublicContent({ slug: current.slug, publicId: current.publicId });
 }

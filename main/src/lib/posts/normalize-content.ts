@@ -1,4 +1,5 @@
 const VIDEO_URL = /\.(mp4|webm)(?:[?#].*)?$/i;
+const AUDIO_URL = /\.(mp3|m4a|aac|ogg|opus|wav|weba)(?:[?#].*)?$/i;
 
 function isSafeMediaUrl(value: string): boolean {
   if (value.startsWith("/api/uploads/")) {
@@ -37,6 +38,14 @@ function videoJsx(
   return `\n\n<Video ${parts.join(" ")} />\n\n`;
 }
 
+function audioJsx(src: string, title?: string): string {
+  const parts = [`src="${src}"`];
+  if (title) {
+    parts.push(`title="${title.replace(/"/g, "")}"`);
+  }
+  return `\n\n<Audio ${parts.join(" ")} />\n\n`;
+}
+
 /**
  * Normalize stored post markdown so the editor and renderer share one video form.
  * HTML `<video>` and markdown images that point at mp4/webm become `<Video />`.
@@ -65,6 +74,28 @@ export function normalizePostContent(source: string): string {
         return full;
       }
       return videoJsx(src, { title: title || alt });
+    },
+  );
+
+  text = text.replace(
+    /<audio\b([^>]*?)(?:\/>|>([\s\S]*?)<\/audio>)/g,
+    (full, attrs: string) => {
+      const src = readAttr(attrs, "src");
+      if (!src || !isSafeMediaUrl(src)) {
+        return full;
+      }
+      return audioJsx(src, readAttr(attrs, "title"));
+    },
+  );
+
+  text = text.replace(
+    /!\[([^\]]*)]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+    (full, alt: string, url: string, title?: string) => {
+      const src = url.trim();
+      if (!AUDIO_URL.test(src) || !isSafeMediaUrl(src)) {
+        return full;
+      }
+      return audioJsx(src, title || alt);
     },
   );
 

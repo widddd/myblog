@@ -1,9 +1,22 @@
 import { AdminHttpError } from "@/lib/admin/http";
 import { prisma } from "@/lib/db";
-import { resolvePublicImageUrl } from "@/lib/moments/media";
-import type { MomentImage, PublicMoment, PublicMomentImage } from "@/lib/moments/types";
+import { resolvePublicImageUrl, resolveThumb2Src } from "@/lib/moments/media";
+import { loadCosSettings } from "@/lib/storage";
+import { readThumb2MaxPx } from "@/lib/upload/handle";
+import type {
+  HomeMoment,
+  HomeMomentImage,
+  MomentImage,
+  PublicMoment,
+  PublicMomentImage,
+} from "@/lib/moments/types";
 
-export type { PublicMoment, PublicMomentImage } from "@/lib/moments/types";
+export type {
+  HomeMoment,
+  HomeMomentImage,
+  PublicMoment,
+  PublicMomentImage,
+} from "@/lib/moments/types";
 
 const DEFAULT_PAGE_SIZE = 12;
 
@@ -20,16 +33,17 @@ function toPublicImages(raw: string): PublicMomentImage[] {
   return parseImages(raw)
     .slice(0, 9)
     .flatMap((image) => {
-      const src =
-        resolvePublicImageUrl(image.thumb) ?? resolvePublicImageUrl(image.key);
-      if (!src) {
+      const original =
+        resolvePublicImageUrl(image.key) ?? resolvePublicImageUrl(image.thumb);
+      const thumbSrc = resolvePublicImageUrl(image.thumb) ?? original;
+      if (!original || !thumbSrc) {
         return [];
       }
       return [
         {
           ...image,
-          src,
-          thumbSrc: resolvePublicImageUrl(image.thumb) ?? src,
+          src: original,
+          thumbSrc,
         },
       ];
     });
@@ -47,6 +61,7 @@ export async function listPublicMoments(options: {
 }> {
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(50, Math.max(1, options.pageSize ?? DEFAULT_PAGE_SIZE));
+  await loadCosSettings();
 
   const [total, rows] = await Promise.all([
     prisma.moment.count(),
@@ -79,6 +94,52 @@ export async function listPublicMoments(options: {
     page,
     pageSize,
   };
+}
+
+export async function listHomeMoments(limit: number): Promise<HomeMoment[]> {
+  const pageSize = Math.min(12, Math.max(1, Math.round(limit)));
+  await loadCosSettings();
+  const maxPx = await readThumb2MaxPx();
+  const rows = await prisma.moment.findMany({
+    orderBy: { createdAt: "desc" },
+    take: pageSize,
+    select: { id: true, content: true, images: true },
+  });
+
+  return Promise.all(
+    rows.map(async (row) => ({
+      id: row.id,
+      content: row.content,
+      images: await toHomeImages(row.images, maxPx),
+    })),
+  );
+}
+
+async function toHomeImages(raw: string, maxPx: number): Promise<HomeMomentImage[]> {
+  return Promise.all(
+    parseImages(raw)
+      .slice(0, 9)
+      .flatMap((image) => {
+        const original =
+          resolvePublicImageUrl(image.key) ?? resolvePublicImageUrl(image.thumb);
+        const thumbSrc = resolvePublicImageUrl(image.thumb) ?? original;
+        if (!original || !thumbSrc) {
+          return [];
+        }
+        return [
+          {
+            ...image,
+            src: original,
+            thumbSrc,
+            thumb2Src: thumbSrc,
+          },
+        ];
+      })
+      .map(async (image) => ({
+        ...image,
+        thumb2Src: await resolveThumb2Src(image.key, image.thumbSrc, maxPx),
+      })),
+  );
 }
 
 export async function toggleMomentLike(

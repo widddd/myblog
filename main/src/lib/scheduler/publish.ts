@@ -9,7 +9,7 @@ export async function scanScheduledPosts(): Promise<number> {
       status: "scheduled",
       publishedAt: { lte: now },
     },
-    select: { id: true, slug: true },
+    select: { id: true, slug: true, publicId: true },
   });
 
   if (due.length === 0) {
@@ -24,7 +24,7 @@ export async function scanScheduledPosts(): Promise<number> {
   try {
     revalidatePublicContent();
     for (const post of due) {
-      revalidatePublicContent(post.slug);
+      revalidatePublicContent({ slug: post.slug, publicId: post.publicId });
     }
   } catch (error) {
     logger.warn("定时发布后刷新缓存失败", {

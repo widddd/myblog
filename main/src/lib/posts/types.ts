@@ -4,6 +4,7 @@ export type PostTaxonomy = {
 };
 
 export type PostCardModel = {
+  publicId: string;
   slug: string;
   title: string;
   excerpt: string | null;

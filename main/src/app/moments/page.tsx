@@ -8,11 +8,16 @@ import { MomentList } from "@/components/moment/MomentList";
 import { listApprovedComments } from "@/lib/comments/service";
 import { listPublicMoments } from "@/lib/moments/query";
 import { fingerprint, getClientIp } from "@/lib/utils/fingerprint";
+import { publicMetadata } from "@/lib/seo/site";
 import { parsePage } from "@/lib/utils/page";
 
-export const metadata: Metadata = {
-  title: "瞬间",
-};
+export function generateMetadata(): Promise<Metadata> {
+  return publicMetadata({
+    title: "瞬间",
+    description: "生活片段与九宫格照片。",
+    path: "/moments",
+  });
+}
 
 export const dynamic = "force-dynamic";
 

@@ -7,6 +7,7 @@ import { PostList } from "@/components/home/PostCard";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SiteShell } from "@/components/layout/SiteShell";
 import { getCategory, listPublishedPosts } from "@/lib/posts/query";
+import { publicMetadata } from "@/lib/seo/site";
 import { parsePage } from "@/lib/utils/page";
 
 type CategoryPageProps = {
@@ -17,7 +18,12 @@ type CategoryPageProps = {
 export async function generateMetadata({ params }: CategoryPageProps): Promise<Metadata> {
   const { slug } = await params;
   const category = await getCategory(slug);
-  return { title: category?.name ?? "分类" };
+  return publicMetadata({
+    title: category?.name ?? "分类",
+    description: category ? `${category.name} 分类下的文章` : "分类",
+    path: `/categories/${slug}`,
+    index: Boolean(category),
+  });
 }
 
 export default async function CategoryPage({ params, searchParams }: CategoryPageProps) {

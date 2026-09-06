@@ -14,7 +14,11 @@ export async function GET(request: Request) {
       url.searchParams.get("pageSize") ?? undefined,
       24,
     );
-    const result = await listAdminUploads(page, pageSize);
+    const result = await listAdminUploads(
+      page,
+      pageSize,
+      url.searchParams.get("kind"),
+    );
     return jsonPage(result.data, result.total, result.page, result.pageSize);
   } catch (error) {
     return handleAdminError(error, "读取媒体库失败");
