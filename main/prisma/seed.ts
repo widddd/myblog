@@ -30,6 +30,12 @@ type SeedPost = {
   pinned?: boolean;
   recommend?: boolean;
   password?: string;
+  /** 封面图 URL；留空且 bannerStyle=cover 时算「无封面」→ 列表走细条卡 */
+  cover?: string;
+  /** 顶 Banner 形态：cover=封面图 / solid=纯色 / gradient=混色（见 lib/posts/banner.ts） */
+  bannerStyle?: "cover" | "solid" | "gradient";
+  bannerColor?: string;
+  bannerColor2?: string;
   publishedAt: Date;
   category: (typeof CATEGORIES)[number]["slug"];
   tags: Array<(typeof TAGS)[number]["slug"]>;
@@ -141,6 +147,41 @@ cluster 多进程写同一 db 会损坏数据。备份禁止直接拷文件。
     views: 35,
   },
   {
+    slug: "gradient-cover",
+    title: "混色封面的文章",
+    excerpt: "封面位不是图，是作者在编辑器里选的混色块：列表大卡与详情 Banner 都用它。",
+    content: `# 混色封面的文章
+
+文章设置里「封面与 Banner」选「混色」时，封面位画的是色块，不是图片。
+
+这类文章**不是**「无封面」：列表里照样是带封面的大卡，只有"封面图 + 没选图"才走细条卡。
+`,
+    status: "published",
+    bannerStyle: "gradient",
+    bannerColor: "#3b82f6",
+    bannerColor2: "#8b5cf6",
+    publishedAt: daysAgo(2),
+    category: "notes",
+    tags: ["design", "heo"],
+    views: 64,
+  },
+  {
+    slug: "solid-cover",
+    title: "纯色封面的文章",
+    excerpt: "封面位是单一颜色块，用来对照「混色」与「无封面」两种卡片样式。",
+    content: `# 纯色封面的文章
+
+同一套判定：\`bannerStyle=solid\` → 卡片与 Banner 都画这个颜色。
+`,
+    status: "published",
+    bannerStyle: "solid",
+    bannerColor: "#f59e0b",
+    publishedAt: daysAgo(5),
+    category: "tech",
+    tags: ["design"],
+    views: 47,
+  },
+  {
     slug: "locked-garden",
     title: "上锁的园子",
     excerpt: "这段摘要不应出现在前台任何投影里。",
@@ -250,6 +291,10 @@ async function seedPosts() {
         title: post.title,
         excerpt: post.excerpt,
         content: post.content,
+        cover: post.cover ?? null,
+        bannerStyle: post.bannerStyle ?? "cover",
+        bannerColor: post.bannerColor ?? null,
+        bannerColor2: post.bannerColor2 ?? null,
         status: post.status,
         pinned: post.pinned ?? false,
         recommend: post.recommend ?? false,

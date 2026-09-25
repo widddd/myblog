@@ -257,7 +257,7 @@ export const BUILTIN_DEFINITIONS: readonly BuiltinDefinition[] = [
     key: "uptime",
     slug: "uptime",
     name: "运行时间",
-    hint: "首页底部居中显示站点已运行多久。开始时间在站点设置里填；空着则前台不显示。",
+    hint: "首页底部版本信息行中间显示站点已运行多久。开始时间在站点设置里填；空着则不显示。",
     defaultConfig: { heading: "本站已运行" },
     defaultPlacement: { col: 1, colSpan: 12, row: 4, rowSpan: 1, hPct: 0 },
     defaultMobilePlacement: {

@@ -122,25 +122,31 @@ export function MomentForm() {
 
   return (
     <form
-      className="admin-form"
+      className="moment-form"
       onSubmit={(event) => {
         event.preventDefault();
         void handleSubmit();
       }}
     >
-      <label className="form-field">
-        内容
+      <label className="admin-field">
+        <span className="admin-field__label">内容</span>
         <textarea
+          className="moment-form__textarea"
           onChange={(event) => setContent(event.target.value)}
+          placeholder="记录此刻的想法、心情或见闻"
           required
           rows={4}
           value={content}
         />
       </label>
-      <div className="form-field">
-        图片（最多 9 张，可多选；1 张独图，2～4 张四宫格，5～9 张九宫格，按住拖动排序）
+      <div className="admin-field">
+        <span className="admin-field__label">配图</span>
+        <p className="admin-field__hint">
+          最多 9 张，拖动可调整顺序
+        </p>
         <input
           accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+          className="moment-form__file-input"
           disabled={images.length >= 9 || Boolean(uploading)}
           multiple
           onChange={(event) => {
@@ -157,12 +163,12 @@ export function MomentForm() {
         />
       </div>
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
-      <button className="heo-button" disabled={saving || Boolean(uploading)} type="submit">
-        {saving ? "正在发布中" : "发布瞬间"}
+      <button className="admin-btn" disabled={saving || Boolean(uploading)} type="submit">
+        {saving ? "发布中..." : "发布瞬间"}
       </button>
     </form>
   );

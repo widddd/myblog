@@ -1,7 +1,7 @@
 /** App channel and public mark. UI and backup/update stamps all read from here. */
 export const APP_CHANNEL = "alpha";
-export const APP_VERSION = "0.1.0";
-export const APP_RELEASE_LABEL = "0.1.0";
+export const APP_VERSION = "0.1.1";
+export const APP_RELEASE_LABEL = "0.1.1";
 
 export type BackupReleaseInfo = {
   channel: string | null;

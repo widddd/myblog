@@ -19,14 +19,17 @@ export default async function AdminSettingsPage() {
 
   return (
     <>
-      <section className="heo-card admin-panel">
+      <section className="admin-card">
         <h2>站点</h2>
         <SettingsForm initial={settings} />
       </section>
       {account ? (
-        <section className="heo-card admin-panel">
+        <section className="admin-card">
           <h2>登录账号</h2>
-          <AccountForm currentUsername={account.username} />
+          <AccountForm
+            currentPenName={account.penName}
+            currentUsername={account.username}
+          />
         </section>
       ) : null}
     </>

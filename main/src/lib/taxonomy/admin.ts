@@ -46,3 +46,27 @@ export async function createTag(name: string, requestedSlug?: string | null) {
     throw new AdminHttpError("SLUG_TAKEN", "标签 slug 已被占用", 400);
   }
 }
+
+/**
+ * 笔名清单：像分类/标签一样可以加多个，写文章时下拉快捷选。
+ *
+ * 只存名字（作者没有独立页面，不需要 slug），也不 revalidate 公开内容 ——
+ * 新建笔名本身不改变任何前台输出，文章署名变化由文章写入路径负责刷新。
+ */
+export async function listPenNames() {
+  return prisma.penName.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+}
+
+export async function createPenName(name: string) {
+  try {
+    return await prisma.penName.create({
+      data: { name },
+      select: { id: true, name: true },
+    });
+  } catch {
+    throw new AdminHttpError("CONFLICT", "这个笔名已经有了", 400);
+  }
+}

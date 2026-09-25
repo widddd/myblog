@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Post" ADD COLUMN "revisedAt" DATETIME;
+ALTER TABLE "Post" ADD COLUMN "showRevisedAt" BOOLEAN NOT NULL DEFAULT true;

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ChatBubbleIcon } from "@radix-ui/react-icons";
 
 import { AdminCommentCompose } from "@/components/admin/AdminCommentCompose";
 import { CommentRowActions } from "@/components/admin/CommentRowActions";
@@ -13,6 +14,17 @@ export const metadata: Metadata = {
 const STATUS_LABEL: Record<string, string> = {
   pending: "待审",
   approved: "已通过",
+};
+
+/**
+ * 评论状态的语义色档：
+ * - pending → warn：demo 概览「待审评论」用的就是 badge--warn，含义同为「等人处理」
+ * - approved → ok：已通过是终态里的正常态，与文章「已发布」同档
+ * 其它值（如 rejected）不在列表筛选里出现，落到 muted 兜底，不猜颜色。
+ */
+const STATUS_TONE: Record<string, string> = {
+  pending: "warn",
+  approved: "ok",
 };
 
 type PageProps = {
@@ -30,7 +42,7 @@ export default async function AdminCommentsPage({ searchParams }: PageProps) {
   });
 
   return (
-    <section className="heo-card admin-panel">
+    <section className="admin-card">
       <div className="admin-panel-head">
         <h2>评论列表</h2>
       </div>
@@ -46,49 +58,65 @@ export default async function AdminCommentsPage({ searchParams }: PageProps) {
           <option value="moment">瞬间</option>
           <option value="board">留言板</option>
         </select>
-        <button className="heo-button" type="submit">
+        <button className="admin-btn" type="submit">
           筛选
         </button>
       </form>
       <p className="admin-danger">删除评论后无法恢复，回复会一并删掉。</p>
       <AdminCommentCompose />
       {result.data.length === 0 ? (
-        <p>没有符合条件的评论。</p>
+        <div className="admin-empty">
+          <span className="admin-empty__ico">
+            <ChatBubbleIcon width={24} height={24} />
+          </span>
+          <p>没有符合条件的评论。</p>
+        </div>
       ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>内容</th>
-              <th>对象</th>
-              <th>状态</th>
-              <th>时间</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {result.data.map((comment) => (
-              <tr key={comment.id}>
-                <td>
-                  <div>
-                    <strong>{comment.nickname}</strong>
-                    {comment.isAdmin ? " · 管理员" : ""}
-                    {comment.parentId ? " · 回复" : ""}
-                  </div>
-                  <p className="admin-comment-content">{comment.content}</p>
-                  {comment.email ? (
-                    <p className="admin-muted">{comment.email}</p>
-                  ) : null}
-                </td>
-                <td>{comment.targetLabel}</td>
-                <td>{STATUS_LABEL[comment.status] ?? comment.status}</td>
-                <td>{new Date(comment.createdAt).toLocaleString("zh-CN")}</td>
-                <td>
-                  <CommentRowActions comment={comment} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="admin-list admin-list--comments">
+          <div className="admin-list__head">
+            <span>内容</span>
+            <span>对象</span>
+            <span>状态</span>
+            <span>时间</span>
+            <span />
+          </div>
+          {result.data.map((comment, index) => (
+            <article
+              className="admin-list__row admin-stagger"
+              key={comment.id}
+              style={{ "--i": index } as React.CSSProperties}
+            >
+              <div className="admin-list__cell admin-list__cell--main" data-label="内容">
+                <div>
+                  <strong>{comment.nickname}</strong>
+                  {comment.isAdmin ? " · 管理员" : ""}
+                  {comment.parentId ? " · 回复" : ""}
+                </div>
+                <p className="admin-comment-content">{comment.content}</p>
+                {comment.email ? (
+                  <p className="admin-muted">{comment.email}</p>
+                ) : null}
+              </div>
+              <div className="admin-list__cell" data-label="对象">
+                {comment.targetLabel}
+              </div>
+              <div className="admin-list__cell" data-label="状态">
+                <span
+                  className={`admin-badge admin-badge--${STATUS_TONE[comment.status] ?? "muted"}`}
+                >
+                  <span className="admin-dot" />
+                  {STATUS_LABEL[comment.status] ?? comment.status}
+                </span>
+              </div>
+              <div className="admin-list__cell" data-label="时间">
+                {new Date(comment.createdAt).toLocaleString("zh-CN")}
+              </div>
+              <div className="admin-list__actions">
+                <CommentRowActions comment={comment} />
+              </div>
+            </article>
+          ))}
+        </div>
       )}
       {result.total > result.pageSize ? (
         <p className="admin-pager">
@@ -98,8 +126,10 @@ export default async function AdminCommentsPage({ searchParams }: PageProps) {
             >
               上一页
             </Link>
-          ) : null}{" "}
-          第 {result.page} 页 / 共 {Math.ceil(result.total / result.pageSize)} 页{" "}
+          ) : null}
+          <span className="is-current">
+            第 {result.page} 页 / 共 {Math.ceil(result.total / result.pageSize)} 页
+          </span>
           {result.page * result.pageSize < result.total ? (
             <Link
               href={`/admin/comments?page=${result.page + 1}&status=${params.status ?? "all"}&targetType=${params.targetType ?? "all"}`}

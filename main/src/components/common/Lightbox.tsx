@@ -385,6 +385,11 @@ function LightboxStage({
     }
 
     function pointFromEvent(event: PointerEvent | WheelEvent): Point {
+      // TS 不在闭包体内继承外层的 null 收窄，这里显式再守一次。
+      // surface 为 null 时事件监听器根本没绑定，实际不会走到这里。
+      if (!surface) {
+        return { x: 0, y: 0 };
+      }
       return localPoint(surface, event);
     }
 
@@ -411,7 +416,7 @@ function LightboxStage({
       }
       const point = pointFromEvent(event);
       pointersRef.current.set(event.pointerId, point);
-      surface.setPointerCapture(event.pointerId);
+      surface?.setPointerCapture(event.pointerId);
       draggedRef.current = false;
 
       if (pointersRef.current.size === 2) {
@@ -471,7 +476,7 @@ function LightboxStage({
         return;
       }
       pointersRef.current.delete(event.pointerId);
-      if (surface.hasPointerCapture(event.pointerId)) {
+      if (surface?.hasPointerCapture(event.pointerId)) {
         surface.releasePointerCapture(event.pointerId);
       }
 

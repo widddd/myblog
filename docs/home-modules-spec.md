@@ -76,7 +76,9 @@ HomeModule（模块目录）──> HomePlacement（格点）──> HomeGrid（
 | 2 | 1–6 / 7–12 | 欢迎光临 / 瞬间（推荐文章默认关闭，仍可在首页管理打开） |
 | 3 | 1–9 | 文章卡片（分类栏 + 大卡 + 分页） |
 | 3 | 10–12（堆叠） | 公告 → 站点 → 分类 → 标签 → 最近发布 |
-| 4 | 1–12（居中文案） | 运行时间（Setting `siteStartedAt` 为空则前台不显示） |
+| — | Footer 版本信息行中间 | 运行时间（Setting `siteStartedAt` 为空则不显示） |
+
+`uptime` 不占首页格点，实际由 Footer 复用同一个模块组件渲染在版本信息行中间；在首页管理中勾选或取消勾选仍控制它是否显示。
 
 ## 5. 桌面 / 手机
 
@@ -98,7 +100,7 @@ HomeModule（模块目录）──> HomePlacement（格点）──> HomeGrid（
 | `categories` | `widgets/CategoriesWidget` | 标题 |
 | `tags` | `widgets/TagsWidget` | 标题 |
 | `recent` | `widgets/RecentPostsWidget` | 标题、条数 |
-| `uptime` | `modules/UptimeModule` | 标题。开始时间走 Setting `siteStartedAt`（精确到秒）；空则前台不渲染，后台画布显示占位提示 |
+| `uptime` | `modules/UptimeModule` | 标题。开始时间走 Setting `siteStartedAt`（精确到秒）；启用时渲染在 Footer 版本信息行中间，空则不显示，后台画布显示占位提示 |
 
 侧栏五块被抽成 `components/widgets/*`，文章/分类/标签/归档页的 `Sidebar` 改为组合同一批组件，不存在两份实现。文章阅读页 `Sidebar reading` 默认只渲染目录，其余五块由 `PostSidebar` 右侧按钮展开。
 

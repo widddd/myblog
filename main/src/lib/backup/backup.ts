@@ -2,11 +2,15 @@ import { createWriteStream } from "node:fs";
 import { mkdir, rename, rm, stat, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { TarArchive } from "archiver";
 
 import { AdminHttpError } from "@/lib/admin/http";
+import {
+  hasPendingDataClear,
+  isDataClearRunning,
+} from "@/lib/admin/data-clear";
 import { BackupError } from "@/lib/backup/errors";
 import {
   BACKUP_DIR,
@@ -32,7 +36,11 @@ import {
   readBackupManifest,
   upsertBackupManifest,
 } from "@/lib/backup/manifests";
-import { requireHostSecret, toBackupMetaV2, xorHalves } from "@/lib/backup/host-secret";
+import {
+  deriveHostHalf,
+  toBackupMetaV2,
+  xorHalves,
+} from "@/lib/backup/host-secret";
 import { readPendingRestore } from "@/lib/backup/restore";
 import { deleteBackupKeyHash, listBackupKeyHashes, saveBackupKeyHash } from "@/lib/backup/secrets";
 import { getSqliteHandle } from "@/lib/db";
@@ -357,7 +365,14 @@ export type BackupRunResult = BackupRecord & {
   cosUploaded: boolean;
 };
 
-export async function runBackup(): Promise<BackupRunResult> {
+export async function runBackup(passphrase?: string): Promise<BackupRunResult> {
+  if (isDataClearRunning() || hasPendingDataClear("data")) {
+    throw new AdminHttpError(
+      "DATA_CLEAR_BUSY",
+      "数据清理确认或执行正在进行，请先取消清理后再备份",
+      409,
+    );
+  }
   if (globalForBackup.myblogBackupRunning) {
     throw new AdminHttpError("BACKUP_BUSY", "已有备份任务在进行", 409);
   }
@@ -371,8 +386,8 @@ export async function runBackup(): Promise<BackupRunResult> {
   try {
     const policy = await resolveBackupEncrypt();
     const encrypt = policy.enabled;
-    if (encrypt) {
-      await requireHostSecret();
+    if (encrypt && !passphrase) {
+      throw new AdminHttpError("VALIDATION_ERROR", "加密备份必须输入口令", 400);
     }
     await ensureBackupDir();
     await mkdir(workDir, { recursive: true });
@@ -382,15 +397,16 @@ export async function runBackup(): Promise<BackupRunResult> {
 
     const name = backupFileName();
     if (encrypt) {
-      const host = await requireHostSecret();
       const innerPath = path.join(workDir, "inner.tar.gz");
       const payloadPath = path.join(workDir, "payload.enc");
       await packArchive(innerPath, snapshotPath);
       const packageHalf = generateBackupKey();
-      const dek = xorHalves(host.hostHalf, packageHalf);
+      const metaSalt = randomBytes(16);
+      const hostHalf = await deriveHostHalf(passphrase!, metaSalt);
+      const dek = xorHalves(hostHalf, packageHalf);
       await encryptBackupFile(innerPath, payloadPath, dek);
       await packEncryptedContainer(stagingPath, payloadPath, packageHalf, {
-        ...toBackupMetaV2(host),
+        ...toBackupMetaV2({ salt: metaSalt, n: 16384, r: 8, p: 1 }),
         channel: release.channel ?? undefined,
         version: release.version,
       });

@@ -47,7 +47,7 @@ export function EditorPreview({ markdown }: EditorPreviewProps) {
   }
   if (result.error) {
     return (
-      <p className="form-error" role="alert">
+      <p className="admin-error" role="alert">
         {result.error}
       </p>
     );

@@ -10,10 +10,17 @@ next-env.d.ts
 # runtime data (db / uploads / backups)
 main/data/
 
-# env & secrets
-.env
-.env.local
-.env*.local
+# reference/ 只读参考素材：第三方主题源码（theme-hao）、旧站导出内容、私人计划笔记
+# demo/ 后台 UI 参照稿（index.html + 预览截图）：本地视觉基准
+# changelog/ 内部施工笔记（改动清单、验证证据）：写 commit / 发行说明时摘取用
+# → 三者只留在本机，不进仓库、不进远端（撤下记录与操作规矩见 docs/pitfalls.md P-092）
+reference/
+demo/
+changelog/
+
+# env & secrets (.env* covers .env.production / .env.development / .env.test at any depth)
+.env*
+!.env.example
 
 # logs & os
 *.log

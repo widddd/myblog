@@ -32,7 +32,7 @@ export function NewModuleButton() {
 
   return (
     <button
-      className="heo-button"
+      className="admin-btn"
       disabled={busy}
       onClick={() => void onClick()}
       type="button"

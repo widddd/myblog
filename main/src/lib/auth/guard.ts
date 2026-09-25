@@ -1,5 +1,7 @@
+import { findAdminAccount } from "@/lib/auth/account";
 import { hasPendingCredentialChange } from "@/lib/auth/must-change";
 import {
+  destroySession,
   getSession,
   isAuthenticatedSession,
   type AuthenticatedSession,
@@ -34,6 +36,11 @@ export async function requireAdmin(
   const session = await getSession();
 
   if (!isAuthenticatedSession(session)) {
+    throw new UnauthorizedError();
+  }
+
+  if (!(await findAdminAccount(session.adminId))) {
+    await destroySession();
     throw new UnauthorizedError();
   }
 

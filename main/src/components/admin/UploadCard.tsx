@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { AdminDialog } from "@/components/admin/AdminDialog";
+import { useAdminConfirm } from "@/components/admin/useAdminConfirm";
 import { adminJson } from "@/lib/client/admin";
 import type { AdminUploadResult } from "@/lib/client/upload";
 import { formatBytes } from "@/lib/uploads/usage-format";
@@ -25,10 +26,6 @@ type InspectPayload = {
     };
   };
 };
-
-function subscribeNoop() {
-  return () => {};
-}
 
 function roleLabel(
   role: InspectPayload["data"]["locations"][number]["role"],
@@ -105,13 +102,16 @@ function AudioFace({
   );
 }
 
-export function UploadCard({ file }: { file: AdminUploadResult }) {
+export function UploadCard({
+  file,
+  index = 0,
+}: {
+  file: AdminUploadResult;
+  index?: number;
+}) {
   const router = useRouter();
-  const titleId = useId();
-  const deleteRef = useRef<HTMLButtonElement>(null);
-  const menuBoxRef = useRef<HTMLDivElement>(null);
-  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
-  const [menu, setMenu] = useState<{ top: number; left: number } | null>(null);
+  const { confirm, dialog } = useAdminConfirm();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [inspect, setInspect] = useState<InspectPayload["data"] | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -138,16 +138,12 @@ export function UploadCard({ file }: { file: AdminUploadResult }) {
 
   async function openDeleteMenu() {
     setError("");
-    const button = deleteRef.current?.getBoundingClientRect();
-    setMenu({
-      top: (button?.bottom ?? 0) + 6,
-      left: button?.left ?? 0,
-    });
+    setMenuOpen(true);
     try {
       await loadInspect();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "读取失败");
-      setMenu(null);
+      setMenuOpen(false);
     }
   }
 
@@ -160,11 +156,11 @@ export function UploadCard({ file }: { file: AdminUploadResult }) {
     const message = warning
       ? `${warning}\n\n${action}\n仍要继续？`
       : `${action}\n确定删除？`;
-    if (!window.confirm(message) || busy) {
+    setMenuOpen(false);
+    if (!(await confirm(message)) || busy) {
       return;
     }
     setBusy(true);
-    setMenu(null);
     try {
       await adminJson(`/api/admin/uploads/${file.id}`, {
         method: "DELETE",
@@ -177,33 +173,6 @@ export function UploadCard({ file }: { file: AdminUploadResult }) {
       setBusy(false);
     }
   }
-
-  useEffect(() => {
-    if (!menu) {
-      return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setMenu(null);
-      }
-    }
-    function onPointer(event: MouseEvent) {
-      const target = event.target as Node | null;
-      if (
-        deleteRef.current?.contains(target) ||
-        menuBoxRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setMenu(null);
-    }
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onPointer);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onPointer);
-    };
-  }, [menu]);
 
   const preview =
     file.kind === "image" && (file.thumb?.url || file.original.url) ? (
@@ -219,13 +188,16 @@ export function UploadCard({ file }: { file: AdminUploadResult }) {
     );
 
   return (
-    <li className="admin-media-card">
+    <li
+      className="admin-media-card admin-stagger"
+      style={{ "--i": index } as React.CSSProperties}
+    >
       <div className="admin-media-card__preview">{preview}</div>
       <p className="admin-muted">{formatBytes(file.size)}</p>
       <p className="admin-muted">{formatDateTime(file.createdAt)}</p>
       <div className="admin-media-card__actions">
         <button
-          className="admin-link-button"
+          className="admin-btn admin-btn--link"
           disabled={busy}
           onClick={() => void openInspect()}
           type="button"
@@ -233,101 +205,78 @@ export function UploadCard({ file }: { file: AdminUploadResult }) {
           查看
         </button>
         <button
-          className="admin-link-button"
+          className="admin-btn admin-btn--link"
           disabled={busy}
           onClick={() => void openDeleteMenu()}
-          ref={deleteRef}
           type="button"
         >
           {busy ? "处理中…" : "删除"}
         </button>
       </div>
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
-      {mounted && menu
-        ? createPortal(
-            <div
-              className="admin-media-menu"
-              ref={menuBoxRef}
-              role="menu"
-              style={{ top: menu.top, left: menu.left }}
-            >
-              {inspect && referenceWarning(inspect.references) ? (
-                <p className="admin-danger admin-media-menu__warn">
-                  {referenceWarning(inspect.references)}
-                </p>
-              ) : null}
-              <button
-                onClick={() => void runDelete(false)}
-                role="menuitem"
-                type="button"
-              >
-                删除本地和云端
-              </button>
-              <button
-                onClick={() => void runDelete(true)}
-                role="menuitem"
-                type="button"
-              >
-                仅删除本地（保留 COS）
-              </button>
-            </div>,
-            document.body,
-          )
-        : null}
-      {mounted && inspectOpen && inspect
-        ? createPortal(
-            <div className="admin-media-dialog">
-              <button
-                aria-label="关闭"
-                className="admin-media-dialog__backdrop"
-                onClick={() => setInspectOpen(false)}
-                type="button"
-              />
-              <div
-                aria-labelledby={titleId}
-                aria-modal="true"
-                className="admin-media-dialog__panel is-wide"
-                role="dialog"
-              >
-                <h3 id={titleId}>存储路径</h3>
-                <p className="admin-media-dialog__lead">
-                  {formatDateTime(inspect.file.createdAt)} · {formatBytes(inspect.file.size)}
-                </p>
-                <ul className="admin-media-paths">
-                  {inspect.locations.map((location) => (
-                    <li key={`${location.place}-${location.role}-${location.key}`}>
-                      <strong>
-                        {location.place === "local" ? "本地" : "腾讯云 COS"} ·{" "}
-                        {roleLabel(location.role, inspect.file.kind)}
-                      </strong>
-                      <code>{location.key}</code>
-                      <span className="admin-media-paths__url">
-                        <a href={location.url} rel="noreferrer" target="_blank">
-                          {location.url}
-                        </a>
-                        <span>
-                          {location.size == null ? "不存在" : formatBytes(location.size)}
-                        </span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  className="admin-media-dialog__cancel"
-                  onClick={() => setInspectOpen(false)}
-                  type="button"
-                >
-                  关闭
-                </button>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      <AdminDialog
+        onClose={() => setMenuOpen(false)}
+        open={menuOpen}
+        title="删除文件"
+      >
+        {inspect && referenceWarning(inspect.references) ? (
+          <p className="admin-danger">{referenceWarning(inspect.references)}</p>
+        ) : null}
+        <div className="admin-btn-row">
+          <button
+            className="admin-btn admin-btn--danger"
+            onClick={() => void runDelete(false)}
+            type="button"
+          >
+            删除本地和云端
+          </button>
+          <button
+            className="admin-btn admin-btn--ghost"
+            onClick={() => void runDelete(true)}
+            type="button"
+          >
+            仅删除本地（保留 COS）
+          </button>
+        </div>
+      </AdminDialog>
+      <AdminDialog
+        onClose={() => setInspectOpen(false)}
+        open={inspectOpen && Boolean(inspect)}
+        title="存储路径"
+        wide
+      >
+        {inspect ? (
+          <>
+            <p className="admin-dialog__lead">
+              {formatDateTime(inspect.file.createdAt)} · {formatBytes(inspect.file.size)}
+            </p>
+            <ul className="admin-media-paths">
+              {inspect.locations.map((location) => (
+                <li key={`${location.place}-${location.role}-${location.key}`}>
+                  <strong>
+                    {location.place === "local" ? "本地" : "腾讯云 COS"} ·{" "}
+                    {roleLabel(location.role, inspect.file.kind)}
+                  </strong>
+                  <code>{location.key}</code>
+                  <span className="admin-media-paths__url">
+                    <a href={location.url} rel="noreferrer" target="_blank">
+                      {location.url}
+                    </a>
+                    <span>
+                      {location.size == null ? "不存在" : formatBytes(location.size)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </AdminDialog>
+      {dialog}
     </li>
   );
 }

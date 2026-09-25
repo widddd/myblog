@@ -42,6 +42,9 @@ export async function PUT(request: Request) {
     }
 
     for (const [key, value] of Object.entries(parsed.data)) {
+      // 可写 key 白名单集中在 validation/settings.ts 的 WRITABLE_SETTING_KEYS
+      // （含 adminAccent / dashboardCards），此处只按白名单放行，不再逐个列举；
+      // 值已在 settingsPutSchema 里归一化（配色枚举、卡片显隐补全）。
       if (!isWritableSettingKey(key) || value === undefined) {
         continue;
       }

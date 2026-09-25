@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { adminJson } from "@/lib/client/admin";
 import { guessUploadKind, uploadAdminFile } from "@/lib/client/upload";
+import { useAdminConfirm } from "@/components/admin/useAdminConfirm";
 
 type RegenResponse = {
   data: { total: number; updated: number; failed: number; thumbMaxPx: number };
@@ -41,12 +42,13 @@ export function UploadsToolbar() {
     total: number;
     percent: number;
   } | null>(null);
+  const { confirm, dialog } = useAdminConfirm();
 
   async function regenerate() {
     if (
-      !window.confirm(
+      !(await confirm(
         "按当前设置里的缩略图尺寸，重新生成全部图片的本地缩略图？原图不会改。",
-      )
+      ))
     ) {
       return;
     }
@@ -71,9 +73,9 @@ export function UploadsToolbar() {
 
   async function regenerateThumb2() {
     if (
-      !window.confirm(
+      !(await confirm(
         "按当前设置里的二级缩略图尺寸，删除并重新生成全部二级缩略图？只动本机，不上云，原图和一级缩略图不会改。",
-      )
+      ))
     ) {
       return;
     }
@@ -98,9 +100,9 @@ export function UploadsToolbar() {
 
   async function migrate() {
     if (
-      !window.confirm(
+      !(await confirm(
         "把尚未上云的原图、视频、音频传到腾讯云 COS。桶里已有的会跳过，不会重复上传。本地缩略图不动。",
-      )
+      ))
     ) {
       return;
     }
@@ -189,7 +191,7 @@ export function UploadsToolbar() {
         type="file"
       />
       <button
-        className="heo-button"
+        className="admin-btn"
         disabled={busy !== null}
         onClick={() => inputRef.current?.click()}
         type="button"
@@ -197,7 +199,7 @@ export function UploadsToolbar() {
         {busy === "upload" ? "上传中…" : "上传图片 / 视频 / 音频"}
       </button>
       <button
-        className="heo-button heo-button--ghost"
+        className="admin-btn admin-btn--ghost"
         disabled={busy !== null}
         onClick={() => void regenerate()}
         type="button"
@@ -205,7 +207,7 @@ export function UploadsToolbar() {
         {busy === "thumbs" ? "生成中…" : "重新生成缩略图"}
       </button>
       <button
-        className="heo-button heo-button--ghost"
+        className="admin-btn admin-btn--ghost"
         disabled={busy !== null}
         onClick={() => void regenerateThumb2()}
         type="button"
@@ -213,7 +215,7 @@ export function UploadsToolbar() {
         {busy === "thumbs2" ? "生成中…" : "重新生成二级缩略图"}
       </button>
       <button
-        className="heo-button heo-button--ghost"
+        className="admin-btn admin-btn--ghost"
         disabled={busy !== null}
         onClick={() => void migrate()}
         type="button"
@@ -232,10 +234,11 @@ export function UploadsToolbar() {
       ) : null}
       {message ? <p className="admin-muted">{message}</p> : null}
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
+      {dialog}
     </div>
   );
 }

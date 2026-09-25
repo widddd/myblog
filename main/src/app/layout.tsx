@@ -58,7 +58,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <AppChrome />
         <SiteHeader />
         {children}
-        <Footer />
+        <Footer showUptime={pathname === "/"} />
       </body>
     </html>
   );

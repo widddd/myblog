@@ -1,4 +1,4 @@
-import { readFile, unlink, writeFile } from "node:fs/promises";
+import { readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { UPDATE_DIR, ensureUpdateDir } from "@/lib/update/files";
@@ -33,4 +33,23 @@ export async function readUpdateSidecar(name: string): Promise<UpdateSidecar | n
 
 export async function deleteUpdateSidecar(name: string): Promise<void> {
   await unlink(sidecarPath(name)).catch(() => undefined);
+}
+
+export async function clearUpdateSidecars(): Promise<string[]> {
+  await ensureUpdateDir();
+  const entries = await readdir(UPDATE_DIR, { withFileTypes: true });
+  const suffix = ".meta.json";
+  const removed: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(suffix)) {
+      continue;
+    }
+    const name = entry.name.slice(0, -suffix.length);
+    if (!isManagedUpdateFileName(name)) {
+      continue;
+    }
+    await unlink(sidecarPath(name)).catch(() => undefined);
+    removed.push(name);
+  }
+  return removed;
 }

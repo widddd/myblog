@@ -41,8 +41,8 @@ export function AdminCommentCompose() {
 
   return (
     <form className="admin-form" onSubmit={onSubmit}>
-      <div className="admin-form-row">
-        <label className="form-field">
+      <div className="admin-field-row">
+        <label className="admin-field">
           对象
           <select defaultValue="board" name="targetType">
             <option value="board">留言板</option>
@@ -50,21 +50,21 @@ export function AdminCommentCompose() {
             <option value="moment">瞬间</option>
           </select>
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           对象 ID（留言板填 0）
           <input defaultValue="0" min={0} name="targetId" type="number" />
         </label>
       </div>
-      <label className="form-field">
+      <label className="admin-field">
         管理员发言
         <textarea maxLength={1000} name="content" required rows={3} />
       </label>
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
-      <button className="heo-button" disabled={busy} type="submit">
+      <button className="admin-btn" disabled={busy} type="submit">
         {busy ? "发表中…" : "直接发布"}
       </button>
     </form>

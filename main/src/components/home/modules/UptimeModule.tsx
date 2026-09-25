@@ -7,11 +7,16 @@ import { formatUptime, parseSiteStartedAt } from "@/lib/home/uptime";
 type UptimeModuleProps = {
   heading?: string;
   startedAt: string;
+  variant?: "card" | "footer";
 };
 
-export function UptimeModule({ heading, startedAt }: UptimeModuleProps) {
+export function UptimeModule({
+  heading,
+  startedAt,
+  variant = "card",
+}: UptimeModuleProps) {
   const startMs = parseSiteStartedAt(startedAt)?.getTime() ?? null;
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => startMs ?? 0);
 
   useEffect(() => {
     if (startMs == null) {
@@ -28,7 +33,9 @@ export function UptimeModule({ heading, startedAt }: UptimeModuleProps) {
   }
 
   return (
-    <section className="home-uptime glass-card">
+    <section
+      className={`home-uptime${variant === "footer" ? " site-footer__uptime" : " glass-card"}`}
+    >
       {heading ? <h2 className="widget__title">{heading}</h2> : null}
       <p className="home-uptime__value">{formatUptime(now - startMs)}</p>
     </section>

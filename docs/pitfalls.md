@@ -129,7 +129,7 @@
 
 ### P-029 编辑器深色主题不要改 vendor
 - ❌ 深色站点下 mdx-editor 仍用浅色 `--baseBg` / `--baseTextContrast`（近黑字 + 白工具栏）；或去改 `src/editor/styles` 换肤
-- ✅ 规则：vendor 冻结。在 `globals.css` 用 `[data-theme="dark"] .admin-mdx-editor`（及 popup/select）覆盖 `--base*` / `--slate-*`，让工具栏与正文跟 Heo 深色 token。不要给 html 乱加 `.dark` 以免波及前台
+- ✅ 规则：vendor 冻结。在 `admin.css` 用 `[data-theme="dark"] .admin-mdx-editor`（及 popup/select）覆盖 `--base*` / `--slate-*`，让工具栏与正文跟 Heo 深色 token。不要给 html 乱加 `.dark` 以免波及前台
 - 📎 案例：M7 打磨（2026-08-29）
 
 ### P-030 不要重写编辑器，先修预览样式
@@ -204,7 +204,7 @@
 
 ### P-044 后台动效与字号只走 `--admin-*`
 - ❌ 后台侧栏/折叠/弹窗再写 340ms、360ms 或自造 ease；顶栏和页面 h2 都写「管理后台」抢标题；危险说明用灰色正文
-- ✅ 规则：时长只用 `--admin-fast/mid/slow`（160/220/280ms）和 `--admin-ease`。标题 18px、分组 16px、正文 14px。非编辑页顶栏由 `AdminWorkspace` 按路径出当前页标题，页面内 h2 只写分组名。切页时顶栏只做标题透明度交叉渐变，卡片向下跳出再从下方浮现；禁止整页（含顶栏）一起位移。删除/覆盖/重启等必须用 `.admin-danger`（`#D93025` 加粗）。后台卡片 hover 不要 `translateY`
+- ✅ 规则：时长只用 `--admin-fast/mid/slow`（160/220/280ms）和 `--admin-ease`（现为 `cubic-bezier(0.16, 1, 0.3, 1)`）。字号走 `--admin-title/heading/body`（现 21/17/15）。非编辑页顶栏由 `AdminWorkspace` 按路径出当前页标题，页面内 h2 只写分组名。切页时顶栏只做标题透明度交叉渐变。删除/覆盖/重启等必须用 `.admin-danger`。普通 `.admin-card` hover 不要位移；统计卡与 `.admin-card--hover` 允许 `translateY(-3px)`。`.admin-stagger` 入场 460ms 是唯一允许超 280ms 的地方；超调弹簧只给弹窗 pop
 - 📎 案例：后台 UI 重做（2026-08-30）
 
 ### P-045 强制改密必须拦 API 不只拦页面
@@ -259,7 +259,7 @@
 
 ### P-055 版本角标与备份版本只走 release.ts
 - ❌ 在页脚/后台随手写死「v0.1」或各写一套文案；备份列表不标版本
-- ✅ 规则：频道与展示文案只出自 `lib/release.ts`（当前 `APP_CHANNEL=alpha`、`APP_VERSION=0.1.0`、标签「0.1.0」）。前台页脚左下角 `ReleaseMark`，后台侧栏左下角同一文案。备份包 `meta.json` 写入 channel/version，列表展示 `backupReleaseLabel()`。改版本号只改这一处。
+- ✅ 规则：频道与展示文案只出自 `lib/release.ts`（当前 `APP_CHANNEL=alpha`、`APP_VERSION=0.1.1`、标签「0.1.1」）。前台页脚左下角 `ReleaseMark`，后台侧栏左下角同一文案。备份包 `meta.json` 写入 channel/version，列表展示 `backupReleaseLabel()`。改版本号只改这一处。
 - 📎 案例：备份加密开关与 Alpha 角标（2026-09-04）
 
 ### P-056 上传分两步，超 10MB 图片先压再当原图
@@ -294,8 +294,8 @@
 
 ### P-062 站点运行时间只走 uptime 模块
 - ❌ 把运行时间写进 `src/app/page.tsx` / `Footer`；或把开始时间做成 env / 源码常量；或 `siteStartedAt` 为空仍占一块空白格
-- ✅ 规则：内置 `uptime` 登记 `lib/home/builtins.ts` + `HomeModuleRenderer`。开始时间只进 Setting KV `siteStartedAt`（三处同步，见 P-004），并进入 `getPublicSettings`。空或解析失败则 `HomeGrid` 不渲染该格；后台画布显示「未设置开始时间，前台不显示」。计时精确到秒，走 `lib/home/uptime.ts`。
-- 📎 案例：首页底部运行时间（2026-09-04）
+- ✅ 规则：内置 `uptime` 登记 `lib/home/builtins.ts` + `HomeModuleRenderer`。开始时间只进 Setting KV `siteStartedAt`（三处同步，见 P-004），并进入 `getPublicSettings`。启用时由 Footer 在版本信息行中间复用模块组件；空或解析失败则不渲染。后台画布显示「未设置开始时间，前台不显示」。计时精确到秒，走 `lib/home/uptime.ts`。
+- 📎 案例：首页底部版本信息栏运行时间（2026-09-06）
 
 ### P-063 写文章左栏折叠卡片不要被 Grid 撑成方块
 - ❌ `.post-workspace__rail-body` 用 CSS Grid 且默认 stretch，收起后的 `admin-fold` 仍被拉满剩余高度，看起来像大方块
@@ -314,10 +314,265 @@
 
 ### P-066 更新包用拒绝名单；GitHub 只点检查；站点名禁止默认 MyBlog
 - ❌ 再维护一份「允许打进包的根文件」清单，导致 `main/` 下新目录打不进更新包；scheduler 轮询 GitHub Releases；把空 `siteName` 回退成 MyBlog；把创建管理员做成未授权开放接口
-- ✅ 规则：打包遍历 `main/`，只拒绝 `data/`、`.env*`、`node_modules/`、`.next/`、`.git/`、`coverage/`、测试文件与路径穿越。overlay 按包内**顶层目录**同步删除，不删包外顶层散文件。GitHub 仓库写在 Setting `updateGithubRepo`，只在后台「更新」点检查时请求公开 Releases，资产名必须 `myblog-update-*.tar.gz`。`siteName` 默认空，创建站点页 / `pnpm setup` 手填；未创建完成前公开标题用中性「博客」。`POST /api/auth/setup` 仅当零管理员且无半钥时可写，与登录同套 CSRF/限速
+- ✅ 规则：打包遍历 `main/`，只拒绝 `data/`、`.env*`、`node_modules/`、`.next/`、`.git/`、`coverage/`、测试文件与路径穿越。overlay 按包内**顶层目录**同步删除，不删包外顶层散文件。GitHub 仓库写在 Setting `updateGithubRepo`，只在后台「更新」点检查时请求公开 Releases，资产名必须 `myblog-update-*.tar.gz`。`siteName` 默认空，创建站点页 / `pnpm setup` 手填；未创建完成前公开标题用中性「博客」。`POST /api/auth/setup` 仅当零管理员时可写：无半钥走完整初始化，有半钥只补建管理员，与登录同套 CSRF/限速
 - 📎 案例：0.1 发行（2026-09-04）
 
 ---
+
+### P-067 时间型 Client 组件首屏必须使用确定性初始值
+- ❌ 在 SSR 的 Client Component 首次渲染中直接用 `Date.now()` / `Math.random()` 初始化展示文本，服务端与客户端值不同会触发 hydration mismatch
+- ✅ 规则：首轮渲染使用来自 props 的稳定快照或确定性占位值；组件挂载后再通过 `useEffect` 启动实时数据更新。运行时间模块以 `startedAt` 作为首轮 `now`，挂载后再每秒刷新
+- 📎 案例：首页运行时间 hydration mismatch（2026-09-06）
+
+### P-068 破坏性清理不能只靠前端倒计时，也不能误删配置
+- ❌ 只在浏览器端等待 15 秒；把倒计时当成安全边界；直接覆盖/删除正在使用的 `blog.db`；把 `Setting`、首页模块、主机半钥或非本站 COS 数据一并删掉；清理确认期间仍让备份创建并发写入
+- ✅ 规则：`/api/admin/update/clear` 用当前管理员绑定的一次性内存令牌，服务端以 `executeAt` 强制至少 15 秒，DELETE 才能撤销；按「删除数据 / 删除管理员账号」严格分支清理，数据库只用 Prisma 事务，文件只走 StorageDriver 与既有备份/更新 helper；包含 `data` 的待确认操作要阻止新备份，COS 桶按本站专用约定使用。UI 的红色进度条只是提示，不能代替服务端校验
+- 📎 案例：更新页一键数据清理（2026-09-06）
+
+---
+
+### P-069 已有主机半钥时网页只能补建管理员
+- ❌ 为了让清理管理员后的创建页可用而放宽 `runInitialSetup()`，或接受客户端传入的恢复模式并重新生成/覆盖主机半钥
+- ✅ 规则：服务端根据实时状态分派：零管理员且无半钥才走完整初始化；零管理员且已有半钥只调用 `createAdminForExistingSite()` 创建账号，保留 Setting、首页布局与不可更改的备份口令；CSRF、限速与零管理员检查不能省略
+- 📎 案例：清空管理员后网页直接重建账号（2026-09-06）
+
+### P-070 后台样式只进 admin.css，不得重定义前台共享类
+- ❌ 在 `admin.css` 里重写 `.heo-button` / `.form-field` / `.heo-card`，或把 `--admin-*` token 整块搬出 `globals.css`
+- ✅ 规则：后台新基元用 `.admin-btn` / `.admin-field` / `.admin-card` / `.admin-list`；`--admin-danger` / `--admin-ease` 必须留在 `globals.css`（前台 TransferHud 依赖）
+- 📎 案例：后台 UI 重写（2026-09-11）
+
+### P-071 motion 只许在后台 client 组件
+- ❌ 在 `src/components/home/`、`src/components/layout/` 或根 `layout.tsx` 里 `import` motion；不用 `LazyMotion` 把完整 feature bundle 打进后台首屏
+- ✅ 规则：`from "motion` 路径白名单只有 `src/components/admin/`；`AdminMotion` 用 `LazyMotion` + `domAnimation` + `m.*`；时长仍受 P-044 的 280ms 约束
+- 📎 案例：后台 UI 重写（2026-09-11）
+
+### P-072 后台表格必须双形态，不许横滑糊弄竖屏
+- ❌ 窄屏给 `.admin-table` 加 `overflow-x: auto`；或服务端渲染两套列表结构
+- ✅ 规则：同一套 DOM（`.admin-list`）桌面 CSS Grid 表格、手机卡片，字段用 `data-label`
+- 📎 案例：后台 UI 重写（2026-09-11）
+
+### P-073 写文章手机设置 sheet 不要复用桌面收起状态
+- ❌ 竖屏「设置」打开底部 sheet 后，右上角 chevron 仍 `setSettingsOpen`；`is-sheet` 的 CSS 盖掉 `is-collapsed`，看起来点了没反应，也关不掉 sheet
+- ✅ 规则：手机 sheet 的箭头 / 背板 / Escape 只 `setSheetOpen(false)`。桌面 chevron 才切换左栏折叠。背板必须 `position: fixed` 且 z-index 低于 sheet。窄屏工具栏必须全部可见：用 `.admin-mdx-toolbar-break` 分成两行整齐换行，禁止 `max-height` + `overflow:hidden` 把按钮裁掉，也不要藏滚动条的单行横滑
+- 📎 案例：竖屏写文章设置退不回去（2026-09-11）
+
+### P-074 数据清理弹窗保持独立圆角卡片，进度条贴底
+- ❌ 把 `DataClearDialog` 套进通用 `AdminDialog` 手机 sheet（底边直角、内边距把红色进度条托离底边）；或让确认输入框吃到 Tailwind preflight 的 `border-radius: 0`
+- ✅ 规则：清理弹窗继续用 `.admin-clear-backdrop` + `.admin-clear-dialog` 三行网格（头 / 正文 / 进度），四角圆角；进度条是最后一行、半径跟卡片底角对齐。不要并进 768px 的 sheet 覆盖。确认输入写 `.admin-clear-dialog .admin-field input { border-radius: 9px }`
+- 📎 案例：更新页清空数据弹窗被改方（2026-09-11）
+
+### P-075 清空管理员后创建页必须按半钥分派
+- ❌ 创建页把 `recovery` 写死为 `false`；或 `/api/auth/setup` 调用 `hostSecretExists()` / `adminRecoverySchema` 却不 import。清空账号后页面仍走完整建站，请求在服务端直接 500「创建站点失败」
+- ✅ 规则：`setup/page.tsx` 用 `hostSecretExists()` 决定显示重建管理员还是创建站点；`SetupForm` 接收 `recovery`，恢复模式只提交 `{username,password,passwordConfirm}`。`setup/route.ts` 必须显式 import `hostSecretExists` 与 `adminRecoverySchema`，已有半钥只走 `createAdminForExistingSite()`（P-069）
+- 📎 案例：清空账号后创建站点失败（2026-09-11）
+
+### P-076 后台配色 token 必须挂 admin.css 的 :root，且与前台 --heo-* 脱钩
+- ❌ 把新 token 写在 `.admin-workspace, .auth-shell` 作用域里；或为了换后台肤色去改 `globals.css` 的 `--heo-*` / 前台 `--admin-*`
+- ✅ 规则：`admin.css` 只被 `src/app/admin/layout.tsx` 引入。新 token（`--admin-accent-*` / `--admin-ink-*` / `--admin-surface*` / `--admin-line*` / `--admin-shadow-*`）和同名覆盖（`--admin-danger` / `--admin-ease` / 字号）写在 `:root` 与 `:root[data-theme="dark"]`（`data-theme` 在 `html` 上，写成 `[data-theme="dark"] :root` 永远匹配不到）。`AdminDialog` / `DataClearDialog` / 媒体菜单 portal 到 `document.body`，不在 `.admin-workspace` 子树内。前台首页、评论表单、搜索、404、TransferHud 继续只用 `globals.css` 的 `--heo-*` 与 `--admin-danger/--admin-ease`
+- ✅ 多配色（6 套预设）的额外规则：**色值集中在 `src/lib/admin/accents.ts`（单一事实源），`admin.css` 只消费变量、不写死任何预设色值**；由 `admin/layout.tsx`（server）读 Setting `adminAccent` → `adminAccentStyle()` 注入 `<style>` 到 `:root`（零闪烁、零 JS、不用 localStorage）。注入用 `:root:root` 提特异性，避免与 admin.css 的 `:root` 同特异性时只能靠文档顺序决胜。
+- ✅ **每套预设必须给浅色 / 暗色两套锚点**：`--admin-accent-300/400` 由 `color-mix(锚点 N%, var(--admin-bg))` 派生，而暗色下 `--admin-bg` 是深色 —— 若锚点仍是深色主色，混出来就是「深底上的深色」（石墨实测约 **1.2:1**，等于不可读）。暗色锚点必须换成亮色，且要单独算一遍对比度。
+- ✅ 亮主色的两个连带项：主色变浅后（如天青 `#0ea5e9`），① 拿它当文字色在浅底上只有 2.6:1；② 白字压在它上面同样只有 2.6:1。前者由派生级兜住，后者必须把 `--admin-on-accent` 换成深色。
+- 📎 案例：后台二次换肤（2026-09-13）；第三轮可切换配色（2026-02）
+
+### P-077 写类名 / import / 图标名之前，必须用工具验证它存在
+- ❌ 错误：按印象写标识符。第三轮后台重写中一轮内犯了 3 次 —— 虚构 CSS 类 `.admin-card__head` / `.admin-badge--muted`（真实约定是 `.admin-section` + `.admin-section__title` 与中性 `.admin-badge`）、虚构模块 `@/lib/admin/repo-config`、虚构图标 `PaletteIcon`（Radix 里没有，错误的是正确名 `ColorWheelIcon`）。
+- ✅ 规则：
+  - **类名**：写完 tsx 后，把文件里所有 `className="admin-*"` 提取出来，与 `admin.css` 里已定义的类逐个比对，**缺失清单必须为 0**。引用不存在的类不会报错，只会静默丢样式，比编译失败更难发现。
+  - **import 路径**：用 `glob` 或 `rg` 确认模块文件真实存在；写不存在的模块会直接编译失败。
+  - **图标名**：先查 `node_modules/@radix-ui/react-icons/dist/index.d.ts`，不要凭印象。
+  - **变量名**：改名（如 `--admin-sky-*` → `--admin-accent-*`）必须全仓 `rg` 归零，且把 tsx 里的内联用法一并改（`page.tsx` 里就有 3 处写死的 `var(--admin-sky-500)`）。
+  - **工具输出本身也要交叉验证**：PowerShell 的 `Get-Content` 输出中文可能显示为乱码（控制台编码问题），**不代表文件被写坏** —— 用 Read 工具复核再判断（本项目已两次虚惊：`admin/layout.tsx`、`admin.css`）。同理 `Get-Content | Measure-Object -Line` 的计数与实际行数可能不符（实测把 4444 行数成 3830），**在"文件被删了内容"这类结论前，先用 Read 确认总行数**，否则会去追一个不存在的 126 行缺口。
+  - **审计的匹配口径必须对齐文档的组织方式**：`docs/ai/module.md` 是**分组登记**（一行一个目录、列出组件名或函数名），不是逐文件清单。用"文件名精确匹配"去审计会得到大量误报——实测报出 53 个"未登记"，逐条核对后**全部已在 L143/L149–157 的分组行里**。做注册表审计时先确认文档用什么粒度组织，再选匹配口径；否则会把"口径不同"误判成"文档脱节"，然后去补一堆本就存在的行。
+  - **CSS 自定义属性（token）要跨文件查，别只看一个文件**：本项目 `--admin-fast/mid/slow`（160/220/280ms）与 `--admin-ease` 定义在 **`globals.css`**（前后台共享层，前台 `TransferHud` 也用），`admin.css` 只是使用者。只 grep `admin.css` 会得出"token 未定义、过渡全失效"的**错误结论**；真去 `admin.css` 补一个 `--admin-fast: 120ms` 还会反手把全后台的动效时长改错。
+  - **别拿被截断的输出当全量**：同一处 `Select-String ... | Select-Object -First 8` 把 23 处用法说成 2 处。列用法/定义时不要加 `-First`；加了就要在结论里标注"已截断"。
+  - **兜底证据永远看运行时**：`getComputedStyle(document.documentElement).getPropertyValue('--admin-fast')`、`getComputedStyle(el).transitionDuration`，比任何静态 grep 都硬。
+- 📎 案例：第三轮后台重写（2026-02）；以及 2026-02 的一次**误报**——先报"`--admin-fast` 未定义导致 `.admin-btn` / `.admin-list__row` hover 瞬变"，实测 `.admin-btn` 计算值 `0.16s ×5 + 0.12s`、`:root` 上 `--admin-fast = .16s`，结论作废；真正要改的只有自己新写的 `.admin-choice__btn` 硬编码了 `120ms`，已改成 `var(--admin-fast)`。
+
+### P-078 清理自建进程必须按 PID / 专属特征，禁止按进程名 Stop-Process
+- ❌ 错误：验证时用 `Start-Process msedge --headless --remote-debugging-port=...` 起浏览器，收尾时用 `Get-Process msedge | Stop-Process -Force` 清理。**这会终止机器上所有 Edge 进程**，包括用户正在使用的浏览器窗口——实测把用户的浏览器关掉了（还两次）。
+- ✅ 规则：
+  1. 启动时用 `-PassThru` 记下 PID，收尾 `Stop-Process -Id $p.Id`。
+  2. 浏览器/Node 这类会 fork 子进程的程序，PID 会散成多个。此时用**本次独有的命令行特征**筛选，再逐个 `Stop-Process -Id`：
+     ```powershell
+     Get-CimInstance Win32_Process |
+       Where-Object { $_.CommandLine -match 'myblog-verify' } |   # 本次专用的 --user-data-dir 路径
+       ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+     ```
+     收尾后**再查一次**只剩多少，并确认剩下的都不是自己的。
+  3. **禁止** `Get-Process <通用名> | Stop-Process -Force`。`msedge` / `chrome` / `node` 是**共享资源**，不是本次任务的私有资源；按名清理等于替用户决定关掉什么。
+  4. **启动自建浏览器后必须校验归属，但判据要对准"人"，不是"扩展"**：
+     - ✅ 正确判据：**有没有别人的真实标签页**（`type=page`，URL 既不是 `about:blank`，**也不是 `edge://` / `chrome://` / `devtools://` 这类浏览器内部页**）
+     - ❌ 错误判据有两个坑：① 用「有没有 `chrome-extension://` 的 target」——**Edge 的内置组件扩展在全新 profile 里同样存在**（实测误报两次，两次都把正常验证拦住了）；② 只排除 `about:blank`——**浏览器会自己开出 `edge://sync-confirmation-dialog/` 之类的内部页**，也会被误判成"别人的标签页"（实测又误报一次）
+     ```js
+     const list = await (await fetch("http://127.0.0.1:<port>/json/list")).json();
+     const internal = /^(edge|chrome|devtools|about):/;
+     const foreign = list.filter((t) => t.type === "page" && !internal.test(t.url));
+     if (foreign.length > 0) throw new Error("CDP 上有别人的标签页，立即中止");
+     ```
+     - **更可靠的一步**：校验完 target 后，再确认**监听端口的进程命令行**含你本次专用的 `--user-data-dir` 路径。两步都过再操作：
+       ```powershell
+       $own = (netstat -ano | Select-String ':9555' | Select-Object -First 1).Line.Trim() -split '\s+' | Select-Object -Last 1
+       (Get-CimInstance Win32_Process -Filter "ProcessId=$own").CommandLine -match 'my-user-data-dir'
+       ```
+  5. **端口冲突时不要抢，先认占用者的身份**：`next dev` 在 3000 被占时会自动改用 3001 并**拒绝启动第二个实例**（正确行为）。此时用 `Get-CimInstance Win32_Process` 看占用者的命令行与工作目录，**判断是不是用户自己在跑**；是用户的服务就**什么也别做**（不 taskkill、不改端口抢占），改为让用户刷新页面自行验证——热更新会把新代码推到他正在看的那个实例上。
+- 📎 案例：第三轮后台重写验收（2026-02）——误关用户浏览器，用户当场发现
+
+### P-079 同路由只换 query 时组件不重新挂载 —— 别把 URL 复制进 useState
+- ❌ 错误：
+  ```tsx
+  const [open, setOpen] = useState(() => searchParams.get("panel") === "1");
+  ```
+  从 `/admin` 点入口跳到 `/admin?appearance=1` 属于**同路由只换 query**：组件**不重新挂载**，
+  惰性初始化只跑首次挂载那一次，state 永远停在旧值 → **表现为"点了没反应"**。
+- ✅ 规则：**状态来源是 URL 就从 URL 派生**，不要复制进 state：
+  ```tsx
+  const open = searchParams.get("appearance") === "1";   // 派生，无 state，URL 一变就重渲染
+  const close = useCallback(() => {                      // 关闭 = 用 router.replace 抹掉 query
+    const next = new URLSearchParams(searchParams);
+    next.delete("appearance");
+    router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
+  ```
+  关闭时清掉 query，因此下次再点入口仍能打开（不需要额外 state）。
+- **判断要点**：`useState(初值)` 只认**首次挂载**。凡是「由 URL / props 驱动」的开关，先自问
+  「同路由参数变化时它会重跑吗？」——不会，就别用 state；也不要为此加 `useEffect` 同步
+  （会引入 `react-hooks/set-state-in-effect`）。
+- 📎 案例：后台外观面板入口（2026-02），用户反馈"调色板点了没反应"。实测确认：
+  冷启动带 `?appearance=1` 能开，**在 `/admin` 页面内点入口则不开** —— 正是这个差异定位到根因。
+
+### P-080 后台侧栏的"节奏"来自扁平结构 + 统一 gap，不是分组容器
+- ❌ 把侧栏写成「每个分组一个容器，各自带 margin/padding」——组间垂直节奏会随组数、字高、折叠态漂移，和参照稿对不上。实测首个分组标题 `y=81`，参照稿是 `76.28`，且第三组之后累计偏移越来越大。
+- ✅ 规则：参照稿（`demo/admin-ui/index.html`）里**分组标题与导航项是同一层的直接子元素**，容器只给一个统一的 `gap: 2px`；分组标题用自身的 `padding: 14px 10px 6px` 撑出上间距。复刻时照这个模型写（`.admin-nav { gap: 2px }` + 分组容器同样 `gap: 2px`），**不要在分组之间加 `margin`**。
+- ✅ 配套：字号/行高也要跟参照稿（分组标题 `11px/600/letter-spacing .07em/uppercase/ink-3`，导航项 `h36/padding 0 10px/gap 10px/13.5px/ink-2`）。后台壳继承的行高是前台 `globals.css` 的 `1.6`，参照稿是 `1.55`——差 0.05 在这个密度下会累积成可见偏移，所以单独加了 `--admin-leading: 1.55`。
+- 📎 案例：第三轮后台重写（2026-02）。改成扁平 gap 模型后，实测 y 坐标（76.28 / 115.33 / 153.33 / 192.38 / 230.38 / 268.38 / 306.38）与参照稿**完全一致**；第三组之后的分歧只来自本项目比参照稿多 2 个导航项。
+- 💡 方法论：**"看起来差一点"的观感问题，先查结构模型是否一致，再调数值。** 结构不对时，调 padding 只能让某一组对上，换个组数又歪了。
+
+### P-081 登录/退出是鉴权边界：不要用软导航，也不要在跳转前复位提交态
+- ❌ 错误：登录成功后 `router.replace("/admin"); router.refresh();`，并且 `finally { setSubmitting(false) }`。两处都会咬人：
+  1. 软导航复用登录前的客户端状态（Next 段缓存 / bfcache / 未登录时预取到的 `/admin` 载荷），可能落到旧载荷或重定向载荷上；
+  2. `finally` 在**跳转还没落地**时就把按钮放回「登录」，用户会在这段空隙再点一次 —— 第二次请求撞上限速或 CSRF 轮换，明知会话已建立却停在登录页。实测（6× CPU 节流）这个空隙 **>1.2 秒**，第二次提交拿到 **429**。
+- ✅ 规则：成功后 `window.location.replace(next)` 做**文档级跳转**（新会话重新渲染，浏览器自己给加载状态，只发一次请求）；**成功分支不复位 `submitting`**，按钮一直禁用到新页面接管；失败分支才 `setSubmitting(false)`。落地地址来自 `?next=` 时先过 `lib/auth/next-path.ts` 的 `adminNextPath()`（挡协议相对地址、反斜杠变体、编码穿越与登录页自环）。退出（`LogoutButton`）同理。
+- ✅ 配套：`proxy.ts` 的登录限速只该管**失败**尝试。登录成功后 `clearRateLimit(loginLimitKey("login", ip))` 清账，否则站长自己反复登录/退出 5 次就被 429 挡在门外——表现同样是"点了没反应，刷新才进得去后台"。
+- 📎 案例：用户反馈「登录管理员账号之后页面会卡住，只有刷新后才会来到后台」（2026-02）。headless Edge 实测：限速策略与密钥集中在 `lib/auth/login-limit.ts`，6 轮登录/退出全部落在 `/admin`、`POST /api/auth/login` **零 429**。
+
+### P-082 写 `-webkit-` 前缀别写在标准属性后面：CSS 管线会把标准属性吃掉
+- ❌ 错误：
+  ```css
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  ```
+  Turbopack/Tailwind 的 CSS 管线把两条合并成**只有 `-webkit-` 前缀**的那条，标准属性消失 → 现代 Chromium 只认标准属性，`getComputedStyle().backdropFilter === "none"`，模糊**静默失效**（页面照常渲染，看不出报错）。
+- ✅ 规则：**只写标准属性**（`backdrop-filter: blur(3px)`），管线会自己补前缀；反过来验证也简单——直接抓 dev server 下发的 CSS 看规则文本。CSSOM 里的 `rule.cssText` 只保留浏览器认识的声明，所以"计算值是 none 但 `CSS.supports` 为真"就是这句诊断。
+- 📎 案例：无封面细条卡的渐变模糊层（2026-02）。第一版写了 `-webkit-` 前缀，实测计算值 `none`；去掉前缀后规则里标准+前缀两条都在，计算值 `blur(3px)`。该层后来整体换成「模糊的文字副本」（见 P-084），但这条管线纪律仍然成立。
+
+### P-084 「越往右越糊」别拿 `backdrop-filter` 糊背景，也别把渐变锚在整行宽度上
+- ❌ 错误一：用 `backdrop-filter: blur()` 盖一层做渐隐。它糊的是**卡片背景**，文字被 mask 抹掉后只剩一块被糊浅的底色——用户看到的是"**白色色块覆盖**"，不是"字变糊"。
+- ❌ 错误二：把渐变写成 `linear-gradient(to right, #000 34%, transparent 94%)`。百分比是相对**行宽**的：摘要短、没顶到卡片右缘时文字全落在透明之前，**看起来完全没有特效**。
+- ✅ 规则：
+  1. 模糊层 = **同一段文字再叠一层**（`aria-hidden`），对它自己 `filter: blur(2.6px)`，再用 mask 让模糊从左到右加深、末尾整行隐去；清晰层单独一条 mask 负责"变淡"。两层必须是**兄弟节点**（父子的话父层 mask 会把子层一起裁掉）。
+  2. 渐变用 **px 锚在文字尾部**：`#000 calc(100% - 130px), transparent 100%`；模糊层 `transparent calc(50% - 120px), rgba(0,0,0,.95) calc(85% - 30px), transparent 100%`。
+  3. 想让"锚在文字尾部"生效，需要一个 `width: fit-content; max-width: 100%` 的**内层壳**，外层留着 `flex: 1 0 100%` 独占一行。直接给 flex item 写 `width: fit-content` 没用——主尺寸由 `flex-basis` 决定，mask 的参照系仍是整行。
+- 📎 案例：无封面细条卡（2026-02，同一处被用户反馈两次）。
+
+### P-083 网格项 `min-width: auto` + 卡内 `nowrap` 文本 = 整列被顶宽
+- ❌ 错误：给「无封面细条卡」的单行导语加 `white-space: nowrap` 后，`.post-list` 的列被顶到 **1455px**（视口 504px），页面横向溢出、侧栏被卡片压住。原因是网格项（`.post-card-wrap`）的自动最小尺寸 = min-content，nowrap 内容一路把它撑到文字宽度；`.post-card__lead { min-width: 0 }`、`.post-card { min-width: 0 }` 都**不管用**（最小尺寸是在网格项那一层算的）。
+- ✅ 规则：两条一起加——`.post-list { grid-template-columns: minmax(0, 1fr) }`（容器侧）与 `.post-card-wrap { min-width: 0 }`（项侧）。要让「徽章 + 单行标题」同排，标题还要 `flex: 1 1 0`（`flex-basis: auto` 会按 max-content 参与换行，窄屏上把标题挤到第二行、细条变三行）。
+- 📎 案例：同上（2026-02）。修复前 504 视口下 `document.scrollWidth = 1467`；修复后 `scrollWidth = 504`，细条稳定 **480×90**，手机宽度下也是两行。
+
+### P-085 判定「这篇文章有没有封面」必须走 `bannerStyle`，不能只看 `cover` 字段
+- ❌ 错误：列表卡片写 `const plain = !post.cover`。作者在编辑器里选「纯色 / 混色」时 `cover` 本来就是空的（色值在 `bannerColor/bannerColor2` 里），于是这些文章被当成"无封面"塞进细条卡 —— 用户原话是"**文章设置里选了渐变色封面，还是被识别为无封面**"。
+- ✅ 规则：一律用 `lib/posts/banner.ts` 的 `postBannerKind(bannerStyle, cover)`，三种结果对应三种画法：
+  - `image` → `CoverMedia`（封面图）
+  - `fill` → `bannerFill(bannerStyle, bannerColor, bannerColor2)` 当 `background` 的色块
+  - `none` → 真·无封面（细条卡 / Hero 占位）
+- ✅ 配套：编辑器「封面与 Banner」在 `bannerStyle === "cover" && !cover` 时给出inline 提示（"还没选封面图 → 按无封面处理"），把三种状态在设置里就说清楚。
+- 📎 案例：无封面细条卡（2026-02，同一处第三次反馈：先是白块、再是短摘要没特效、再是渐变被当无封面）。
+- ⚠️ 待办：`RecentPostsWidget` / `RecommendModule` / `BlockRenderer` 里的小缩略图仍在直接用 `post.cover`（无图时落到 `CoverMedia` 的哈希渐变占位），没有跟随作者选的色块 —— 真要统一时按同一套 `postBannerKind()` 改。
+
+### P-086 UI 验证要一条命令拿到结果：别把 `tsc` / `build` / 起服务跟截图捆在一起
+- ❌ 错误：`npx tsc --noEmit; node probe.cjs` 这种"顺手都做了"的串联。用户体感就是"**就截个图怎么这么慢**"，而慢的其实不是截图。成本拆开看：
+  - `tsc --noEmit` 是大头：`tsconfig.json` 的 `include` 含 `**/*.ts(x)` + `.next/types/**` + `.next/dev/types/**`，`next build` 会重建 `.next` 让 `incremental` 缓存失效，dev server 又在持续写 `.next/dev/types` → 每次都接近全量检查（数十秒级）；
+  - 在**同一条命令里起 dev server**：Turbopack 从零编译全部路由，分钟级（用户会直接把它掐掉）；
+  - 每次全新 `--user-data-dir`：Chromium 建 profile + 结束 `taskkill /T /F` + 删上千个小文件，各 2–5s；
+  - 脚本里的固定 `sleep`（400ms 轮询 + 每次 1.5s 静置 × 视口数）；dev 路由首个请求实测 1–2s（`GET /admin/login 200 in 1896ms`）。
+- ✅ 规则：**UI 验证走 [`main/scripts/ui-shot.mjs`](../main/scripts/ui-shot.mjs)**（`pnpm shot /posts --measure .post-card --json`）：
+  1. 只对着**已经在跑的** server（先用 `fetch` 热一次路由），不启动服务；
+  2. **复用**同一个浏览器 profile（`os.tmpdir()/myblog-ui-shot-profile`），不删；退出用 CDP `Browser.close`；
+  3. 密集轮询（100ms）+ 早退，不写死长 `sleep`；一次启动跑完桌面 + 窄屏（`Browser.setWindowBounds` + reload）；
+  4. 输出 = 图 + 视口/滚动宽/元素尺寸，**一次写文件**给 AI 读，别用 shell 管道来回绕（`Select-String` 会吃掉退出码，`>` 重定向在 pwsh 下还可能写成 UTF-16）。
+  实测**命令整体 2.6s**返回（脚本内部 2.1s：warm fetch 138ms | desktop 777ms | mobile 630ms）。
+- 🔴 **最容易踩的一刀（这条才是"卡两分钟"的真凶）**：`spawn(..., { detached: true })` 出来的浏览器进程**必须 `child.unref()` + 结束用 `child.kill()`**。
+  - 不 unref → 子进程句柄吊着事件循环 → **脚本干完活也不退出**，pnpm/pwsh/AI 的工具调用一直等到被人工掐断（实测用户等 2 分 12 秒后手动中断）；
+  - 想杀进程组写 `process.kill(-pid)` → **Windows 不支持负 PID**（抛 EINVAL，被 catch 吞掉）→ 浏览器活着，循环照样不结束。
+  - 收尾再补一刀：stdout 冲干净（空写 + 回调）后 `process.exit(0)`，另挂一个 `unref()` 的 3s 硬退出兜底。
+  - 📎 连带解释了历史怪现象：以前被我掐断的那几次脚本，其实**活都干完了**（包括 finally 里的清理），只是进程不退出 —— 于是"看起来卡住"。
+- ✅ 配套纪律：类型检查/构建各自单独一次，别和 UI 验证同一条命令；AI 的每次工具调用都是冷进程，凡是"大量小文件读写"（tsc 解析、Chromium profile）都会被放慢，能省的都要省。
+  - ⚠️ AI 还有个自伤操作：**别用 pwsh 的 `-replace` / `Set-Content` 管道改源码**（见 P-077），中文会被 GBK 往返毁成乱码，整文件重写更省事。
+- 📎 案例：2026-02 同一处卡片改动，前几轮验证动辄几分钟（还被掐断两次），换成 ui-shot 后 2.6s。
+
+### P-087 `updatedAt` 不能当「作者改过的时间」：浏览量自增 / 定时发布 / publicId 回填都会刷它
+- ❌ 错误：文章页的「已修改」直接读 `Post.updatedAt`。Prisma 的 `@updatedAt` 在**任何** `update/updateMany` 上都会跳到"现在"：
+  - `POST /api/posts/[slug]/view` 每记一次浏览量都是 `prisma.post.update({ data: { views: { increment: 1 } } })` → 有人在看这篇文章，它就显示成"刚改过"；
+  - `scanScheduledPosts()` 把 `scheduled` 翻成 `published`、`ensurePostPublicIds()` 回填 `publicId` 也会刷。
+  - 实测 dev 库：12 篇文章的 `updatedAt` 全被刷成同一天，`publishedAt` 却分散在半个月里 —— 拿它当修改时间，全站文章会一起显示"已修改"。
+- ✅ 规则：要"作者改动时间"就单独存一列 `Post.revisedAt`，只由 `lib/posts/admin.ts` 的 `updateAdminPost()` 写，条件是**「改动前已发布」+「改完仍是已发布」+「读者可见字段真的变了」**；前台是否显示由 `Post.showRevisedAt`（编辑页设置栏开关，默认开）决定。
+  - 判"有没有改"必须逐字段比对（PATCH 是部分更新，`undefined` = 不动），且**不要把** `status` / `publishedAt` / `pinned` / `recommend` / `views` 算进去：改状态、翻页序不算改文章。
+  - 前台再兜一层 `revisedAt > publishedAt` 才渲染：发布前反复编辑、草稿转发布都不会误报。
+- 📎 案例：2026-02 需求「文章支持显示修改日期与'已修改'」，迁移 `20260925161921_post_revised_at`（`revisedAt` + `showRevisedAt`）。
+
+### P-088 三列 grid 的页脚：中间那个模块不渲染时，右栏会掉进中间列
+- ❌ 错误：`.site-footer__inner` 是 `grid-template-columns: minmax(0,1fr) auto minmax(0,1fr)`，三个子节点（左栏 / 运行时间模块 / 右栏文案）**按顺序自动落位**。中间那列是「站点运行时间」模块：`siteStartedAt` 为空时 `UptimeModule` 直接 `return null`，DOM 里没有这个节点 → 右栏文案变成第 2 个子节点、落进中间列；`.site-footer__inner > p:last-child` 上的 `justify-self:end` 也只能贴着中列右缘，于是本来在右下角的「记录思考，也记录生活。· 归档 · RSS · 管理后台」跑到中间。
+  - 受影响的不只是关掉运行时间的首页：**所有不显示运行时间模块的页面**（文章页、列表页……`Footer` 只在首页传 `showUptime`）本来就是两子节点的三列 grid，同样是错的。
+- ✅ 规则：列位写死，别靠"第几个子节点"：`.site-footer__left { grid-column: 1 }`、`.site-footer__inner > p:last-child { grid-column: 3 }`，中间列留给自动落位；手机档（≤720px，容器改 `display:flex` 竖排）把右栏文案 `text-align` 钉成 `right`，保持左/中/右的身份。
+- 📎 案例：2026-02。修后实测（1370 视口，`inner.right - 右栏文字.right`）：文章页（无运行时间模块）= 0；首页（有模块）= 0 且中间列水平居中偏差 0；504 视口 = 0。
+
+### P-089 `cachedPublic` 里跨表读来的数据：`revalidateTag(tag, "max")` 是"先给旧值"，要立刻生效得用 `{ expire: 0 }`
+- ❌ 错误：作者署名按「文章没单独填作者 → 读管理员账号上的默认笔名」实现（跨表读，塞进 `cachedPublic(["getPublishedPostMeta", …], [posts])`）。改完默认笔名只调 `revalidatePublicContent()` → **第一次导航仍渲染旧署名**，第二次才变。同一口径连测三次都复现：`["和自己对话","丁笔名"]`、`["丁笔名","戊笔名"]`、`["戊笔名","和自己对话"]`。
+  - 一开始我误判成"全站既有行为"，被对照实验推翻：**改文章标题第一次就是新值** —— 因为那条写入路径里带了该文的 `revalidatePath(postHref)`，而 `revalidatePath("/具体路径")` 是立即生效的。
+- ✅ 规则：Next 16 里 `revalidateTag(tag, "max")` 的语义是**「标记过期 + 先给旧值、后台重算」**（SWR），要"改完立刻可见"：
+  - 从 **Route Handler** 立即过期：`revalidateTag(tag, { expire: 0 })`（内联 profile = 立即过期，无 deprecation warning）。
+  - **不要用 `updateTag()`**：Next 16.3.3 源码里它对 `page.endsWith('/route')` **直接 throw**（"updateTag can only be called from within a Server Action"），而本项目所有写入都在 Route Handler。
+  - 无 profile 的 `revalidateTag(tag)` 也能立即过期，但 Next 会打 deprecation warning。
+  - 判断口径：**凡"公开页面的某段内容依赖另一张表"（账号笔名、站点设置、作者清单…），写入侧就必须显式立即过期那个 tag**，否则第一次请求是旧值。
+- 📎 案例：2026-02 作者功能（`lib/auth/account.ts` 改笔名后补 `revalidateTag(PUBLIC_CACHE_TAGS.posts, { expire: 0 })`）。修后同口径实测：`["丁笔名","丁笔名"]`、`["戊笔名","戊笔名"]`、`["和自己对话","和自己对话"]` —— 第一次导航即新值。
+- ⚠️ 遗留（需用户点头再改）：`lib/admin/revalidate.ts` 的 `revalidatePublicContent()` 四个 tag 仍用 `"max"`。凡「只靠 tag 失效、没有对应 `revalidatePath`」的公开面（分类/标签/归档等列表页），第一次请求可能仍是旧值。要统一成"改完立刻可见"，把那四处换成 `{ expire: 0 }` 即可 —— 那是全站写入语义变更，本次未擅自动。
+
+### P-090 变体按钮的文字色不许在暗色块里"族级统一钉"：一条 (0,2,0) 就能把整族打成"深底 + 近黑字"
+- ❌ 错误：`admin.css` 里有一条 `[data-theme="dark"] .admin-btn { color: var(--admin-on-accent) }`。它是 (0,2,0)，而 `.admin-btn--ghost { color: var(--admin-ink) }`、`.admin-btn--link { color: var(--admin-accent-600) }` 都是 (0,1,0) —— 暗色下**整族被盖住**。偏偏暗色的 `--admin-on-accent`（`lib/admin/accents.ts` 的 `onAccentDark`）是**近黑 `#0b0d11`**（那是给亮主色实心按钮配的字），于是所有"没有底色的按钮"（幽灵 / 链接）在深底上变成近黑字，用户原话是"**有些没有底色的按钮在深色模式下还是黑色看不清**"。
+- ✅ 规则：
+  - 那条暗色规则本来**就是冗余的**：基础 `.admin-btn` 已写 `color: var(--admin-on-accent)`，CSS 变量在 `:root[data-theme="dark"]` 下自己解析到暗色锚点 —— **删掉即可**，别拿 `:not()` 链去补丁（越补越脆、下一个变体还会踩）。
+  - **改族级颜色前先算权重**：`[data-theme="dark"] .x` = (0,2,0)，能盖掉所有 (0,1,0) 的 `.x--变体`；要覆盖变体，选择器就照抄变体本身，不要写族级。
+  - 同类相邻坑：vendor 的 token 名会骗人。`editor/styles/ui.module.css` 里 `.selectTrigger[data-placeholder] > span:first-child { color: var(--baseBorderHover) }` —— 这 token 名叫 Border，实际**只当文字色用**（216 / 286 两处全是 `color`，没有一处边框）。所以"它只是边框色、暗色不用管"是错的判断。
+- 🔎 可复用口径（别靠眼睛）：CDP 打开后台页 → `document.documentElement.dataset.theme = 'dark'` → 遍历 `.admin-workspace *`，取每元素 `getComputedStyle().color`，背景沿祖先链逐层合成（rgba 叠 `--admin-bg` 打底），算 WCAG 对比度，报出 < 3 的（带 class + 祖先链 + color/bg/ratio/fontSize）。一轮可跑完 12 个后台页，含手机档（430 宽）与弹窗打开态。
+- 📎 案例 2026-02：修复前 `/admin` 的「退出登录」= `rgb(11,13,17)` 压在 `rgb(20,23,28)` 上 = **1.08:1**（`/admin/posts` 的「编辑」同）；修后 = `rgb(233,236,241)`（暗色 `--admin-ink`，≈15.6:1）与 `rgb(147,197,253)`（暗色 `--admin-accent-600`）。第 2 处同类：暗色块里 `--baseBorderHover: #5a6169` 写死 → 编辑器工具栏「段落样式」占位 2.86:1，改为 `var(--admin-ink-2)` 后达标。审计复跑：12 个后台页 + 弹层/手机档 **0 命中**。
+- ⚠️ 有意不动（避免误伤）：浅色下三级文字色 `--admin-ink-3 = #98a2b3`（2.58:1：侧栏分组名、卡片提示、行内次要文字）是参照稿定档的"次要文字"，不是按钮；`/admin/home` 画布里的 `dash-chip`（白字压彩色块 1.97–2.84:1）是**前台预览内容**（定义在 `globals.css`），改了会动前台设计。
+
+### P-091 浮层被盖住：先给两边"各自分层"（栈上下文），别只往浮层上加 z-index
+- ❌ 错误：文章编辑页右上角 ⓘ 的说明卡（`.post-workspace__popover`，`position: absolute; z-index: 5`，挂在 `.post-workspace__titlebar` 上）被编辑器工具栏盖住 —— 工具栏是 `.admin-mdx-editor .mdxeditor-toolbar { z-index: 6 }`（flex 项，z-index 同样生效）。两边都不在同一个受控层里，于是 6 > 5 直接压过去。实测：卡片 `[1050,136 → 1410,225]`、工具栏 `[592,129 → 1410,209]` 重叠，卡片矩形内 5 个取样点 **4 个**命中的是工具栏/它的按钮。
+- ✅ 规则：**别只给浮层加数字**（今天调 7、明天 8，还会跟 sheet / dialog 打架）。给"两个子树"各自分层：
+  ```css
+  .post-workspace__titlebar { position: relative; z-index: 2; }  /* 标题行整层压住编辑区 */
+  .post-workspace__editor,
+  .post-workspace__preview { position: relative; z-index: 1; }   /* 把编辑器内部的 z-index(6/240) 关进自己的栈上下文 */
+  ```
+  这样编辑器内部的任何 z-index 都困在它自己那层，标题行的浮层稳定压得住；而全局层（手机 sheet `--admin-z-sheet+1 = 81`、弹窗 `--admin-z-dialog = 90`）仍在根层级比大小，不受影响。
+- 🔎 验证口径（可复用）：用 `elementFromPoint` 在浮层矩形里取 5 个点（0.1 / 0.5 / 0.9 组合），逐点报"命中的元素链 + `hit.closest('.浮层')` 是否为真" —— 把"有没有被挡"变成数字。修后实测 **0/5 被挡**（浅色 / 暗色 / 桌面 1440 / 手机 430 四组一致）。
+- 📎 案例 2026-02。同轮核过相邻面没被这次分层改坏：手机档设置 sheet 仍 `z-index: 81` 在最上层、且它的背板盖住标题行按钮（标题行不会被点穿）；媒体插入仍是 portal 到 body 的 `admin-dialog`（z=90），中心 `elementFromPoint` 命中它自己。
+- ⚠️ 顺带发现（未改，属产品选择）：手机档里的 `.post-workspace__hint { display: none }` 类名**在 DOM 里不存在**（真实是 `.post-workspace__hint-btn` 与 `.post-workspace__popover`）——那是条死规则，"手机上藏起 ⓘ" 并没生效。要藏就把选择器改成 `-btn`，不要就删掉，别留着骗人。
+- 与 P-032 的关系：P-032 管"别把下拉放进工具栏"；这条管"浮层放好了为什么还会被盖" —— 根因是**跨子树的 z-index 比较**。
+
+### P-092 从远端撤私密内容：别在"验证之前"销毁本地对象
+- ❌ 错误：要把 `reference/`（第三方主题源码 + 旧站导出 + 私人计划笔记）从已推送的仓库撤下来时，直接用 `git filter-branch ... -- --all` → 删 `refs/original` → `git reflog expire --expire=now --all` → `git gc --prune=now`。三个后果叠加：① `--all` 把**备份分支也一起重写**（备份等于没备）；② `filter-branch` 收尾会把**当前分支的工作区重置成重写后的 HEAD** → `reference/` 被从磁盘删掉；③ `gc --prune=now` 把旧对象清干净 → 本地**同时**失去文件与可恢复对象。这次唯一救命的是远端（GitHub）还留着旧提交，因为**强推还没发生**。
+- ✅ 规则：
+  1. 撤内容前先在**仓库之外**做备份（`git clone --mirror <本地路径> <别处>` 或直接复制整个目录）；**别把备份做成同一仓库里的分支**——`--all` 会连它一起重写。
+  2. 重写时明确指定 ref：`git filter-branch --index-filter "git rm -r --cached --ignore-unmatch <path>" --tag-name-filter cat -- refs/heads/main`，**不要写 `--all`**。
+  3. 重写后先把文件捞回工作区（`git checkout <旧提交> -- <path>` 或 `git archive <旧提交> <path> | tar -x`），再 `git restore --staged <path>` 取消跟踪，最后把该路径写进 `.gitignore`（本项目已把 `reference/`、`demo/`、`changelog/` 列入），这样以后 `git add -A` 也不会再带上去。**捞回后要逐个 `Get-FileHash` 对照重写前的指纹**，别只看"文件在不在"。
+  4. **验证通过之前不要 `gc --prune=now`**，也不要删 `refs/original` 与 reflog——它们就是本地后悔药。
+  5. 远端：`git push --force origin main` + `git push --force --tags`（tag 也会被重写，必须强推）。`DELETE /repos/{owner}/{repo}` 需要 token 带 `delete_repo` 权限（GCM 默认 scope 是 `gist, repo, workflow`，**不含它**，实测 403 `Must have admin rights`）→ 想连"不可达的旧对象"一起抹掉，只能在网页端删仓库后重建，或换一个带 `delete_repo` 的 token。
+  6. 验证要用不含糊的 ref：本仓库根目录有 `main/` 目录，`git log main` 会报 `ambiguous argument 'main'`，**失败命令的空输出会被误读成"命中 0"**（P-077 同类）→ 用 `HEAD` 或 `refs/heads/main`。
+- 📎 案例 2026-09-25：MyBlog 首推 GitHub 后按要求撤下 `reference/`（350 文件 / 8.73 MB）。文件全部从远端旧提交 `1358586` 还原，本地零丢失；仓库策略定为**远端只留程序代码 + 项目文档**。
+- 📎 同日第二次（按 P-092 规矩重做，零事故）：撤下 `demo/`（6 文件 / 609 KB，后台 UI 参照稿）——先做**仓库外明文备份**（`D:\code_projects\myblog-demo-backup`）并记录 6 个文件的 SHA256 → `filter-branch` **只指定 `refs/heads/main` 与两个 tag**（不写 `--all`）→ 从旧提交捞回后 **6/6 哈希一致** → 强推 `main`/`--tags` → 远端 `contents/demo` → 404 → **最后才**清 `refs/original` + reflog + `gc --prune=now`。`demo/`、`reference/` 的**文件仍在本机**，只是不再进任何 commit（远端与本地都查不到）。
+- 📎 同日第三次：撤下 `changelog/`（3 文件 / 31 KB，内部施工笔记）——仓库外备份（`D:\code_projects\myblog-changelog-backup`）+ 记录 SHA256 → 只指定 `refs/heads/main` 与两个 tag 重写 → 捞回后 **3/3 哈希一致** → 入 `.gitignore` → 清残留对象。**这次的关键差别：远端即将被整体删除，没有任何远端可当救命绳，仓库外备份是唯一的后悔药。**
 
 ## 追加模板
 

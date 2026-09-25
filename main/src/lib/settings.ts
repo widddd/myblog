@@ -1,3 +1,13 @@
+import {
+  DEFAULT_ADMIN_ACCENT,
+  resolveAdminAccent,
+  type AdminAccentKey,
+} from "@/lib/admin/accents";
+import {
+  DEFAULT_DASHBOARD_CARDS,
+  resolveDashboardCards,
+  type DashboardCards,
+} from "@/lib/admin/dashboard-cards";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/utils/logger";
 
@@ -24,6 +34,8 @@ export const DEFAULT_SETTINGS = {
   thumb2MaxPx: 320,
   backupLocalMaxMB: 512,
   localMediaMaxMB: 512,
+  adminAccent: DEFAULT_ADMIN_ACCENT,
+  dashboardCards: DEFAULT_DASHBOARD_CARDS,
 } as const;
 
 export type SettingKey = keyof typeof DEFAULT_SETTINGS;
@@ -224,6 +236,8 @@ export type AdminSettings = {
   cosPublicBaseUrl: string;
   cosSecretIdSet: boolean;
   cosSecretKeySet: boolean;
+  adminAccent: AdminAccentKey;
+  dashboardCards: DashboardCards;
 };
 
 function asSettingString(value: unknown, fallback: string) {
@@ -298,7 +312,33 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     ),
     cosSecretIdSet: secretId.trim().length > 0,
     cosSecretKeySet: secretKey.trim().length > 0,
+    adminAccent: resolveAdminAccent(values.adminAccent).key,
+    dashboardCards: resolveDashboardCards(values.dashboardCards),
   };
+}
+
+/** 后台配色（后台专属，不进 getPublicSettings）：脏值/读取失败一律回退默认，不抛错。 */
+export async function getAdminAccent(): Promise<AdminAccentKey> {
+  try {
+    return resolveAdminAccent(await getSetting<string>("adminAccent")).key;
+  } catch (error) {
+    logger.warn("后台配色读取失败，已回退默认配色", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return resolveAdminAccent(null).key;
+  }
+}
+
+/** 概览页卡片显隐：未知键丢弃、缺键补默认、非布尔值按默认，不抛错。 */
+export async function getDashboardCards(): Promise<DashboardCards> {
+  try {
+    return resolveDashboardCards(await getSetting("dashboardCards"));
+  } catch (error) {
+    logger.warn("概览页卡片配置读取失败，已回退默认显示", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { ...DEFAULT_DASHBOARD_CARDS };
+  }
 }
 
 function clampPercent(value: number) {

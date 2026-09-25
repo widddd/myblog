@@ -14,6 +14,8 @@ model Post {
   publicId     String       @unique
   slug         String       @unique
   title        String
+  // 文章作者（笔名）。为空 = 用管理员账号上的默认笔名（见 lib/posts/author.ts）
+  authorName   String?
   content      String
   excerpt      String?
   cover        String?
@@ -28,6 +30,11 @@ model Post {
   views        Int          @default(0)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+  // 作者在**文章已发布之后**再次改动正文/标题等实质内容的时间。
+  // 不能用 updatedAt 顶替：浏览量自增、定时发布、publicId 回填都会把 updatedAt 刷成"现在"（见 P-087）。
+  revisedAt    DateTime?
+  // 文章页是否显示「已修改 + 修改时间」，编辑页设置栏可关。
+  showRevisedAt Boolean     @default(true)
   categoryId   Int?
   category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   tags         PostTag[]
@@ -105,10 +112,19 @@ model Setting {
 model AdminUser {
   id                     Int      @id @default(autoincrement())
   username               String   @unique
+  // 默认笔名：新文章的作者默认取它，文章没单独填作者时前台也显示它
+  penName                String?
   passwordHash           String
   mustChangeCredentials  Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+}
+
+// 笔名清单（像分类/标签一样可加多个）：写文章时下拉快捷选，也能当场新建
+model PenName {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
 }
 
 model BackupSecret {

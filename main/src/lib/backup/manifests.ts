@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { isNodeNotFoundError } from "@/lib/backup/errors";
@@ -75,4 +75,12 @@ export async function deleteBackupManifest(name: string): Promise<void> {
   }
   delete store[name];
   await writeStore(store);
+}
+
+export async function clearBackupManifests(): Promise<void> {
+  await unlink(MANIFEST_PATH).catch((error) => {
+    if (!isNodeNotFoundError(error)) {
+      throw error;
+    }
+  });
 }

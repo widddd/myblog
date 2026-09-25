@@ -2,7 +2,7 @@
 
 程序包是一份小的 `tar.gz`（`pnpm pack:update`），不含 `node_modules`、`.next`、`data/`。不要把 Windows 整仓或 `node_modules` 拷到 Linux。
 
-安装脚本只在**第一次**空机使用。之后每个版本只换新的更新包，**不要改 `scripts/install.sh`**。
+安装脚本只在**第一次**空机使用。之后每个版本只换新的更新包，**不要改 `scripts/install.sh`**。管理员被清空后无需重新安装；保留主机半钥时可在 `/admin/setup` 直接重建管理员，或停服执行 `pnpm setup`。
 
 ## 第一次安装（Linux）
 
@@ -36,7 +36,7 @@ proxy_set_header X-Forwarded-Proto $scheme;
 ```powershell
 cd main
 pnpm pack:update
-pnpm pack:update --git v0.1.0
+pnpm pack:update --git v0.1.1
 ```
 
 把打出来的 `data/updates/myblog-update-*.tar.gz` 拷到能访问后台的电脑，或 scp 到服务器。然后：

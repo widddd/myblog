@@ -393,7 +393,9 @@ export async function handleUpload(request: Request): Promise<UploadResult> {
     );
   }
 
-  let buffer = Buffer.from(await file.arrayBuffer());
+  // 显式标注：Node 22+ 的 Buffer 已泛型化，compressImageToMaxBytes 返回的是
+  // Buffer<ArrayBufferLike>，不标注会被推断成 Buffer<ArrayBuffer> 而赋值失败。
+  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
   const { fileTypeFromBuffer } = await import("file-type");
   const detected = await fileTypeFromBuffer(buffer);
   if (!detected) {

@@ -221,7 +221,7 @@ export async function packAppFromGitRef(
 ): Promise<PackedUpdate | { fileCount: number; createdAt: string; size: number; path: string }> {
   const trimmed = ref.trim();
   if (!trimmed) {
-    throw new UpdateError("VALIDATION_ERROR", "请提供 git 引用，例如 v0.1.0 或 HEAD", 400);
+    throw new UpdateError("VALIDATION_ERROR", "请提供 git 引用，例如 v0.1.1 或 HEAD", 400);
   }
   const workDir = path.join(os.tmpdir(), `myblog-update-git-${randomUUID()}`);
   await mkdir(workDir, { recursive: true });

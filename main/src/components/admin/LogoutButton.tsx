@@ -1,12 +1,14 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { fetchCsrfToken } from "@/lib/client/csrf";
 
+/**
+ * 退出同样走**文档级跳转**：退出也是鉴权边界，软导航会把已登录时渲染出来的
+ * 后台载荷留在客户端缓存里（与 LoginForm 同一类问题，见那边的注释）。
+ */
 export function LogoutButton() {
-  const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -27,11 +29,9 @@ export function LogoutButton() {
         throw new Error("退出登录失败");
       }
 
-      router.replace("/admin/login");
-      router.refresh();
+      window.location.replace("/admin/login");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "退出登录失败");
-    } finally {
       setSubmitting(false);
     }
   }
@@ -39,7 +39,7 @@ export function LogoutButton() {
   return (
     <div>
       <button
-        className="heo-button heo-button--ghost"
+        className="admin-btn admin-btn--ghost"
         type="button"
         onClick={logout}
         disabled={submitting}
@@ -47,7 +47,7 @@ export function LogoutButton() {
         {submitting ? "退出中…" : "退出登录"}
       </button>
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}

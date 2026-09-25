@@ -117,6 +117,7 @@ export function HomeLayoutEditor({
     initial.find((entry) => entry.enabled)?.moduleId ?? null,
   );
   const [zoom, setZoom] = useState<number>(1);
+  const [pane, setPane] = useState<"settings" | "canvas">("canvas");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -277,7 +278,7 @@ export function HomeLayoutEditor({
       }
       node.animate(
         [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
-        { duration: 220, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+        { duration: 220, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
       );
     });
     flipRects.current = next;
@@ -454,7 +455,13 @@ export function HomeLayoutEditor({
     if (samePlacement(drag.origin, preview)) {
       return;
     }
-    patchEntry(drag.moduleId, mergeBox(viewport, preview));
+    // 拖动只改格点位置，高度沿用该模块原值：MoveDrag 只带像素 width/height、
+    // 没有 hPct，说明拖动本就不该改高度；而 mergeBox 需要一个完整的 LayoutBox。
+    const moved = entries.find((item) => item.moduleId === drag.moduleId);
+    patchEntry(
+      drag.moduleId,
+      mergeBox(viewport, { ...preview, hPct: moved?.hPct ?? 0 }),
+    );
   }
 
   function onPointerUp() {
@@ -628,7 +635,23 @@ export function HomeLayoutEditor({
   } as CSSProperties;
 
   return (
-    <div className="home-editor">
+    <div className={cn("home-editor", pane === "canvas" ? "is-canvas" : "is-settings")}>
+      <div className="admin-pane-tabs">
+        <button
+          className={cn("admin-seg__btn", pane === "settings" && "is-on")}
+          onClick={() => setPane("settings")}
+          type="button"
+        >
+          设置
+        </button>
+        <button
+          className={cn("admin-seg__btn", pane === "canvas" && "is-on")}
+          onClick={() => setPane("canvas")}
+          type="button"
+        >
+          画布
+        </button>
+      </div>
       <aside className="home-editor__rail">
         <div className="home-editor__rail-body">
           <section className="home-editor__group">
@@ -636,7 +659,7 @@ export function HomeLayoutEditor({
             <p className="admin-muted">
               统一调整首页模块玻璃底与背景图的不透明度，前台立刻生效。
             </p>
-            <label className="form-field">
+            <label className="admin-field">
               模块不透明度（{look.homeModuleOpacity}%）
               <input
                 max={100}
@@ -652,7 +675,7 @@ export function HomeLayoutEditor({
                 value={look.homeModuleOpacity}
               />
             </label>
-            <label className="form-field">
+            <label className="admin-field">
               背景不透明度（{look.homeBackdropOpacity}%）
               <input
                 max={100}
@@ -669,7 +692,7 @@ export function HomeLayoutEditor({
               />
             </label>
             <button
-              className="heo-button"
+              className="admin-btn"
               disabled={saving || !lookDirty}
               onClick={() => void saveAppearance()}
               type="button"
@@ -746,7 +769,7 @@ export function HomeLayoutEditor({
 
               {selected.enabled && selectedBox ? (
                 <div className="home-editor__grid-fields">
-                  <label className="form-field">
+                  <label className="admin-field">
                     行
                     <input
                       max={committedMaxRow + 1}
@@ -768,7 +791,7 @@ export function HomeLayoutEditor({
                       value={selectedBox.row}
                     />
                   </label>
-                  <label className="form-field">
+                  <label className="admin-field">
                     起始列
                     <input
                       max={HOME_GRID_COLUMNS - selectedBox.colSpan + 1}
@@ -790,7 +813,7 @@ export function HomeLayoutEditor({
                       value={selectedBox.col}
                     />
                   </label>
-                  <label className="form-field">
+                  <label className="admin-field">
                     宽度（列）
                     <input
                       max={HOME_GRID_COLUMNS - selectedBox.col + 1}
@@ -812,7 +835,7 @@ export function HomeLayoutEditor({
                       value={selectedBox.colSpan}
                     />
                   </label>
-                  <label className="form-field">
+                  <label className="admin-field">
                     高度（% 视口，0=随内容）
                     <input
                       max={100}
@@ -853,7 +876,7 @@ export function HomeLayoutEditor({
                     </div>
                   ) : null}
                   <button
-                    className="heo-button"
+                    className="admin-btn"
                     onClick={resetSelectedSize}
                     type="button"
                   >
@@ -875,7 +898,7 @@ export function HomeLayoutEditor({
                     />
                   ))}
                   <button
-                    className="heo-button"
+                    className="admin-btn"
                     disabled={saving}
                     onClick={() => void saveConfig()}
                     type="button"
@@ -890,12 +913,12 @@ export function HomeLayoutEditor({
 
         <div className="home-editor__rail-foot">
           {error ? (
-            <p className="form-error" role="alert">
+            <p className="admin-error" role="alert">
               {error}
             </p>
           ) : null}
           <button
-            className="heo-button"
+            className="admin-btn"
             disabled={saving || !dirty}
             onClick={() => void saveLayout()}
             type="button"
@@ -1135,7 +1158,7 @@ function ConfigField({
       );
     case "number":
       return (
-        <label className="form-field">
+                  <label className="admin-field">
           {field.label}
           <input
             max={field.max}
@@ -1156,7 +1179,7 @@ function ConfigField({
       );
     case "select":
       return (
-        <label className="form-field">
+                  <label className="admin-field">
           {field.label}
           <select
             onChange={(event) => onChange({ [field.name]: event.target.value })}
@@ -1172,7 +1195,7 @@ function ConfigField({
       );
     case "textarea":
       return (
-        <label className="form-field">
+                  <label className="admin-field">
           {field.label}
           <textarea
             onChange={(event) => onChange({ [field.name]: event.target.value })}
@@ -1184,7 +1207,7 @@ function ConfigField({
     case "lines": {
       const max = field.max ?? 3;
       return (
-        <label className="form-field">
+                  <label className="admin-field">
           {field.label}
           <textarea
             onChange={(event) =>
@@ -1207,7 +1230,7 @@ function ConfigField({
     }
     default:
       return (
-        <label className="form-field">
+                  <label className="admin-field">
           {field.label}
           <input
             onChange={(event) => onChange({ [field.name]: event.target.value })}

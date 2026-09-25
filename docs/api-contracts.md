@@ -1,7 +1,7 @@
 # api-contracts.md — API 路由契约
 
 > 新增/修改路由时同步本文件。错误响应统一：`{ code: string, message: string }`，不透传堆栈。
-> 状态：M1 认证、M2 上传/解锁/浏览量、M3 后台管理、M4 评论、M5 搜索/瞬间点赞/定时发布、M6 备份、M8 首页模块化、M9 程序更新（代码主路径）已落地。前台列表/详情由 RSC 直查 Prisma；公开文章/Setting REST 属可选预留，仍未实现。
+> 状态：M1 认证、M2 上传/解锁/浏览量、M3 后台管理、M4 评论、M5 搜索/瞬间点赞/定时发布、M6 备份、M8 首页模块化、M9 程序更新、M10 更新页数据清理已落地。前台列表/详情由 RSC 直查 Prisma；公开文章/Setting REST 属可选预留，仍未实现。
 
 ## 通用约定
 
@@ -14,8 +14,8 @@
 
 | 方法 | 路径 | 请求 | 响应/行为 | 状态 |
 |---|---|---|---|---|
-| POST | `/api/auth/login` | `{username, password}` + CSRF 头 | `{data:{username},csrfToken}` + session cookie；限速 5 次/15 分/IP | ✅ |
-| POST | `/api/auth/setup` | `{siteName,siteUrl?,subtitle?,username,password,passwordConfirm,passphrase,passphraseConfirm}` + CSRF；仅当无管理员且无半钥；限速 5 次/15 分/IP；成功后建管理员、半钥、站点名 | ✅ |
+| POST | `/api/auth/login` | `{username, password}` + CSRF 头 | `{data:{username},csrfToken}` + session cookie；限速 5 次/15 分/IP，**成功登录会清掉该 IP 的记账**（策略源 `lib/auth/login-limit.ts`） | ✅ |
+| POST | `/api/auth/setup` | 服务端按状态分派：无管理员且无主机半钥时接收 `{siteName,siteUrl?,subtitle?,username,password,passwordConfirm}` 并创建站点；无管理员但已有主机半钥时仅接收 `{username,password,passwordConfirm}` 重建管理员，不改站点配置或备份口令；已有管理员一律 409。两种模式均带 CSRF、限速 5 次/15 分/IP | ✅ |
 | POST | `/api/auth/logout` | CSRF 头 | 销毁 session 与 CSRF cookie | ✅ |
 | GET | `/api/auth/csrf` | — | `{token}`（HMAC 绑 session）；`Cache-Control: no-store` | ✅ |
 | GET | `/api/posts` | `?page&pageSize&category&tag&q` | 已发布文章列表（密码文无 content/excerpt）；RSC 已覆盖，REST 可选 | 📋 |
@@ -39,8 +39,9 @@
 |---|---|---|---|
 | GET | `/api/admin/session` | 当前管理员信息 `{data:{username}}` | ✅ |
 | GET | `/api/admin/stats` | 文章分状态计数、瞬间数、pending 评论数 | ✅ |
-| GET/POST | `/api/admin/posts` | 列表（含 draft/scheduled，`?status&q&page`）/ 新建（含 `bannerStyle`/`bannerColor`/`bannerColor2`/`recommend`） | ✅ |
-| GET/PATCH/DELETE | `/api/admin/posts/[id]` | 详情（含 content，`hasPassword`，无 hash，含 banner 与 `recommend`）/ 更新 / 删除（顺带删该文评论） | ✅ |
+| GET/POST | `/api/admin/posts` | 列表（含 draft/scheduled，`?status&q&page`）/ 新建（含 `bannerStyle`/`bannerColor`/`bannerColor2`/`recommend`/`showRevisedAt`/`authorName`；`authorName` 留空时服务端用管理员笔名兜底） | ✅ |
+| GET/PATCH/DELETE | `/api/admin/posts/[id]` | 详情（含 content，`hasPassword`，无 hash，含 banner、`recommend`、`authorName`、`revisedAt`、`showRevisedAt`）/ 更新（PATCH 是部分更新；`revisedAt` 由服务端判定，客户端传值不生效）/ 删除（顺带删该文评论） | ✅ |
+| GET/POST | `/api/admin/pen-names` | 笔名清单（写文章页的作者下拉）/ 新建笔名 `{name}`；重名 400 `CONFLICT`（前端会回查已有记录，不阻断） | ✅ |
 | POST | `/api/admin/preview` | `{content}`（≤200_000 字）→ `{data:{html}}`；走 `renderMdx` + sanitize，供写文章预览 | ✅ |
 | GET/POST | `/api/admin/categories`、`/api/admin/tags` | 分类/标签列表与新建 | ✅ |
 | GET/POST | `/api/admin/moments` | 瞬间列表/发布 | ✅ |
@@ -56,7 +57,7 @@
 | POST | `/api/admin/uploads/thumbs/regenerate` | 按 `thumbMaxPx` 重生成缩略图（先本地后 COS 取源，thumb 写本地+COS） | ✅ |
 | POST | `/api/admin/uploads/thumbs2/regenerate` | 删除全部 `images/thumbs2/` 后按 `thumb2MaxPx` 重建；只写本地，不上 COS | ✅ |
 | POST | `/api/admin/uploads/migrate` | 把本地尚未上云的原图/音视频/thumb 补传到新目录树；HEAD 已存在跳过；未配 COS 503；进行中 409 | ✅ |
-| GET/PUT | `/api/admin/settings` | 全量 KV；PUT 只接受已知可写 key（含 COS 五项、`thumbMaxPx`、`thumb2MaxPx`、`backupLocalMaxMB`、`localMediaMaxMB`、`siteStartedAt`、`updateGithubRepo`），不含 `lastBackupAt`；GET 不回显 `cosSecretId`/`cosSecretKey`，另给 `cosSecretIdSet`/`cosSecretKeySet`；空字符串表示不改凭证 | ✅ |
+| GET/PUT | `/api/admin/settings` | 全量 KV；PUT 只接受已知可写 key（含 COS 五项、`thumbMaxPx`、`thumb2MaxPx`、`backupLocalMaxMB`、`localMediaMaxMB`、`siteStartedAt`、`updateGithubRepo`、`adminAccent`、`dashboardCards`），不含 `lastBackupAt`；GET 不回显 `cosSecretId`/`cosSecretKey`，另给 `cosSecretIdSet`/`cosSecretKeySet`；空字符串表示不改凭证。`adminAccent` 是枚举（6 套预设之一，非法值 400）；`dashboardCards` 落库前归一（未知键丢弃、缺键补 true、非布尔按默认）。两者都**不进公开设置** | ✅ |
 | POST | `/api/admin/settings/usage` | 当场扫一次本机 `uploads`/`backups`，返回媒体合计/分项与各备份包体积；打开设置页不扫 | ✅ |
 | POST | `/api/admin/cos/test` | 用当前设置 HEAD/List `backups/`；未配齐 503 | ✅ |
 | POST | `/api/admin/backup/run` | 手动触发备份（随加密开关打加密或明文包）；同步执行后 `{data:{name,size,createdAt,encrypted,releaseLabel,cosUploaded}}`；已有任务 409；加密开启且未设定备份口令 409 `HOST_SECRET_MISSING` | ✅ |
@@ -69,7 +70,7 @@
 | DELETE | `/api/admin/backup/[file]` | 删除本地 + COS；白名单与路径校验同下载；已预约恢复的包 409 `RESTORE_PENDING` | ✅ |
 | POST | `/api/admin/backup/restore` | `{name,confirm:true}`；校验后只写入预约，站点继续运行；已有预约更新 409 `UPDATE_PENDING`；`{data:{pending,restarting:false,name,requestedAt,restartAt,safetyBackup}}` | ✅ |
 | PUT | `/api/admin/backup/restore` | `{restartNow:true}` 立刻重启，或 `{restartAt:ISO}` 预约重启时间（必须晚于现在）；无预约 404 | ✅ |
-| GET/PUT | `/api/admin/account` | GET `{id,username,mustChangeCredentials}`；PUT `{currentPassword,username?,newPassword?}`，至少改一项；首次使用必须带新密码。这两个端点是唯一允许 `mustChangeCredentials=true` 的管理 API，其它 `/api/admin/*` 回 403 `CREDENTIALS_CHANGE_REQUIRED` | ✅ |
+| GET/PUT | `/api/admin/account` | GET `{id,username,penName,mustChangeCredentials}`；PUT `{currentPassword,penName?,username?,newPassword?}`，三项至少改一项（`penName` 允许空串=清掉，改笔名会立即失效前台文章缓存，见 P-089）；首次使用必须带新密码。这两个端点是唯一允许 `mustChangeCredentials=true` 的管理 API，其它 `/api/admin/*` 回 403 `CREDENTIALS_CHANGE_REQUIRED` | ✅ |
 | DELETE | `/api/admin/backup/restore` | 取消预约；`{data:{ok:true}}` | ✅ |
 | GET/PUT | `/api/admin/home/layout` | 首页格点。GET 返回 `{moduleId,...,enabled,col,colSpan,row,hPct,mobileCol,mobileColSpan,mobileRow,mobileHPct,sort}`；PUT `{items:[{moduleId,enabled,col,colSpan,row,hPct,mobileCol,mobileColSpan,mobileRow,mobileHPct}]}` 整表替换。桌面/手机两套几何，越界收进 12 列，`hPct` 0–100（0=随内容），`sort` 按桌面 `row,col` 重算 | ✅ |
 | GET/POST | `/api/admin/modules` | 模块目录列表（含 `blockCount`/`hasCode`/`enabled`）/ 新建 custom `{name,html?,css?,js?,blocks?,config?}` → 201 `{data:{id}}` | ✅ |
@@ -83,5 +84,8 @@
 | PUT | `/api/admin/update/apply` | `{restartNow:true}` 立刻重启，或 `{restartAt:ISO}`（必须晚于现在）；无预约 404 | ✅ |
 | DELETE | `/api/admin/update/apply` | 取消预约；`{data:{ok:true}}` | ✅ |
 | GET/POST | `/api/admin/update/github` | GET 解析 Setting `updateGithubRepo`，列公开 Release 中 `myblog-update-*.tar.gz` 资产；POST `{tag}` 下载并 `stageImportedUpdate`。未填仓库 400；只管理员点检查时请求 | ✅ |
+| POST | `/api/admin/update/clear` | `{targets:["data"|"admin"],confirmation,acknowledged:true}`；范围可同时选两项，确认短语必须精确匹配（`删除数据` / `删除管理员账号` / `删除数据和管理员账号`）。返回一次性 `operationId`、`executeAt`、`serverNow`、`waitMs`；只创建待确认操作，不立即删除 | ✅ |
+| PUT | `/api/admin/update/clear` | `{operationId}`；绑定创建令牌的管理员，服务端时间未到 `executeAt` 返回 409 `WAIT_REQUIRED`，到时消费令牌并清理。`data` 会清内容表、媒体、本地/COS 对象、备份/更新暂存；`admin` 会删除全部管理员；两项同选后销毁当前 session | ✅ |
+| DELETE | `/api/admin/update/clear` | `{operationId}`；当前管理员可在执行前使令牌失效，返回 `{data:{cancelled:true}}` | ✅ |
 
 `html`/`css`/`js` 各限 32KB，只有管理员可写且**不过** sanitize（pitfalls P-034）。三个写端点成功后都调 `revalidatePublicContent()` 刷新 `/`。

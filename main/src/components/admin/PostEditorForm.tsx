@@ -1,7 +1,10 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ArrowLeftIcon, GearIcon, InfoCircledIcon } from "@radix-ui/react-icons";
+import { AnimatePresence, m } from "motion/react";
 
 import { EditorLoader } from "@/components/admin/EditorLoader";
 import { EditorPreview } from "@/components/admin/EditorPreview";
@@ -15,6 +18,7 @@ import {
 } from "@/lib/client/upload";
 import { bannerFill } from "@/lib/posts/banner";
 import type { AdminPostView } from "@/lib/posts/admin-types";
+import { AUTHOR_NAME_MAX } from "@/lib/posts/author";
 import {
   MAX_MARKDOWN_IMPORT_BYTES,
   parseMarkdownImport,
@@ -30,11 +34,21 @@ type TaxonomyOption = {
   slug: string;
 };
 
+/** 笔名只存名字（没有 slug，作者没有独立页面） */
+type PenNameOption = {
+  id: number;
+  name: string;
+};
+
 type PostEditorFormProps = {
   mode: "create" | "edit";
   post?: AdminPostView;
   categories: TaxonomyOption[];
   tags: TaxonomyOption[];
+  /** 已登记的笔名（像分类/标签一样可加多个），用于作者下拉与快捷选择 */
+  penNames: PenNameOption[];
+  /** 管理员账号上的默认笔名：新文章的作者默认取它 */
+  defaultAuthorName: string;
 };
 
 type FoldKey = "publish" | "taxonomy" | "cover" | "extra";
@@ -73,9 +87,14 @@ function SettingsFold({
         <span>{title}</span>
         <span aria-hidden="true" className="admin-fold__mark" />
       </button>
-      <div className="admin-fold__body">
+      <m.div
+        animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
+        initial={false}
+        style={{ overflow: "hidden" }}
+        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+      >
         <div className="admin-fold__inner">{children}</div>
-      </div>
+      </m.div>
     </section>
   );
 }
@@ -85,10 +104,16 @@ export function PostEditorForm({
   post,
   categories,
   tags,
+  penNames,
+  defaultAuthorName,
 }: PostEditorFormProps) {
   const router = useRouter();
   const [title, setTitle] = useState(post?.title ?? "");
   const [slug, setSlug] = useState(post?.slug ?? "");
+  // 作者：文章自己填过就用它，否则预填默认笔名（服务端在没有这笔名时也会兜底）
+  const [authorName, setAuthorName] = useState(
+    post?.authorName?.trim() || defaultAuthorName,
+  );
   const [excerpt, setExcerpt] = useState(post?.excerpt ?? "");
   const [cover, setCover] = useState(post?.cover ?? "");
   const [bannerStyle, setBannerStyle] = useState(
@@ -107,6 +132,8 @@ export function PostEditorForm({
   );
   const [pinned, setPinned] = useState(post?.pinned ?? false);
   const [recommend, setRecommend] = useState(post?.recommend ?? false);
+  // 文章页是否显示「已修改 + 修改时间」，默认显示（老文章没有该字段时也按显示处理）
+  const [showRevisedAt, setShowRevisedAt] = useState(post?.showRevisedAt ?? true);
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const [categoryId, setCategoryId] = useState(
@@ -116,8 +143,10 @@ export function PostEditorForm({
   const [tagOptions, setTagOptions] = useState(tags);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newTagName, setNewTagName] = useState("");
+  const [penNameOptions, setPenNameOptions] = useState(penNames);
+  const [newPenName, setNewPenName] = useState("");
   const [creatingTaxonomy, setCreatingTaxonomy] = useState<
-    "category" | "tag" | null
+    "category" | "tag" | "penName" | null
   >(null);
   const [tagIds, setTagIds] = useState<number[]>(
     post?.tags.map((tag) => tag.id) ?? [],
@@ -129,6 +158,8 @@ export function PostEditorForm({
   const [savingAs, setSavingAs] = useState<string | null>(null);
   const [view, setView] = useState<"edit" | "preview">("edit");
   const [settingsOpen, setSettingsOpen] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [hintOpen, setHintOpen] = useState(false);
   const [folds, setFolds] = useState<Record<FoldKey, boolean>>({
     publish: true,
     taxonomy: true,
@@ -139,6 +170,36 @@ export function PostEditorForm({
     () => normalizePostContent(post?.content ?? "# 新文章\n\n"),
     [post?.content],
   );
+
+  useEffect(() => {
+    if (!sheetOpen) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSheetOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sheetOpen]);
+
+  function closeSettingsSheet() {
+    setSheetOpen(false);
+  }
+
+  function openSettingsSheet() {
+    setSettingsOpen(true);
+    setSheetOpen(true);
+  }
+
+  function toggleSettingsPane() {
+    if (sheetOpen) {
+      setSheetOpen(false);
+      return;
+    }
+    setSettingsOpen((current) => !current);
+  }
 
   function toggleFold(key: FoldKey) {
     setFolds((current) => ({ ...current, [key]: !current[key] }));
@@ -233,6 +294,54 @@ export function PostEditorForm({
     }
   }
 
+  /** 笔名没有 slug，冲突时按名字回查已有记录，避免重复创建报错卡住流程 */
+  async function resolvePenName(name: string): Promise<PenNameOption> {
+    const trimmed = name.trim();
+    try {
+      const payload = await adminJson<{ data: PenNameOption }>(
+        "/api/admin/pen-names",
+        { method: "POST", body: JSON.stringify({ name: trimmed }) },
+      );
+      return payload.data;
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      if (!message.includes("已经有了")) {
+        throw caught;
+      }
+      const listed = await adminJson<{ data: PenNameOption[] }>(
+        "/api/admin/pen-names",
+      );
+      const existing = listed.data.find((item) => item.name === trimmed);
+      if (!existing) {
+        throw caught;
+      }
+      return existing;
+    }
+  }
+
+  async function handleCreatePenName() {
+    const name = newPenName.trim();
+    if (!name || creatingTaxonomy) {
+      return;
+    }
+    setError("");
+    setCreatingTaxonomy("penName");
+    try {
+      const created = await resolvePenName(name);
+      setPenNameOptions((current) =>
+        current.some((item) => item.id === created.id)
+          ? current
+          : [...current, created].sort((a, b) => a.name.localeCompare(b.name, "zh")),
+      );
+      setAuthorName(created.name);
+      setNewPenName("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "新建笔名失败");
+    } finally {
+      setCreatingTaxonomy(null);
+    }
+  }
+
   async function handleCover(file: File | undefined) {
     if (!file) {
       return;
@@ -299,6 +408,7 @@ export function PostEditorForm({
       const payload: Record<string, unknown> = {
         title,
         slug: slug || null,
+        authorName: authorName.trim() || null,
         content,
         excerpt: excerpt || null,
         cover: nextCover || null,
@@ -309,6 +419,7 @@ export function PostEditorForm({
         publishedAt: publishedAt || null,
         pinned,
         recommend,
+        showRevisedAt,
         categoryId: categoryId ? Number(categoryId) : null,
         tagIds,
       };
@@ -340,24 +451,47 @@ export function PostEditorForm({
 
   return (
     <form
-      className={cn("post-workspace", !settingsOpen && "is-settings-collapsed")}
+      className={cn(
+        "post-workspace",
+        !settingsOpen && "is-settings-collapsed",
+        sheetOpen && "is-sheet",
+      )}
       onSubmit={(event) => {
         event.preventDefault();
         void handleSubmit();
       }}
     >
-      <aside className={cn("post-workspace__rail", !settingsOpen && "is-collapsed")}>
+      {sheetOpen ? (
+        <button
+          aria-label="关闭设置"
+          className="admin-dialog__backdrop admin-settings-sheet"
+          onClick={closeSettingsSheet}
+          type="button"
+        />
+      ) : null}
+      <aside
+        aria-labelledby={sheetOpen ? "post-settings-title" : undefined}
+        aria-modal={sheetOpen || undefined}
+        className={cn("post-workspace__rail", !settingsOpen && "is-collapsed")}
+        role={sheetOpen ? "dialog" : undefined}
+      >
         <div className="post-workspace__rail-head">
+          <span className="admin-dialog__grab post-workspace__sheet-grab" />
+          <p className="post-workspace__sheet-title" id="post-settings-title">
+            文章设置
+          </p>
           <button
-            aria-expanded={settingsOpen}
+            aria-expanded={sheetOpen ? true : settingsOpen}
             className="admin-pane-toggle"
-            onClick={() => setSettingsOpen((current) => !current)}
-            title={settingsOpen ? "收起设置" : "展开设置"}
+            onClick={toggleSettingsPane}
+            title={
+              sheetOpen ? "关闭设置" : settingsOpen ? "收起设置" : "展开设置"
+            }
             type="button"
           >
             <span aria-hidden="true" className="admin-pane-toggle__icon" />
             <span className="visually-hidden">
-              {settingsOpen ? "收起设置" : "展开设置"}
+              {sheetOpen ? "关闭设置" : settingsOpen ? "收起设置" : "展开设置"}
             </span>
           </button>
         </div>
@@ -390,7 +524,7 @@ export function PostEditorForm({
                 </label>
               ))}
             </div>
-            <label className="form-field">
+            <label className="admin-field">
               发布时间
               <input
                 onChange={(event) => setPublishedAt(event.target.value)}
@@ -398,6 +532,70 @@ export function PostEditorForm({
                 value={publishedAt}
               />
             </label>
+            <label className="admin-field">
+              作者
+              <input
+                list="post-author-options"
+                maxLength={AUTHOR_NAME_MAX}
+                onChange={(event) => setAuthorName(event.target.value)}
+                placeholder="留空 = 用默认笔名"
+                value={authorName}
+              />
+            </label>
+            {/* 输入框 + datalist = 下拉快捷选已有笔名，也能直接打字自定义 */}
+            <datalist id="post-author-options">
+              {penNameOptions.map((item) => (
+                <option key={item.id} value={item.name} />
+              ))}
+            </datalist>
+            {penNameOptions.length > 0 ? (
+              <div className="admin-chip-row" role="radiogroup" aria-label="已有笔名">
+                {penNameOptions.map((item) => (
+                  <label
+                    className={cn(
+                      "admin-chip",
+                      authorName.trim() === item.name && "is-on",
+                    )}
+                    key={item.id}
+                  >
+                    <input
+                      checked={authorName.trim() === item.name}
+                      name="authorName"
+                      onChange={() => setAuthorName(item.name)}
+                      type="radio"
+                      value={item.name}
+                    />
+                    {item.name}
+                  </label>
+                ))}
+              </div>
+            ) : null}
+            <div className="admin-inline-create">
+              <input
+                maxLength={AUTHOR_NAME_MAX}
+                onChange={(event) => setNewPenName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleCreatePenName();
+                  }
+                }}
+                placeholder="新笔名"
+                value={newPenName}
+              />
+              <button
+                className="admin-field__reset"
+                disabled={!newPenName.trim() || creatingTaxonomy !== null}
+                onClick={() => void handleCreatePenName()}
+                type="button"
+              >
+                {creatingTaxonomy === "penName" ? "创建中…" : "新建"}
+              </button>
+            </div>
+            <p className="admin-muted">
+              下拉或点标签选已有笔名，也可以直接输入自定义作者；新建的笔名会进这份清单。
+              留空 = 用「设置」里账号的默认笔名。
+            </p>
             <label className={cn("admin-chip", pinned && "is-on")}>
               <input
                 checked={pinned}
@@ -417,6 +615,18 @@ export function PostEditorForm({
             <p className="admin-muted">
               勾选后进入首页推荐位，最多展示 6 篇，按发布时间倒序。
             </p>
+            <label className={cn("admin-chip", showRevisedAt && "is-on")}>
+              <input
+                checked={showRevisedAt}
+                onChange={(event) => setShowRevisedAt(event.target.checked)}
+                type="checkbox"
+              />
+              显示「已修改」
+            </label>
+            <p className="admin-muted">
+              已发布的文章再次改动后，文章页会在发布时间旁边标出「已修改 + 修改时间」。
+              取消勾选就不再显示。
+            </p>
           </SettingsFold>
 
           <SettingsFold
@@ -424,7 +634,7 @@ export function PostEditorForm({
             open={folds.taxonomy}
             title="分类与标签"
           >
-            <label className="form-field">
+            <label className="admin-field">
               分类
               <select
                 onChange={(event) => setCategoryId(event.target.value)}
@@ -451,7 +661,7 @@ export function PostEditorForm({
                 value={newCategoryName}
               />
               <button
-                className="form-field__reset"
+                className="admin-field__reset"
                 disabled={!newCategoryName.trim() || creatingTaxonomy !== null}
                 onClick={() => void handleCreateCategory()}
                 type="button"
@@ -491,7 +701,7 @@ export function PostEditorForm({
                 value={newTagName}
               />
               <button
-                className="form-field__reset"
+                className="admin-field__reset"
                 disabled={!newTagName.trim() || creatingTaxonomy !== null}
                 onClick={() => void handleCreateTag()}
                 type="button"
@@ -506,7 +716,7 @@ export function PostEditorForm({
             open={folds.cover}
             title="封面与 Banner"
           >
-            <div className="form-field">
+            <div className="admin-field">
               封面
               {cover ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -518,6 +728,12 @@ export function PostEditorForm({
                 type="file"
               />
             </div>
+            {bannerStyle === "cover" && !cover ? (
+              <p className="admin-muted">
+                还没选封面图 → 卡片按「无封面」处理：细条样式，只显示标题和文章开头一小段。
+                想用色块就切「纯色 / 混色」——那是封面，不算无封面。
+              </p>
+            ) : null}
             <div className="admin-chip-row" role="radiogroup" aria-label="顶 Banner">
               {(
                 [
@@ -542,8 +758,8 @@ export function PostEditorForm({
               ))}
             </div>
             {bannerStyle !== "cover" ? (
-              <div className="admin-form-row">
-                <label className="form-field">
+              <div className="admin-field-row">
+                <label className="admin-field">
                   {bannerStyle === "gradient" ? "起始色" : "颜色"}
                   <input
                     onChange={(event) => setBannerColor(event.target.value)}
@@ -552,7 +768,7 @@ export function PostEditorForm({
                   />
                 </label>
                 {bannerStyle === "gradient" ? (
-                  <label className="form-field">
+                  <label className="admin-field">
                     结束色
                     <input
                       onChange={(event) => setBannerColor2(event.target.value)}
@@ -582,14 +798,14 @@ export function PostEditorForm({
             open={folds.extra}
             title="摘要、密码与导入"
           >
-            <label className="form-field">
+            <label className="admin-field">
               slug（可空，自动生成）
               <input
                 onChange={(event) => setSlug(event.target.value)}
                 value={slug}
               />
             </label>
-            <label className="form-field">
+            <label className="admin-field">
               摘要
               <textarea
                 onChange={(event) => setExcerpt(event.target.value)}
@@ -597,7 +813,7 @@ export function PostEditorForm({
                 value={excerpt}
               />
             </label>
-            <label className="form-field">
+            <label className="admin-field">
               {post?.hasPassword ? "新密码（留空则不改）" : "访问密码（可空）"}
               <input
                 autoComplete="new-password"
@@ -616,7 +832,7 @@ export function PostEditorForm({
                 清除密码
               </label>
             ) : null}
-            <div className="form-field">
+            <div className="admin-field">
               从 Markdown 导入
               <input
                 accept=".md,.mdx,text/markdown"
@@ -630,7 +846,7 @@ export function PostEditorForm({
           </SettingsFold>
 
           {error ? (
-            <p className="form-error" role="alert">
+            <p className="admin-error" role="alert">
               {error}
             </p>
           ) : null}
@@ -639,6 +855,14 @@ export function PostEditorForm({
 
       <div className="post-workspace__stage">
         <div className="post-workspace__titlebar">
+          <Link
+            className="admin-btn admin-btn--icon admin-btn--ghost post-workspace__back"
+            href="/admin/posts"
+            title="返回文章列表"
+          >
+            <ArrowLeftIcon />
+            <span className="visually-hidden">返回文章列表</span>
+          </Link>
           <label className="post-workspace__title">
             <span className="visually-hidden">标题</span>
             <input
@@ -648,28 +872,46 @@ export function PostEditorForm({
               value={title}
             />
           </label>
-          <div className="admin-form-actions">
+          <div className="admin-seg" role="group" aria-label="编辑模式">
             <button
-              className={cn(
-                "heo-button heo-button--ghost",
-                view === "edit" && "is-on",
-              )}
+              aria-pressed={view === "edit"}
+              className={cn("admin-seg__btn", view === "edit" && "is-on")}
               onClick={() => setView("edit")}
               type="button"
             >
+              {view === "edit" ? (
+                <m.span
+                  className="admin-seg__slider"
+                  layoutId="post-seg"
+                  style={{ left: 3, right: "50%" }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                />
+              ) : null}
               可视化
             </button>
             <button
-              className={cn(
-                "heo-button heo-button--ghost",
-                view === "preview" && "is-on",
-              )}
+              aria-pressed={view === "preview"}
+              className={cn("admin-seg__btn", view === "preview" && "is-on")}
               onClick={() => setView("preview")}
               type="button"
             >
+              {view === "preview" ? (
+                <m.span
+                  className="admin-seg__slider"
+                  layoutId="post-seg"
+                  style={{ left: "50%", right: 3 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                />
+              ) : null}
               预览
             </button>
-            <button className="heo-button heo-button--ghost" disabled={Boolean(savingAs)} type="submit">
+          </div>
+          <div className="admin-btn-row post-workspace__desktop-actions">
+            <button
+              className="admin-btn admin-btn--ghost"
+              disabled={Boolean(savingAs)}
+              type="submit"
+            >
               {savingAs && savingAs !== "published" && savingAs !== "scheduled"
                 ? "保存中…"
                 : savingAs
@@ -677,7 +919,7 @@ export function PostEditorForm({
                   : "保存"}
             </button>
             <button
-              className="heo-button"
+              className="admin-btn"
               disabled={Boolean(savingAs)}
               onClick={() => void handleSubmit("published")}
               type="button"
@@ -687,10 +929,38 @@ export function PostEditorForm({
                 : "保存并发布"}
             </button>
           </div>
+          <button
+            className="admin-btn admin-btn--icon admin-btn--ghost post-workspace__hint-btn"
+            onClick={() => setHintOpen((current) => !current)}
+            title="编辑说明"
+            type="button"
+          >
+            <InfoCircledIcon />
+            <span className="visually-hidden">编辑说明</span>
+          </button>
+          <button
+            aria-expanded={sheetOpen}
+            className="admin-btn admin-btn--ghost admin-editor-settings"
+            onClick={openSettingsSheet}
+            type="button"
+          >
+            <GearIcon />
+            设置
+          </button>
+          <AnimatePresence>
+            {hintOpen ? (
+              <m.p
+                className="post-workspace__popover"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 6 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+              >
+                可视化编辑：标题按字号显示。点工具栏「图片 / 视频」会弹出插入框（上传或外链）。块顶部「拖动」可换位。外链视频下方会标域名。
+              </m.p>
+            ) : null}
+          </AnimatePresence>
         </div>
-        <p className="post-workspace__hint">
-          可视化编辑：标题按字号显示。点工具栏「图片 / 视频」会弹出插入框（上传或外链）。块顶部「拖动」可换位。外链视频下方会标域名。
-        </p>
         <div className="post-workspace__editor" hidden={view !== "edit"}>
           <EditorLoader
             key={editorKey}
@@ -703,6 +973,43 @@ export function PostEditorForm({
             <EditorPreview markdown={content} />
           </div>
         ) : null}
+        <div className="admin-editor-dock">
+          <div className="admin-seg" role="group" aria-label="编辑模式">
+            <button
+              className={cn("admin-seg__btn", view === "edit" && "is-on")}
+              onClick={() => setView("edit")}
+              type="button"
+            >
+              可视化
+            </button>
+            <button
+              className={cn("admin-seg__btn", view === "preview" && "is-on")}
+              onClick={() => setView("preview")}
+              type="button"
+            >
+              预览
+            </button>
+          </div>
+          <button
+            className="admin-btn admin-btn--ghost"
+            disabled={Boolean(savingAs)}
+            type="submit"
+          >
+            {savingAs && savingAs !== "published" && savingAs !== "scheduled"
+              ? "保存中…"
+              : "保存"}
+          </button>
+          <button
+            className="admin-btn"
+            disabled={Boolean(savingAs)}
+            onClick={() => void handleSubmit("published")}
+            type="button"
+          >
+            {savingAs === "published" || savingAs === "scheduled"
+              ? "正在发布中"
+              : "发布"}
+          </button>
+        </div>
       </div>
     </form>
   );

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ADMIN_ACCENT_KEYS } from "@/lib/admin/accents";
+import { resolveDashboardCards } from "@/lib/admin/dashboard-cards";
 import type { SettingKey } from "@/lib/settings";
 
 export const WRITABLE_SETTING_KEYS = [
@@ -24,6 +26,8 @@ export const WRITABLE_SETTING_KEYS = [
   "thumb2MaxPx",
   "backupLocalMaxMB",
   "localMediaMaxMB",
+  "adminAccent",
+  "dashboardCards",
 ] as const satisfies readonly Exclude<SettingKey, "lastBackupAt">[];
 
 export type WritableSettingKey = (typeof WRITABLE_SETTING_KEYS)[number];
@@ -110,6 +114,11 @@ export const settingsPutSchema = z
           return false;
         }
       }, "COS 访问域名须为 https"),
+    adminAccent: z.enum(ADMIN_ACCENT_KEYS),
+    // 未知卡片键丢弃、缺键补默认 true、非布尔值按默认，落库前归一化
+    dashboardCards: z
+      .record(z.string(), z.unknown())
+      .transform((value) => resolveDashboardCards(value)),
   })
   .partial()
   .refine((value) => Object.keys(value).length > 0, {

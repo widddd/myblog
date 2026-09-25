@@ -50,16 +50,15 @@ export async function POST(request: Request) {
 
     const parsed = restorePostSchema.safeParse(body);
     if (!parsed.success) {
-      throw new AdminHttpError("VALIDATION_ERROR", "请确认要恢复的备份文件", 400);
+      throw new AdminHttpError("VALIDATION_ERROR", "请确认备份文件和恢复口令", 400);
     }
 
     const workDir = path.join(os.tmpdir(), `myblog-restore-key-${randomUUID()}`);
     try {
       const filePath = await ensureLocalBackup(parsed.data.name);
-      const resolved = await readBackupPackageDek(
-        filePath,
-        workDir,
-      );
+      const resolved = await readBackupPackageDek(filePath, workDir, {
+        passphrase: parsed.data.passphrase,
+      });
       if (resolved) {
         const storedHash = await getBackupKeyHash(parsed.data.name);
         if (!storedHash) {
@@ -75,10 +74,14 @@ export async function POST(request: Request) {
       await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
     }
 
-    const pending = await requestPendingRestore(parsed.data.name);
+    const pending = await requestPendingRestore(
+      parsed.data.name,
+      undefined,
+      parsed.data.passphrase,
+    );
     let safetyBackup = null;
     try {
-      safetyBackup = await runBackup();
+      safetyBackup = await runBackup(parsed.data.passphrase);
     } catch (error) {
       logger.warn("预约恢复前的安全备份失败，仍保留预约", {
         name: pending.name,

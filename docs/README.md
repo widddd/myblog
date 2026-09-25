@@ -32,6 +32,12 @@
 | `m6-spec.md` | M6 备份系统 + 首页透明度/后台写文章布局实施方案 | AI + 用户 | M6 规划与实施 |
 | `backup-restore-spec.md` | 一键恢复：面板预约并重启 + `pnpm restore` | AI + 用户 | 改备份恢复前必读 |
 | `app-update-spec.md` | 程序更新：导入 tar.gz、boot.cjs 覆盖程序文件 | AI + 用户 | 改程序更新或启动入口前必读 |
+| `data-clear-spec.md` | 更新页一键数据清理：范围、确认、15 秒闸门与保留边界 | AI + 用户 | 改数据清理或危险操作前必读 |
+| `admin-ui-rewrite-spec.md` | 后台前端 UI 重写：独立 CSS、手机底栏、双形态列表、写文章 sheet；§10 第三轮（冷灰表面 + 6 套可切换配色 + 概览卡片显隐） | AI + 用户 | 改后台界面前必读 |
+| [../ADMIN-REWRITE-PLAN.md](../ADMIN-REWRITE-PLAN.md) | 第三轮后台重写的 7 阶段实施计划：配色体系、卡片显隐与外观面板、后端查询清单、风险清单（在仓库根目录） | AI + 用户 | 动后台视觉 / 配色 / 概览页前必读 |
+| [../changelog/AUTHOR-AND-ADMIN-UX-CHANGELOG.md](../changelog/AUTHOR-AND-ADMIN-UX-CHANGELOG.md) | 文章作者、文章页时间口径（含「已修改」）、列表点卡片二选一、卡片/页脚小修、后台暗色可读性、编辑器 ⓘ 说明卡分层的改动清单（每一组可直接当 commit message 摘取；在仓库 `changelog/` 目录） | AI | 写提交说明或发行说明前必读 |
+| [../changelog/ADMIN-REWRITE-CHANGELOG.md](../changelog/ADMIN-REWRITE-CHANGELOG.md) | 第三轮后台重写的改动清单：按可提交分组的文件级说明、验证证据、未完成项、约束（写 commit / 发行说明时直接摘取；在仓库 `changelog/` 目录） | AI | 写提交说明或发行说明前必读 |
+| [../changelog/CARD-AND-LOGIN-CHANGELOG.md](../changelog/CARD-AND-LOGIN-CHANGELOG.md) | 无封面细条卡与「有没有封面」判定、登录后卡住的修复清单 | AI | 写提交说明或发行说明前必读 |
 | `linux-deploy-spec.md` | Linux 精简安装：更新包首装一次，以后只换包 | AI + 用户 | 部署或发版流程前必读 |
 | `backup-encryption-spec.md` | 拆分密钥备份：主机半钥 + 包内半钥、scrypt、`pnpm setup` | AI + 用户 | 改备份加密或投产初始化前必读 |
 | `home-modules-spec.md` | M8 首页模块化：格点模型、内置 11 模块、自定义代码边界、后台画布 | AI + 用户 | 改首页结构或首页模块前必读 |
@@ -42,9 +48,12 @@
 | `readme-requirements.md` | README 必备章节清单 | AI | 用户可见功能变更时对照更新根 README |
 | `user-manual.md` | 站长手册：高级用途与注意事项（不含基本发文） | AI + 用户 | 给人看；改备份/更新/COS/开箱行为时同步 |
 
+> ⚠️ **`changelog/` 三个文件只留本机**（已进 `.gitignore`，见 [pitfalls.md](pitfalls.md) P-092）：它们是内部施工笔记，只在写 commit message / 发行说明时摘取，clone 仓库拿不到这三个文件。
+
 ## 活文档维护说明
 
 - 犯错 → 立即写 pitfalls（P-0XX 递增，不删旧条）
+- `changelog/` 只留本机、不进仓库（P-092）
 - 架构/模型/路由变更 → 同步对应 doc + AGENTS 索引
 - 每次改代码交付前 → 走 `agents-maintenance.md` 触发表
 - 与用户口头要求冲突时，以用户要求为准，并回写文档使其一致

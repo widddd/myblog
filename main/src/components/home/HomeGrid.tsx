@@ -3,7 +3,6 @@ import { builtinDefinition } from "@/lib/home/builtins";
 import type { HomeData } from "@/lib/home/data";
 import { areaStyle, moduleBoxStyle } from "@/lib/home/grid";
 import { toAreas, type HomeLayoutItem } from "@/lib/home/types";
-import { parseSiteStartedAt } from "@/lib/home/uptime";
 import { cn } from "@/lib/utils/cn";
 
 /** 窄的堆叠格子（侧栏那种）跟随滚动，保持原侧栏 sticky 观感。 */
@@ -17,20 +16,15 @@ export function HomeGrid({
   data: HomeData;
 }) {
   const areas = toAreas(
-    items.map(({ module, placement }) => ({ ...placement, module })),
+    items
+      .filter(({ module }) => module.builtinKey !== "uptime")
+      .map(({ module, placement }) => ({ ...placement, module })),
   );
 
   return (
     <div className="home-grid">
       {areas.map((area) => {
-        const visible = area.items.filter(
-          (item) =>
-            item.module.builtinKey !== "uptime" ||
-            parseSiteStartedAt(data.siteStartedAt) !== null,
-        );
-        if (visible.length === 0) {
-          return null;
-        }
+        const visible = area.items;
         const bleed = visible.some(
           ({ module }) => builtinDefinition(module.builtinKey)?.bleed,
         );

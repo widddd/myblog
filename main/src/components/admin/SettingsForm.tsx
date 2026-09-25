@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { AdminSection } from "@/components/admin/AdminSection";
 import { adminJson } from "@/lib/client/admin";
 import { toDatetimeLocalValue } from "@/lib/home/uptime";
 import {
@@ -199,7 +200,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
   function renderScanButton() {
     return (
       <button
-        className="heo-button heo-button--ghost"
+        className="admin-btn admin-btn--ghost"
         disabled={saving || testing || scanning}
         onClick={() => void scanUsage()}
         type="button"
@@ -218,9 +219,8 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
       }}
     >
       <p className="admin-danger">保存成功前不要关闭本页。</p>
-      <div className="admin-section">
-        <h3 className="admin-section__title">站点信息</h3>
-        <label className="form-field">
+      <AdminSection title="站点信息">
+        <label className="admin-field">
           站点名称
           <input
             onChange={(event) =>
@@ -230,7 +230,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.siteName}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           公告
           <textarea
             onChange={(event) =>
@@ -243,7 +243,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.announcement}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           首页顶图地址（空着就用每日风景图）
           <input
             onChange={(event) =>
@@ -252,7 +252,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.banner}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           站点地址（sitemap / RSS / 分享链接用）
           <input
             onChange={(event) =>
@@ -262,7 +262,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.siteUrl ?? ""}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           GitHub 仓库（检查更新用，公开库）
           <input
             onChange={(event) =>
@@ -275,14 +275,13 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.updateGithubRepo ?? ""}
           />
         </label>
-      </div>
-      <div className="admin-section">
-        <h3 className="admin-section__title">首页外观</h3>
-        <div className="form-field">
-          <span className="form-field__head">
+      </AdminSection>
+      <AdminSection title="首页外观">
+        <div className="admin-field">
+          <span className="admin-field__head">
             站点开始运行时间
             <button
-              className="form-field__reset"
+              className="admin-field__reset"
               onClick={() =>
                 setValues((current) => ({ ...current, siteStartedAt: "" }))
               }
@@ -303,10 +302,10 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={toDatetimeLocalValue(values.siteStartedAt)}
           />
           <span className="admin-muted">
-            首页底部「运行时间」用。空着则前台不显示该模块。
+            首页底部版本信息栏使用。空着则前台不显示该模块。
           </span>
         </div>
-        <label className="form-field">
+        <label className="admin-field">
           首页模块不透明度（{values.homeModuleOpacity}%）
           <input
             max={100}
@@ -321,7 +320,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.homeModuleOpacity}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           首页背景不透明度（{values.homeBackdropOpacity}%）
           <input
             max={100}
@@ -336,10 +335,9 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.homeBackdropOpacity}
           />
         </label>
-      </div>
-      <div className="admin-section">
-        <h3 className="admin-section__title">列表与上传</h3>
-        <label className="form-field">
+      </AdminSection>
+      <AdminSection title="列表与上传">
+        <label className="admin-field">
           每页文章数
           <input
             min={1}
@@ -354,7 +352,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.pageSize}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           上传大小上限（MB）
           <input
             min={1}
@@ -369,7 +367,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.uploadMaxSizeMB}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           缩略图最长边（像素）
           <input
             min={128}
@@ -384,7 +382,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.thumbMaxPx}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           二级缩略图最长边（像素）
           <input
             min={128}
@@ -399,7 +397,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.thumb2MaxPx}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           本地媒体缓存上限（MB）
           <input
             min={64}
@@ -451,10 +449,9 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
           占用只统计本机缓存，不含 COS。新上传会同时写本地和 COS。一级缩略图走 COS；二级缩略图只留在本机，给首页瞬间瀑布用。原图保持原格式。超上限只删最早的本地副本，不删云端。已有图片可到{" "}
           <Link href="/admin/uploads">媒体库</Link> 重新生成一级或二级缩略图。
         </p>
-      </div>
-      <div className="admin-section">
-        <h3 className="admin-section__title">自动备份</h3>
-        <label className="form-field">
+      </AdminSection>
+      <AdminSection title="自动备份">
+        <label className="admin-field">
           每隔几天自动备份
           <input
             min={1}
@@ -469,7 +466,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.backupPeriodDays}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           最多留几份
           <input
             min={1}
@@ -484,7 +481,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.backupKeep}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           本地备份总大小上限（MB）
           <input
             min={64}
@@ -529,15 +526,14 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
           {values.lastBackupAt ?? "尚未备份"}。本地超上限只删本机旧包，COS
           上的副本还在。手动备份和恢复在 <Link href="/admin/backups">备份</Link> 页。
         </p>
-      </div>
-      <div className="admin-section">
-        <h3 className="admin-section__title">腾讯云 COS</h3>
+      </AdminSection>
+      <AdminSection title="腾讯云 COS">
         <p className="admin-muted">
           新上传的原图、视频、音频、缩略图和备份会放到这个桶。访客封面和缩略图走
           COS。SecretId / SecretKey 保存后显示「已占用」，不会回显原文；要换就点旁边的「重设」。
           备份是否加密在「备份」页开关；COS 为 HTTPS 时默认不加密。
         </p>
-        <label className="form-field">
+        <label className="admin-field">
           存储桶
           <input
             onChange={(event) =>
@@ -547,7 +543,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.cosBucket}
           />
         </label>
-        <label className="form-field">
+        <label className="admin-field">
           地域
           <input
             onChange={(event) =>
@@ -557,12 +553,12 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.cosRegion}
           />
         </label>
-        <div className="form-field">
-          <div className="form-field__head">
+        <div className="admin-field">
+          <div className="admin-field__head">
             <span>SecretId</span>
             {values.cosSecretIdSet && !editSecretId ? (
               <button
-                className="form-field__reset"
+                className="admin-field__reset"
                 onClick={() => {
                   setEditSecretId(true);
                   setValues((current) => ({ ...current, cosSecretId: "" }));
@@ -592,12 +588,12 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             }
           />
         </div>
-        <div className="form-field">
-          <div className="form-field__head">
+        <div className="admin-field">
+          <div className="admin-field__head">
             <span>SecretKey</span>
             {values.cosSecretKeySet && !editSecretKey ? (
               <button
-                className="form-field__reset"
+                className="admin-field__reset"
                 onClick={() => {
                   setEditSecretKey(true);
                   setValues((current) => ({ ...current, cosSecretKey: "" }));
@@ -632,7 +628,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             }
           />
         </div>
-        <label className="form-field">
+        <label className="admin-field">
           公网访问域名（可空，默认桶域名）
           <input
             onChange={(event) =>
@@ -646,21 +642,21 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
           />
         </label>
         <button
-          className="heo-button heo-button--ghost"
+          className="admin-btn admin-btn--ghost"
           disabled={saving || testing || scanning}
           onClick={() => void testConnection()}
           type="button"
         >
           {testing ? "测试中…" : "测试连接"}
         </button>
-      </div>
+      </AdminSection>
       {notice ? <p className="admin-backup-notice">{notice}</p> : null}
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
-      <button className="heo-button" disabled={saving} type="submit">
+      <button className="admin-btn" disabled={saving} type="submit">
         {saving ? "保存中…" : "保存设置"}
       </button>
     </form>
