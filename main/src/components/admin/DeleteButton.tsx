@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { adminJson } from "@/lib/client/admin";
+import { useAdminConfirm } from "@/components/admin/useAdminConfirm";
 
 export function DeleteButton({
   url,
@@ -16,12 +17,13 @@ export function DeleteButton({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useAdminConfirm();
 
   async function onClick() {
     const message = confirmText.includes("无法恢复")
       ? confirmText
       : `${confirmText}\n删除后无法恢复。`;
-    if (!window.confirm(message) || busy) {
+    if (!(await confirm(message)) || busy) {
       return;
     }
     setBusy(true);
@@ -35,13 +37,16 @@ export function DeleteButton({
   }
 
   return (
-    <button
-      className="admin-link-button"
-      disabled={busy}
-      onClick={() => void onClick()}
-      type="button"
-    >
-      {busy ? "删除中…" : (label ?? "删除")}
-    </button>
+    <>
+      <button
+        className="admin-btn admin-btn--danger"
+        disabled={busy}
+        onClick={() => void onClick()}
+        type="button"
+      >
+        {busy ? "删除中..." : (label ?? "删除")}
+      </button>
+      {dialog}
+    </>
   );
 }

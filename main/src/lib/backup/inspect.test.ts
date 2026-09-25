@@ -45,7 +45,7 @@ test("inspectBackupPackage reads channel from a plain package meta.json", async 
     assert.equal(view.encrypted, false);
     assert.equal(view.format, "plain");
     assert.equal(view.channel, "alpha");
-    assert.equal(view.releaseLabel, "0.1.0");
+    assert.equal(view.releaseLabel, "0.1.1");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

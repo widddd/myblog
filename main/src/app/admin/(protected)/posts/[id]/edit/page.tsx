@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 
 import { PostEditorForm } from "@/components/admin/PostEditorForm";
 import { AdminHttpError } from "@/lib/admin/http";
+import { readDefaultPenName } from "@/lib/auth/account";
 import { getAdminPost } from "@/lib/posts/admin";
-import { listCategories, listTags } from "@/lib/taxonomy/admin";
+import { listCategories, listPenNames, listTags } from "@/lib/taxonomy/admin";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -24,11 +25,15 @@ export default async function EditPostPage({ params }: PageProps) {
   let post: Awaited<ReturnType<typeof getAdminPost>>;
   let categories: Awaited<ReturnType<typeof listCategories>>;
   let tags: Awaited<ReturnType<typeof listTags>>;
+  let penNames: Awaited<ReturnType<typeof listPenNames>>;
+  let defaultAuthorName: string;
   try {
-    [post, categories, tags] = await Promise.all([
+    [post, categories, tags, penNames, defaultAuthorName] = await Promise.all([
       getAdminPost(id),
       listCategories(),
       listTags(),
+      listPenNames(),
+      readDefaultPenName(),
     ]);
   } catch (error) {
     if (error instanceof AdminHttpError && error.status === 404) {
@@ -40,7 +45,9 @@ export default async function EditPostPage({ params }: PageProps) {
   return (
     <PostEditorForm
       categories={categories}
+      defaultAuthorName={defaultAuthorName}
       mode="edit"
+      penNames={penNames}
       post={post}
       tags={tags}
     />

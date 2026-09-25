@@ -1,0 +1,4916 @@
+/* admin.css class inventory
+ * tokens: --admin-accent* (4 锚点 + color-mix 派生 50–700，锚点由 lib/admin/accents.ts 注入 :root)
+ *         --admin-ink-* / --admin-surface* / --admin-line* / --admin-shadow-*
+ *         --admin-space-* / --admin-radius-* / --admin-control / --admin-control-field (38px) /
+ *         --admin-control-touch / --admin-z-* / --admin-tabbar-h
+ *         --admin-title (16) / --admin-heading (14) / --admin-body (14)：字号三档，值取自 demo
+ * primitives: .admin-btn .admin-btn-row .admin-field .admin-field-row .admin-card .admin-list .admin-badge .admin-seg .admin-error .admin-dialog
+ * primitives+: .admin-btn--primary .admin-btn--icon .admin-btn--ghost .admin-btn--link .admin-btn--danger .admin-btn--block .admin-btn--sm
+ *              .admin-badge--on / --ok / --warn / --danger / --info / --muted .admin-dot
+ *              .admin-empty__ico
+ *              .admin-stat-card .admin-stat-card__head .admin-stat-card__icon
+ *              .admin-stat-card__icon--ok / --warn / --info .admin-stat-card__label .admin-stat-card__value .admin-stat-card__hint
+ *              （semantic tokens --admin-ok/-warn/-danger/-info(+ -soft)，值取自 demo 的 --ok/--warn/--danger/--info）
+ * shell: .admin-workspace .admin-rail .admin-topbar .admin-tabbar .admin-more .admin-stage .admin-page-swap
+ * pages: .admin-dash .admin-filter .admin-pager .admin-fab .admin-empty
+ * overview: .admin-dash__kpis .admin-dash__wide .admin-dash__full .admin-dash__slot .admin-dash__hide
+ *           .admin-ranks .admin-rank .admin-rank__name .admin-rank__value .admin-rank__bar
+ *           .admin-status-list .admin-status-row .admin-status-row__icon .admin-status-row__title .admin-status-row__meta
+ * appearance: .admin-appearance .admin-appearance__panel .admin-appearance__head
+ *             （入口在前台导航栏 Navbar，由 SiteHeader 判定管理员可见；本文件只留面板本体）
+ *           .admin-appearance__group .admin-appearance__group-head .admin-appearance__scope .admin-appearance__actions
+ *           .admin-accent-grid .admin-accent-swatch .admin-card-toggles .admin-card-toggle
+ * editor: .post-workspace .admin-fold .admin-editor-dock .admin-settings-sheet
+ * canvas: .home-editor .module-code .admin-pane-tabs
+ * motion: .admin-stagger .admin-skeleton .admin-card--hover
+ *
+ * Token hang on :root (not .admin-workspace): AdminDialog / DataClearDialog / media menus
+ * portal to document.body. admin.css is imported only from admin/layout.tsx.
+ */
+
+:root {
+  /* accent：4 个锚点（默认 graphite），其余级由 color-mix 派生。
+     色值的单一事实源是 src/lib/admin/accents.ts，由 admin/layout.tsx 注入 <style>
+     覆盖 :root（弹窗 portal 到 body，token 不能挂 .admin-workspace，见 P-076）。
+     这里只放默认锚点与派生公式，不写任何预设配色的色值。 */
+  --admin-accent: #1f2937;
+  --admin-accent-strong: #111827;
+  --admin-accent-deep: #0b1017;
+  --admin-on-accent: #ffffff;
+
+  /* 派生级 —— 深浅两套主题共用公式，暗色另行覆盖 50/100/200 */
+  --admin-accent-50: color-mix(in srgb, var(--admin-accent) 6%, var(--admin-bg));
+  --admin-accent-100: color-mix(in srgb, var(--admin-accent) 12%, var(--admin-bg));
+  --admin-accent-200: color-mix(in srgb, var(--admin-accent) 24%, var(--admin-bg));
+  --admin-accent-300: color-mix(in srgb, var(--admin-accent) 45%, var(--admin-bg));
+  --admin-accent-400: color-mix(in srgb, var(--admin-accent) 72%, var(--admin-bg));
+  --admin-accent-500: var(--admin-accent);
+  --admin-accent-600: var(--admin-accent-strong);
+  --admin-accent-700: var(--admin-accent-deep);
+
+  --admin-ink: #0f1729;
+  --admin-ink-2: #667085;
+  --admin-ink-3: #98a2b3;
+  --admin-ink-4: #b8bfcc;
+
+  --admin-bg: #f6f7f9;
+  --admin-surface: #ffffff;
+  --admin-surface-2: #f2f3f7;
+  --admin-surface-3: #eef0f4;
+  --admin-line: rgba(16, 24, 40, 0.075);
+  --admin-line-strong: rgba(16, 24, 40, 0.14);
+
+  --admin-positive: #34c759;
+  --admin-warning: #ff9f0a;
+  --admin-danger: #ff3b30;
+
+  /* demo 的语义四件套（--ok / --warn / --danger / --info）及其软底，
+     供徽章（.admin-badge--ok/-warn/-danger/-info）与概览 KPI 图标（.admin-stat-card__icon--*）用。
+     为什么不复用上面的 --admin-positive / --admin-warning：那两个是 iOS 味旧值
+     （原本只被已删除的 `.admin-badge--positive` 消费，现无引用，保留仅为兼容），
+     改它们会连带改到列表/表单的既有观感。
+     浅色值 = demo 浅色档，暗色值 = demo 暗色档（照抄，不自造）。
+     --admin-danger-soft 的浅色来自 demo 的 --danger-soft（rgba(240,68,56,.11)），
+     暗色来自 demo 暗色的 --danger:#ff7b72。注意 --admin-danger 本身是既有的 iOS 红
+     （#ff3b30 / #ff453a），本次不动它，所以软底与实色在色相上略有差。 */
+  --admin-ok: #12b76a;
+  --admin-ok-soft: rgba(18, 183, 106, 0.12);
+  --admin-warn: #f79009;
+  --admin-warn-soft: rgba(247, 144, 9, 0.13);
+  --admin-danger-soft: rgba(240, 68, 56, 0.11);
+  --admin-info: #2e90fa;
+  --admin-info-soft: rgba(46, 144, 250, 0.12);
+
+  /* 主色软底 = demo 的 --a-soft / --ad-soft（石墨 8% / 暗色 16%，混在**侧栏底色**
+     （--admin-surface）上，不是页面底色 —— demo 的 rail 是 --bg-elev）。
+     侧栏选中态、KPI 默认图标胶囊共用这一档：实测 demo 石墨浅色 = rgb(237,238,239)、
+     暗色 = rgb(42,45,52)，本式两处都能对上。 */
+  --admin-accent-soft: color-mix(in srgb, var(--admin-accent) 8%, var(--admin-surface));
+
+  /* demo 的正文行高（body 的 14px/1.55）。后台壳继承的是前台 body 的 1.6，
+     侧栏与 KPI 卡这类「文字紧挨着图标」的地方差之毫厘就看得出来，故按 demo 钉住。 */
+  --admin-leading: 1.55;
+
+  --admin-space-1: 4px;
+  --admin-space-2: 8px;
+  --admin-space-3: 12px;
+  --admin-space-4: 16px;
+  --admin-space-5: 20px;
+  --admin-space-6: 24px;
+  --admin-radius-sm: 9px;
+  --admin-radius-md: 12px;
+  --admin-radius-lg: 16px;
+  --admin-radius-xl: 20px;
+  --admin-control: 36px;
+  /* 表单控件（input/select）高度 = demo 的 .input / .select（38px），比按钮高一档 */
+  --admin-control-field: 38px;
+  --admin-control-touch: 44px;
+  --admin-z-rail: 40;
+  --admin-z-topbar: 50;
+  --admin-z-tabbar: 60;
+  --admin-z-sheet: 80;
+  --admin-z-dialog: 90;
+  --admin-tabbar-h: 56px;
+
+  --admin-shadow-1: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --admin-shadow-2: 0 1px 2px rgba(16, 24, 40, 0.04), 0 14px 30px -20px rgba(16, 24, 40, 0.3);
+  --admin-shadow-3: 0 2px 4px rgba(16, 24, 40, 0.05), 0 26px 52px -28px rgba(16, 24, 40, 0.36);
+  --admin-shadow-accent: 0 6px 18px color-mix(in srgb, var(--admin-accent) 28%, transparent);
+  --admin-shadow: var(--admin-shadow-3);
+
+  --admin-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --admin-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  /* 栏目内容入场：照抄参照稿的 --t-enter / --ease-enter（入场曲线比通用 ease 更柔和） */
+  --admin-enter: 380ms;
+  --admin-ease-enter: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --admin-focus-ring: var(--admin-accent-100);
+
+  --admin-title: 16px;
+  --admin-heading: 14px;
+  --admin-body: 14px;
+}
+
+:root[data-theme="dark"] {
+  --admin-accent-50: color-mix(in srgb, var(--admin-accent) 10%, transparent);
+  --admin-accent-100: color-mix(in srgb, var(--admin-accent) 14%, transparent);
+  --admin-accent-200: color-mix(in srgb, var(--admin-accent) 28%, transparent);
+
+  --admin-ink: #e9ecf1;
+  --admin-ink-2: #929cab;
+  --admin-ink-3: #6b7484;
+  --admin-ink-4: #5b6473;
+
+  --admin-bg: #0b0d11;
+  --admin-surface: #14171c;
+  --admin-surface-2: #1b1f26;
+  --admin-surface-3: #1c2028;
+  --admin-line: rgba(255, 255, 255, 0.075);
+  --admin-line-strong: rgba(255, 255, 255, 0.15);
+
+  --admin-positive: #30d158;
+  --admin-warning: #ffd60a;
+  --admin-danger: #ff453a;
+
+  /* 语义色暗色档：必须比浅色更亮，否则暗底上的图标糊成一团 */
+  --admin-ok: #3ddc97;
+  --admin-ok-soft: rgba(61, 220, 151, 0.14);
+  --admin-warn: #fdb022;
+  --admin-warn-soft: rgba(253, 176, 34, 0.14);
+  --admin-danger-soft: rgba(255, 123, 114, 0.14);
+  --admin-info: #6cb6ff;
+  --admin-info-soft: rgba(108, 182, 255, 0.14);
+
+  /* 暗色下 demo 的 --ad-soft 提到 16%，8% 在深底上几乎看不见 */
+  --admin-accent-soft: color-mix(in srgb, var(--admin-accent) 16%, var(--admin-surface));
+
+  --admin-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --admin-shadow-2: 0 1px 2px rgba(0, 0, 0, 0.35), 0 16px 34px -22px rgba(0, 0, 0, 0.75);
+  --admin-shadow-3: 0 2px 6px rgba(0, 0, 0, 0.4), 0 30px 60px -30px rgba(0, 0, 0, 0.8);
+  --admin-shadow-accent: 0 6px 18px color-mix(in srgb, var(--admin-accent) 32%, transparent);
+  --admin-shadow: var(--admin-shadow-3);
+
+  --admin-focus-ring: color-mix(in srgb, var(--admin-accent-500) 25%, transparent);
+}
+
+.admin-workspace,
+.auth-shell {
+  color: var(--admin-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    Inter, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.admin-workspace h1,
+.admin-workspace h2,
+.admin-workspace h3,
+.admin-workspace h4,
+.auth-shell h1,
+.auth-shell h2,
+.auth-shell h3 {
+  letter-spacing: -0.02em;
+}
+
+.admin-workspace ::selection,
+.auth-shell ::selection {
+  background: var(--admin-accent-100);
+  color: var(--admin-accent-700);
+}
+
+/* 全局焦点环 = demo 的 `:focus-visible{outline:2px solid var(--brand-ring)}`。
+   作用域钉在后台壳内（不写裸 :focus-visible，那会污染前台）；用 :where() 把本规则的
+   权重降到 0，于是下面任何一条更具体的 :focus-visible 规则（如 .admin-dash__hide）都能覆盖它。
+   demo 的 --brand-ring 是主色 28% 环，本项目的 --admin-accent-200 = 主色 24% 混底色，同档。 */
+.admin-workspace :where(:focus-visible),
+.auth-shell :where(:focus-visible) {
+  outline: 2px solid var(--admin-accent-200);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* —— 基元：按钮 —— */
+.admin-btn {
+  display: inline-flex;
+  width: auto;
+  min-width: 72px;
+  min-height: var(--admin-control);
+  padding: 0 14px;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  align-self: center;
+  gap: 6px;
+  border: 1px solid var(--admin-accent-500);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-accent-500);
+  color: var(--admin-on-accent);
+  font-size: var(--admin-body);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  position: relative;
+  flex: 0 1 auto;
+  transition:
+    filter var(--admin-fast) var(--admin-ease),
+    background-color var(--admin-fast) var(--admin-ease),
+    border-color var(--admin-fast) var(--admin-ease),
+    box-shadow var(--admin-fast) var(--admin-ease),
+    color var(--admin-fast) var(--admin-ease),
+    transform 120ms var(--admin-ease);
+}
+
+.admin-btn::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  pointer-events: none;
+}
+
+@media (hover: none) {
+  .admin-btn::after {
+    pointer-events: auto;
+  }
+}
+
+/*
+ * 这里曾经有一条 `[data-theme="dark"] .admin-btn { color: var(--admin-on-accent) }`。
+ * 它是**冗余且有害**的：基础 `.admin-btn` 本来就写 `color: var(--admin-on-accent)`，
+ * CSS 变量在暗色下会自己解析到 `onAccentDark`，不需要再钉一遍；而它的权重 (0,2,0)
+ * 会盖掉后面所有 (0,1,0) 的变体按钮文字色 —— 幽灵 / 链接按钮（没有底色）
+ * 于是变成"深底 + 近黑字"，实测对比度只有 1.08:1，深色模式下完全看不清（P-090）。
+ */
+
+/* demo .btn--primary:hover 只是把底色加深到 --brand-hover（= --admin-accent-600），
+   没有主色光晕（原来的 --admin-shadow-accent 已去掉）。
+   用 :not() 链把实心主按钮单独挑出来：幽灵 / 图标 / 链接 / 危险按钮各有自己的 hover 底色，
+   不能跟着一起变成主色。 */
+.admin-btn:not(.admin-btn--ghost):not(.admin-btn--icon):not(.admin-btn--link):not(
+    .admin-btn--danger
+  ):hover {
+  border-color: var(--admin-accent-600);
+  background: var(--admin-accent-600);
+  filter: none;
+}
+
+.admin-btn:hover {
+  filter: brightness(1.06);
+}
+
+.admin-btn:active {
+  transform: scale(0.98);
+}
+
+.admin-btn:disabled,
+.admin-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  filter: none;
+}
+
+/* 幽灵按钮 = demo 的 .btn--ghost：常态就是中性描边 + 正文色（不是主色），
+   hover 才铺一层 --bg-hover（= --admin-surface-2）。
+   主色描边那一版退到 .is-on / [aria-pressed="true"]（见下），只作「已选中」用。 */
+.admin-btn--ghost {
+  border-color: var(--admin-line-strong);
+  background: transparent;
+  color: var(--admin-ink);
+}
+
+.admin-btn--ghost:hover {
+  background: var(--admin-surface-2);
+}
+
+.admin-btn--ghost.is-on,
+.admin-btn--ghost[aria-pressed="true"] {
+  background: var(--admin-accent-100);
+  color: var(--admin-accent-700);
+  border-color: var(--admin-accent-500);
+}
+
+.admin-btn--danger {
+  background: var(--admin-danger);
+  border-color: var(--admin-danger);
+  color: #fff;
+}
+
+[data-theme="dark"] .admin-btn--danger {
+  color: #fff;
+}
+
+.admin-btn--icon {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: var(--admin-radius-sm);
+}
+
+/* 小号按钮 = demo 的 .btn--sm（height 30 / padding 0 10 / 13px）。
+   行内图标按钮再降到 32×32（demo 行内操作是 .btn--icon.btn--sm + 15px 图标）。
+   触屏下高度仍由 max-width:768px 里的 --admin-control-touch 抬到 44px。 */
+.admin-btn--sm {
+  min-width: 0;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.admin-btn--sm.admin-btn--icon {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.admin-btn--link {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--admin-accent-600);
+  font-weight: 650;
+  box-shadow: none;
+}
+
+.admin-btn--ghost:hover,
+.admin-btn--link:hover,
+.admin-btn--icon:hover {
+  box-shadow: none;
+}
+
+.admin-btn--link:hover {
+  filter: none;
+  text-decoration: underline;
+}
+
+.admin-btn--block {
+  width: 100%;
+  min-height: 48px;
+  justify-self: stretch;
+  align-self: stretch;
+  border-radius: var(--admin-radius-md);
+}
+
+/* `.admin-btn` 本身已是主色观感，`--primary` 只是把「主按钮」写明白的显式别名 */
+.admin-btn--primary {
+  border-color: var(--admin-accent-500);
+  background: var(--admin-accent-500);
+  color: var(--admin-on-accent);
+}
+
+.admin-btn.is-busy {
+  min-width: 7.5em;
+}
+
+.admin-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-3);
+  align-items: center;
+}
+
+.admin-btn-row > .admin-btn,
+.admin-btn-row > .admin-btn--block {
+  flex: 0 1 auto;
+}
+
+.admin-btn-row > .admin-btn--block {
+  flex: 1 1 100%;
+}
+
+/* —— 基元：表单 —— */
+.admin-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  font-size: var(--admin-body);
+  font-weight: 650;
+}
+
+.admin-field__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.admin-field__hint {
+  color: var(--admin-ink-3);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.admin-field input,
+.admin-field textarea,
+.admin-field select {
+  width: 100%;
+  padding: 0 12px;
+  outline: none;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+  color: var(--admin-ink);
+  font: inherit;
+  /* demo 的 .input / .select 是 `font:inherit`，字重跟着 body（400）；
+     本项目 .admin-field 的 650 是给 label 的，控件自己必须退回 400。 */
+  font-weight: 400;
+  font-size: 16px;
+  transition:
+    border-color var(--admin-fast) var(--admin-ease),
+    box-shadow var(--admin-fast) var(--admin-ease);
+}
+
+.admin-field input,
+.admin-field select {
+  height: var(--admin-control-touch);
+}
+
+@media (min-width: 769px) {
+  .admin-field input,
+  .admin-field select {
+    height: var(--admin-control-field);
+    font-size: var(--admin-body);
+  }
+
+  .admin-field textarea {
+    font-size: var(--admin-body);
+  }
+}
+
+.admin-field textarea {
+  padding: 10px 12px;
+  min-height: 88px;
+  resize: vertical;
+}
+
+.admin-field input:focus,
+.admin-field textarea:focus,
+.admin-field select:focus {
+  border-color: var(--admin-accent-500);
+  box-shadow: 0 0 0 3px var(--admin-focus-ring);
+}
+
+.admin-field input:disabled,
+.admin-field textarea:disabled,
+.admin-field select:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
+.admin-field-row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .admin-field-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.admin-field__reset {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: var(--admin-radius-sm);
+  background: transparent;
+  color: var(--admin-ink-3);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.admin-field__reset:hover {
+  color: var(--admin-ink);
+  border-color: var(--admin-ink);
+}
+
+.admin-form {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-error {
+  margin: 0;
+  color: var(--admin-danger);
+  font-size: var(--admin-body);
+  font-weight: 700;
+}
+
+/* —— 基元：卡片 / 徽章 —— */
+.admin-card {
+  padding: 18px 20px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-lg);
+  background: var(--admin-surface);
+  box-shadow: var(--admin-shadow-1);
+}
+
+.admin-card:hover {
+  transform: none;
+}
+
+.admin-card--hover {
+  transition:
+    transform var(--admin-slow) var(--admin-ease),
+    box-shadow var(--admin-slow) var(--admin-ease),
+    border-color var(--admin-slow) var(--admin-ease);
+}
+
+.admin-card--hover:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--admin-shadow-3);
+  border-color: var(--admin-accent-200);
+}
+
+/* 徽章 = demo 的 .badge：height 22 / padding 0 9 / gap 5 / 12px / 520 / 半径 999。
+   基类保留「中性实心底」（= demo 的 .badge--muted 那对值），这样万一某个调用点
+   忘了挂语义修饰类，徽章仍然读得出是徽章，而不是一行裸字。
+   语义五档见下：--ok / --warn / --danger / --info / --muted。 */
+.admin-badge {
+  display: inline-flex;
+  height: 22px;
+  padding: 0 9px;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: var(--admin-surface-3);
+  color: var(--admin-ink-2);
+  font-size: 12px;
+  font-weight: 520;
+  letter-spacing: 0.01em;
+}
+
+/* 主色强调档（「推荐」这类跟主题配色走的人工标记，非状态）。
+   demo 没有对应变体，值沿用本项目既有的 accent-100 / accent-700。 */
+.admin-badge--on {
+  background: var(--admin-accent-100);
+  color: var(--admin-accent-700);
+}
+
+.admin-badge--ok {
+  background: var(--admin-ok-soft);
+  color: var(--admin-ok);
+}
+
+.admin-badge--warn {
+  background: var(--admin-warn-soft);
+  color: var(--admin-warn);
+}
+
+.admin-badge--danger {
+  background: var(--admin-danger-soft);
+  color: var(--admin-danger);
+}
+
+.admin-badge--info {
+  background: var(--admin-info-soft);
+  color: var(--admin-info);
+}
+
+/* 「未配置 / 未启用」这类中性的「没设置」态：浅灰底 + 弱化字（demo 的 .badge--muted）。
+   原来是描边徽章，与 demo 不一致，已按 demo 改成实心浅灰。 */
+.admin-badge--muted {
+  background: var(--admin-surface-3);
+  color: var(--admin-ink-2);
+}
+
+/* 状态点 = demo 的 .dot（6px 圆点，颜色吃徽章的 currentColor） */
+.admin-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 99px;
+  background: currentColor;
+}
+
+.admin-seg {
+  display: inline-flex;
+  position: relative;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--admin-line);
+  border-radius: 999px;
+  background: var(--admin-surface-3);
+}
+
+.admin-seg__btn {
+  position: relative;
+  z-index: 1;
+  min-width: 72px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--admin-ink-3);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.admin-seg__btn.is-on {
+  color: var(--admin-ink);
+}
+
+.admin-seg__slider {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 999px;
+  background: var(--admin-surface);
+  box-shadow: var(--admin-shadow-1);
+}
+
+/* —— 基元：列表（桌面表格 / 手机卡片，同一套 DOM）—— */
+.admin-list {
+  display: grid;
+  gap: 0;
+}
+
+/* 行/表头的盒模型对齐 demo 的 .tbl td（padding 13px 16px）。
+   表头另有一档（demo .tbl th 是 11px 16px），见下。 */
+.admin-list__head,
+.admin-list__row {
+  display: grid;
+  grid-template-columns: var(--admin-list-cols, minmax(0, 2fr) 100px 148px auto);
+  gap: 12px;
+  align-items: center;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.admin-list__row {
+  transition: background-color var(--admin-fast) var(--admin-ease);
+}
+
+/* 行 hover = demo 的 `.tbl tbody tr:hover{background:var(--bg-hover)}`（中性灰），
+   原来铺的是带主色调的 --admin-accent-50。 */
+.admin-list__row:hover {
+  background: var(--admin-surface-2);
+}
+
+/* 表头 = demo 的 .tbl th：11.5px / 600 / .05em / 大写 / padding 11px 16px / 浅灰底 --bg。
+   注：demo 的表头是整卡出血的（表格外面没有内边距），本项目列表在 .admin-card 的
+   18px 20px 内边距里，所以这条灰带是内缩的 —— DOM 结构差异，未对齐。 */
+.admin-list__head {
+  padding: 11px 16px;
+  background: var(--admin-bg);
+  color: var(--admin-ink-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.admin-list--posts {
+  --admin-list-cols: minmax(0, 2fr) 88px 148px auto;
+}
+
+.admin-list--comments {
+  --admin-list-cols: minmax(0, 2.2fr) 88px 72px 132px auto;
+}
+
+.admin-list--modules {
+  --admin-list-cols: minmax(0, 1.2fr) 72px minmax(0, 1fr) 72px auto;
+}
+
+.admin-list--files {
+  --admin-list-cols: minmax(0, 1.5fr) 1fr 72px 88px minmax(0, 1fr) 88px auto;
+}
+
+.admin-list__cell {
+  min-width: 0;
+}
+
+/* 主文字 = demo 的 .tbl .t-main（520 / -.005em），原来是 650 */
+.admin-list__cell--main {
+  font-weight: 520;
+  letter-spacing: -0.005em;
+}
+
+/* 行内操作 = demo 的 .t-actions（gap 2px、右对齐；这里放 4px，两个 32px 按钮不至于贴死） */
+.admin-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* 行内按钮降一档：demo 的行内操作是 .btn--icon.btn--sm（30/32px 高、13px 字）。
+   本项目行内按钮由 components/admin 里的共享组件渲染（不在本次可改范围），
+   所以在这里按容器收口，而不是逐个加 .admin-btn--sm。
+   手机档不受影响：max-width:768px 里的 `.admin-btn:not(...)` 权重 (0,3,0) 更高，
+   会把非链接/非图标按钮抬回 44px。 */
+.admin-list__actions .admin-btn {
+  min-width: 0;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.admin-list__actions .admin-btn--link {
+  height: auto;
+  min-height: 0;
+  font-size: var(--admin-body);
+}
+
+.admin-list__badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* 点整行弹「查看 / 编辑」二选一（焦点环走后台壳内的全局 :focus-visible，不用另写） */
+.admin-list__row--clickable {
+  cursor: pointer;
+}
+
+/* —— 文章列表：点卡片后的「查看 / 编辑」二选一 ——
+   同一套 DOM 桌面弹窗/手机 sheet 都成立（P-072）：按钮竖排、整块可点、副标题灰字。 */
+.admin-choice {
+  display: grid;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.admin-choice__btn {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  background: var(--admin-surface);
+  color: var(--admin-ink);
+  font: inherit;
+  font-size: var(--admin-body);
+  font-weight: 650;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--admin-fast) var(--admin-ease),
+    border-color var(--admin-fast) var(--admin-ease);
+}
+
+.admin-choice__btn:hover:not(.is-disabled) {
+  border-color: var(--admin-accent-200);
+  background: var(--admin-surface-2);
+}
+
+.admin-choice__btn.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-choice__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-choice__hint {
+  color: var(--admin-ink-3);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* —— 基元：弹窗 —— */
+.admin-dialog {
+  position: fixed;
+  z-index: var(--admin-z-dialog);
+  inset: 0;
+  display: grid;
+  padding: 20px;
+  place-items: center;
+}
+
+.admin-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(18, 22, 28, 0.4);
+  backdrop-filter: blur(6px);
+}
+
+.admin-dialog__panel {
+  position: relative;
+  z-index: 1;
+  width: min(480px, 100%);
+  max-height: min(86vh, 720px);
+  overflow: auto;
+  padding: 20px 22px 22px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-lg);
+  background: var(--admin-surface);
+  box-shadow: var(--admin-shadow-3);
+}
+
+.admin-dialog__panel.is-wide {
+  width: min(720px, 100%);
+}
+
+.admin-dialog__grab {
+  display: none;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: var(--admin-line-strong);
+}
+
+.admin-dialog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+/* 弹窗标题用「标题档」16px 而不是降档后的 --admin-heading(14)：
+   弹窗里正文就是 14px，标题跟着变 14 只靠字重区分，与 demo 的
+   「卡片标题 14 / 页面标题 16」两档层级对不上。 */
+.admin-dialog__title {
+  margin: 0;
+  font-size: var(--admin-title);
+  font-weight: 750;
+}
+
+.admin-dialog__close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--admin-ink-3);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.admin-dialog__lead {
+  margin: 0 0 16px;
+  color: var(--admin-ink-3);
+  white-space: pre-wrap;
+}
+
+.admin-desktop-only {
+  display: inline-flex;
+}
+
+.admin-fab {
+  position: fixed;
+  z-index: var(--admin-z-tabbar);
+  right: 16px;
+  bottom: calc(var(--admin-tabbar-h) + 16px + env(safe-area-inset-bottom));
+  display: none;
+  width: auto;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 18px;
+  box-shadow: var(--admin-shadow);
+}
+
+/* 空态 = demo 的 .empty：padding 64px 24px / gap 8px，图标盒 52px 圆角 15px。
+   图标内容由调用方传（<span class="admin-empty__ico"> + 24px 图标）；没有图标就别塞。 */
+.admin-empty {
+  display: grid;
+  gap: 8px;
+  padding: 64px 24px;
+  place-items: center;
+  color: var(--admin-ink-3);
+  text-align: center;
+}
+
+.admin-empty__ico {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 4px;
+  place-items: center;
+  border-radius: 15px;
+  background: var(--admin-surface-3);
+  color: var(--admin-ink-3);
+}
+
+.admin-empty__ico svg {
+  width: 24px;
+  height: 24px;
+}
+
+.admin-empty h3 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.admin-empty p {
+  margin: 0;
+  max-width: 340px;
+  color: var(--admin-ink-3);
+  font-size: 13px;
+}
+
+/* 分页 = demo 的 .pager__btn：min-width 32 / height 32 / padding 0 9 / 半径 9 / 13px，
+   常态透明描边（视觉上无边），hover 铺 --bg-hover。原来是 44×44 + 常驻描边。
+   触屏另有一档 44px，见 max-width:768px。 */
+.admin-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin: 16px 0 0;
+}
+
+.admin-pager a,
+.admin-pager span {
+  display: inline-flex;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 9px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--admin-radius-sm);
+  border: 1px solid transparent;
+  color: var(--admin-ink-2);
+  font-size: 13px;
+}
+
+.admin-pager a:hover {
+  background: var(--admin-surface-2);
+  color: var(--admin-ink);
+}
+
+/* 当前页 = demo 的 .pager__btn.is-on（brand-soft 底 + brand-ink 字 + 560） */
+.admin-pager .is-current {
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent-700);
+  border-color: transparent;
+  font-weight: 560;
+}
+
+:root[data-theme="dark"] .admin-pager .is-current {
+  color: var(--admin-accent-500);
+}
+
+.admin-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+/* 筛选条控件与 .admin-field 统一到 demo 的 .input/.select：高 38 / 半径 9 / padding 0 12。
+   原来这一组完全没有 focus 态，补上 demo 的 `0 0 0 3px` 主色软环。 */
+.admin-filter input,
+.admin-filter select {
+  height: var(--admin-control-field);
+  padding: 0 12px;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+  color: var(--admin-ink);
+  font: inherit;
+  font-weight: 400;
+}
+
+.admin-filter input:focus,
+.admin-filter select:focus {
+  outline: none;
+  border-color: var(--admin-accent-500);
+  box-shadow: 0 0 0 3px var(--admin-focus-ring);
+}
+
+.admin-filter input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.admin-filter select {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 120px;
+}
+
+.admin-workspace .pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.admin-workspace .pagination a,
+.admin-workspace .pagination span {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* —— 壳：顶栏 / 底栏 / 更多 —— */
+.admin-tabbar {
+  display: none;
+}
+
+.admin-more {
+  display: none;
+}
+
+.admin-topbar__back {
+  display: none;
+}
+
+.admin-nav__link {
+  position: relative;
+}
+
+/* 选中态背景层：demo 的 .nav__item.is-active 底色是 --brand-soft
+   （石墨 8% / 暗色 16%），用 --admin-accent-soft 一比一对上；
+   半径跟导航项一致（9px）。 */
+.admin-nav__active {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-accent-soft);
+  pointer-events: none;
+}
+
+.admin-nav__link > *:not(.admin-nav__active),
+.admin-tabbar__link > *:not(.admin-nav__active) {
+  position: relative;
+  z-index: 1;
+}
+
+.admin-dialog__grab {
+  display: none;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 12px;
+  padding: 10px 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: grab;
+}
+
+.admin-dialog__grab::before {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: var(--admin-line-strong);
+}
+
+.post-workspace__rail {
+  width: 340px;
+  flex-basis: 340px;
+}
+
+.post-workspace__back,
+.post-workspace__sheet-title {
+  display: none;
+}
+
+.post-workspace__hint-btn {
+  flex: 0 0 auto;
+}
+
+.post-workspace__popover {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(360px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  background: var(--admin-surface);
+  box-shadow: var(--admin-shadow);
+  color: var(--admin-ink-3);
+  font-size: 0.82rem;
+}
+
+.admin-editor-dock {
+  display: none;
+}
+
+.admin-settings-sheet {
+  display: none;
+}
+
+.admin-pane-tabs {
+  display: none;
+}
+
+.admin-media-grid {
+  container-type: inline-size;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+@container (min-width: 540px) {
+  .admin-media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
+html:has(.auth-shell) .site-footer {
+  display: none;
+}
+
+@media (hover: none) {
+  .admin-btn:hover,
+  .admin-nav__link:hover,
+  .admin-stat-card:hover,
+  .admin-card--hover:hover,
+  .admin-list__row:hover {
+    filter: none;
+    transform: none;
+    box-shadow: none;
+    border-color: inherit;
+    background: revert-layer;
+  }
+
+  .admin-btn:active,
+  .admin-nav__link:active {
+    transform: scale(0.98);
+  }
+}
+
+
+/* html:has admin viewport lock — moved from globals.css */
+html:has(.admin-workspace),
+html:has(.admin-workspace) body,
+html:has(.auth-shell),
+html:has(.auth-shell) body {
+  background: var(--admin-bg);
+}
+
+html:has(.admin-workspace),
+html:has(.admin-workspace) body {
+  height: 100%;
+  overflow: hidden;
+}
+
+html:has(.admin-workspace) .site-footer {
+  display: none;
+}
+
+/* admin card hover override — moved from globals.css */
+.admin-workspace .heo-card:hover,
+.auth-card:hover {
+  transform: none;
+}
+
+/* 计数徽章：demo 的 .nav__count 是 11.5px 弱化色文字 + margin-left:auto 右对齐；
+   本项目这条是「待审评论」红色告警，保留红底实心（demo 的告警色只在系统状态卡里用），
+   但字号与右对齐按 demo 对齐。 */
+.admin-nav__badge {
+  display: inline-flex;
+  min-width: 1.2em;
+  margin-left: auto;
+  padding: 0 6px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--admin-danger);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.admin-comment-content {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-comment-actions {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.admin-comment-reply {
+  display: grid;
+  gap: 8px;
+  width: min(360px, 100%);
+}
+
+.admin-comment-reply textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+  color: var(--admin-ink);
+}
+
+.auth-shell {
+  display: grid;
+  min-height: 62vh;
+  place-items: center;
+}
+
+.auth-card {
+  width: min(430px, 100%);
+  padding: 36px;
+}
+
+.auth-card__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+  place-items: center;
+  color: var(--admin-accent-500);
+}
+
+/* 登录 / 初始化页的标题是整页唯一的大字（demo 没有 auth 页可参照），
+   钉住原来的 21px：--admin-title 已降到 demo 的 16px，这里若跟着降，
+   标题与紧挨着的 14px 副标题只差 2px，层级会塌。 */
+.auth-card h1 {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.auth-card__subtitle {
+  margin: 8px 0 28px;
+  color: var(--admin-ink-3);
+  font-size: var(--admin-body);
+}
+
+.auth-form {
+  display: grid;
+  gap: 18px;
+}
+
+
+.admin-danger {
+  margin: 0;
+  color: var(--admin-danger);
+  font-size: var(--admin-body);
+  font-weight: 700;
+}
+
+.admin-workspace {
+  display: flex;
+  height: calc(100vh - var(--heo-navbar-height));
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+  font-size: var(--admin-body);
+}
+
+.admin-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--admin-bg);
+}
+
+.admin-workspace--editor .admin-main {
+  height: 100%;
+}
+
+.admin-page-swap {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.admin-workspace--editor .admin-page-swap {
+  height: 100%;
+}
+
+.admin-page-swap.is-in {
+  animation: admin-card-in var(--admin-mid) var(--admin-ease) both;
+}
+
+.admin-page-swap.is-out {
+  animation: admin-card-out var(--admin-fast) var(--admin-ease) both;
+  pointer-events: none;
+}
+
+.admin-topbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 22px;
+  border-bottom: 1px solid var(--admin-line);
+  background: var(--admin-surface);
+}
+
+.admin-topbar__stack {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-topbar__copy {
+  min-width: 0;
+}
+
+.admin-topbar__copy.is-leave {
+  position: absolute;
+  inset: 0 auto auto 0;
+  animation: admin-title-out var(--admin-mid) var(--admin-ease) both;
+  pointer-events: none;
+}
+
+.admin-topbar__copy.is-enter {
+  animation: admin-title-in var(--admin-mid) var(--admin-ease) both;
+}
+
+/* 主标题区字号对齐 demo 的 .topbar__title：h1 16px/600/-.015em、副标题 12.5px。
+   走局部字面值而不是改 --admin-title / --admin-body —— 那两个 token 被 40+ 条
+   列表/表单/弹窗规则消费，改它们等于把整个后台的字号一起缩小，超出本次范围。 */
+.admin-topbar h1 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+}
+
+.admin-topbar p {
+  margin: 4px 0 0;
+  color: var(--admin-ink-3);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+/* 顶栏用户名：demo 顶栏只有头像（12.5px），没有同名文字元素；这里按同一行的
+   副标题档取 12.5px，避免 15px 的用户名压过 16px 的页面标题。 */
+.admin-topbar__user {
+  margin: 0;
+  color: var(--admin-ink-3);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+/* 侧栏几何对齐 demo 的 .sidebar：padding 16px 12px 14px、无 gap（品牌块靠自身
+   padding-bottom 16 与页脚 padding-top 10 + border-top 撑开节奏，见下）。
+   line-height 钉到 demo 的 1.55：文字块高度直接决定首个分组标题的起始 y。 */
+.admin-rail {
+  display: flex;
+  width: 252px;
+  flex: 0 0 252px;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  padding: 16px 12px 14px;
+  line-height: var(--admin-leading);
+  border-right: 1px solid var(--admin-line);
+  background: var(--admin-surface);
+  overflow: hidden;
+  transition:
+    width var(--admin-slow) var(--admin-ease),
+    flex-basis var(--admin-slow) var(--admin-ease),
+    padding var(--admin-slow) var(--admin-ease);
+}
+
+.admin-rail.is-collapsed {
+  width: 72px;
+  flex-basis: 72px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* 品牌块 = demo 的 .brand（padding 4px 8px 16px）。多了右侧的收起按钮，
+   space-between 保持不变；收起态按钮靠右（demo 没有折叠态，未对齐）。 */
+.admin-rail__top {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 16px;
+}
+
+.admin-rail.is-collapsed .admin-rail__top {
+  justify-content: flex-end;
+  padding: 4px 0 16px;
+}
+
+.admin-rail__brand {
+  min-width: 0;
+}
+
+.admin-rail.is-collapsed .admin-rail__brand {
+  display: none;
+}
+
+/* 字号对齐 demo 的 .brand__name（14.5/600/-.01em）/ .brand__sub（11.5 弱化色）。
+   注意：demo 那行文字旁边还有一个 34px 的品牌方块（.brand__mark），本项目 DOM 里没有，
+   所以这一块的整体视觉重量天然比 demo 轻（DOM 差异，未对齐）。 */
+.admin-rail__title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.admin-rail__user {
+  margin: 0;
+  color: var(--admin-ink-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.admin-rail__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+.admin-stage::-webkit-scrollbar,
+.admin-rail__scroll::-webkit-scrollbar,
+.admin-dialog__panel::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.admin-stage::-webkit-scrollbar-track,
+.admin-rail__scroll::-webkit-scrollbar-track,
+.admin-dialog__panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-stage::-webkit-scrollbar-thumb,
+.admin-rail__scroll::-webkit-scrollbar-thumb,
+.admin-dialog__panel::-webkit-scrollbar-thumb {
+  background: rgba(120, 130, 145, 0.22);
+  border: 3px solid transparent;
+  border-radius: 99px;
+  background-clip: content-box;
+}
+
+.admin-stage::-webkit-scrollbar-thumb:hover,
+.admin-rail__scroll::-webkit-scrollbar-thumb:hover,
+.admin-dialog__panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 130, 145, 0.4);
+  background-clip: content-box;
+}
+
+/* 侧栏页脚对齐 demo 的 .sidebar__foot（border-top 1px + padding-top 10px）。
+   只作用于侧栏那一份：.admin-more__panel 里也复用了 .admin-rail__foot（AdminNav.tsx），
+   那是手机底部弹层，不该多出一条顶边线。
+   DOM 差异：demo 是「v0.1.0 徽章 + 返回前台链接」单行；本项目是「版本文字 + 退出登录按钮」
+   两行（AdminWorkspace.tsx 不在本次可改范围），因此保留 grid 两行，只对齐分隔线与间距。 */
+.admin-rail > .admin-rail__foot {
+  padding-top: 10px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.admin-rail__foot {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+/* 版本号 = demo 页脚那个 `<span class="badge badge--muted num">v0.1.0</span>`：
+   12px/520、高 22、圆角 99、padding 0 9px、底 --bg-sunken（= --admin-surface-3）、
+   字 --fg-muted（= --admin-ink-2）。注意 demo 里 `.sidebar__foot .ver` 那条规则是
+   死代码（元素上根本没有 ver 类），实际生效的是 .badge + .badge--muted。
+   本项目没有 badge 元素，所以在 .admin-release-mark 上复刻外观，并靠 justify-self
+   保持左对齐（栅格项默认会被拉满整行）。 */
+.admin-release-mark {
+  display: inline-flex;
+  min-height: 22px;
+  margin: 0;
+  padding: 0 9px;
+  align-items: center;
+  justify-self: start;
+  border-radius: 999px;
+  background: var(--admin-surface-3);
+  color: var(--admin-ink-2);
+  font-size: 12px;
+  font-weight: 520;
+  line-height: 1;
+}
+
+/* 折叠态只有一个「α」占位，药丸居中；demo 没有折叠态，这一档是推断值 */
+.admin-release-mark--collapsed {
+  justify-self: center;
+}
+
+.admin-backup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--admin-body);
+  font-weight: 600;
+}
+
+.admin-workspace:not(.admin-workspace--editor) .admin-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 20px 22px 44px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+.admin-workspace--editor .admin-stage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+@keyframes admin-card-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 28px, 0);
+  }
+}
+
+@keyframes admin-card-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 28px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes admin-title-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes admin-title-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes admin-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes admin-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.admin-pane-toggle {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: color-mix(in srgb, var(--admin-surface) 88%, transparent);
+  color: var(--admin-ink-3);
+  cursor: pointer;
+}
+
+.admin-pane-toggle:hover {
+  color: var(--admin-accent-500);
+  border-color: var(--admin-accent-500);
+}
+
+.admin-pane-toggle__icon {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--admin-mid) var(--admin-ease);
+}
+
+.admin-pane-toggle[aria-expanded="false"] .admin-pane-toggle__icon {
+  transform: rotate(-135deg);
+}
+
+.admin-placeholder {
+  padding: 36px;
+}
+
+.admin-placeholder h2 {
+  margin-top: 0;
+}
+
+.admin-placeholder p {
+  margin-bottom: 0;
+  color: var(--admin-ink-3);
+}
+
+/* 侧栏导航对齐 demo 的 .nav（gap:2px / padding-bottom:8px）。
+   demo 的 .nav 是**一层扁平**的 flex：分组标题和导航项都是它的直接子元素，所以
+   「末项 → 2px → 下一个分组标题」也吃这 2px；本项目多一层 .admin-nav__section，
+   因此这里必须同样写 gap:2px（section 之间），配合 .admin-nav__section 的 gap:2px
+   （组内），实测与 demo 的每个 y 坐标一致（见报告里的测量表）。
+   折叠态只留图标，分组标题必须隐藏。 */
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+}
+
+.admin-nav__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 分组标题 = demo .nav__group：11px/600/.07em/大写/弱化色，padding 14px 10px 6px。
+   注意 demo 首个分组同样是 14px 顶距（品牌块另有 padding-bottom 16px）——
+   原来「首组 padding-top:0」的覆盖已删除，否则侧栏顶部会比 demo 紧 14px。 */
+.admin-nav__group {
+  padding: 14px 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--admin-ink-3);
+}
+
+.admin-nav.is-collapsed .admin-nav__group {
+  display: none;
+}
+
+/* 导航项 = demo .nav__item：36px 高 / padding 0 10px / gap 10px / 圆角 9px /
+   13.5px / 常态色 --fg-muted（= --admin-ink-2 #667085）。 */
+.admin-nav__link {
+  display: flex;
+  height: 36px;
+  padding: 0 10px;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--admin-radius-sm);
+  color: var(--admin-ink-2);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 13.5px;
+  transition:
+    background-color var(--admin-fast) var(--admin-ease),
+    color var(--admin-fast) var(--admin-ease);
+}
+
+/* demo .nav__item:hover：背景 --bg-hover（= --admin-surface-2 #f2f3f7）+ 文字 --fg（= --admin-ink）。
+   原实现只有变色没有底色，悬停几乎看不出来。 */
+.admin-nav__link:hover {
+  background: var(--admin-surface-2);
+  color: var(--admin-ink);
+}
+
+/* demo .nav__item.is-active：brand-soft 底 + brand-ink 字 + 字重 560。
+   底色由 motion 的 .admin-nav__active 层负责（等价 demo 的 background），
+   这里只补字重与字色。 */
+.admin-nav__link.is-active {
+  color: var(--admin-accent-700);
+  font-weight: 560;
+}
+
+:root[data-theme="dark"] .admin-nav__link.is-active {
+  color: var(--admin-accent-500);
+}
+
+/* demo .nav__item .icon：17px。图标保持 currentColor 单色（demo 侧栏本来就是单色），
+   彩色只出现在概览 KPI 卡（见 .admin-stat-card__icon--*）。 */
+.admin-nav__short {
+  display: block;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+}
+
+.admin-nav.is-collapsed .admin-nav__label,
+.admin-rail.is-collapsed .admin-nav__badge {
+  display: none;
+}
+
+.admin-nav.is-collapsed .admin-nav__short {
+  display: block;
+}
+
+.admin-nav.is-collapsed .admin-nav__link {
+  justify-content: center;
+  padding: 0;
+}
+
+.admin-editor-page {
+  padding: 28px;
+}
+
+.admin-editor-page h2 {
+  margin-top: 0;
+}
+
+.admin-editor-lead,
+.admin-editor-loading {
+  color: var(--admin-ink-3);
+}
+
+.admin-mdx-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  background: var(--admin-surface);
+}
+
+.post-workspace .admin-mdx-editor {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.admin-mdx-editor .mdxeditor-toolbar {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  width: 100%;
+  min-height: 44px;
+  max-height: none;
+  overflow: visible;
+  z-index: 6;
+}
+
+.admin-mdx-toolbar-break {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .admin-mdx-editor .mdxeditor-toolbar {
+    flex-wrap: wrap;
+    align-items: center;
+    align-content: flex-start;
+    row-gap: 4px;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .admin-mdx-toolbar-break {
+    display: block;
+    flex: 1 0 100%;
+    width: 100%;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .admin-mdx-editor .mdxeditor-toolbar [role="separator"] {
+    display: none;
+  }
+
+  .admin-mdx-editor .mdxeditor-toolbar > *:last-child {
+    margin-left: 0;
+  }
+
+  .admin-mdx-editor .admin-toolbar-button {
+    height: 32px;
+    padding: 0 8px;
+    font-size: 13px;
+  }
+}
+
+.admin-mdx-editor .mdxeditor-root-contenteditable,
+.admin-mdx-editor .mdxeditor-diff-source-wrapper,
+.admin-mdx-editor .mdxeditor-rich-text-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.admin-mdx-prose {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 28px 28px 64px;
+  min-height: 100%;
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.admin-mdx-prose h1,
+.admin-mdx-prose h2,
+.admin-mdx-prose h3,
+.admin-mdx-prose h4,
+.admin-mdx-prose h5,
+.admin-mdx-prose h6 {
+  margin: 1.4em 0 0.55em;
+  line-height: 1.3;
+  font-weight: 750;
+}
+
+.admin-mdx-prose h1 {
+  font-size: 1.9rem;
+}
+
+.admin-mdx-prose h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--admin-line);
+  font-size: 1.55rem;
+}
+
+.admin-mdx-prose h3 {
+  font-size: 1.28rem;
+}
+
+.admin-mdx-prose h4 {
+  font-size: 1.08rem;
+}
+
+.admin-mdx-prose h5,
+.admin-mdx-prose h6 {
+  font-size: 1rem;
+}
+
+.admin-mdx-prose p,
+.admin-mdx-prose ul,
+.admin-mdx-prose ol,
+.admin-mdx-prose blockquote,
+.admin-mdx-prose pre {
+  margin: 0.85em 0;
+}
+
+.admin-mdx-prose ul,
+.admin-mdx-prose ol {
+  padding-left: 1.5em;
+}
+
+.admin-mdx-prose blockquote {
+  padding: 8px 14px;
+  border-left: 4px solid var(--admin-accent-500);
+  background: var(--admin-surface-2);
+}
+
+.admin-mdx-prose a {
+  color: var(--admin-accent-500);
+}
+
+.admin-mdx-editor [data-editor-block-type="image"] {
+  display: block;
+  max-width: min(100%, 720px);
+  padding-top: 36px;
+}
+
+.admin-mdx-editor [data-editor-block-type="image"] img {
+  -webkit-user-drag: none;
+  cursor: grab;
+}
+
+[data-theme="dark"] .admin-mdx-editor,
+[data-theme="dark"] .mdxeditor-popup-container,
+[data-theme="dark"] .mdxeditor-select-content {
+  --slate-1: #111113;
+  --slate-2: #18191b;
+  --slate-3: #212225;
+  --slate-4: #272a2d;
+  --slate-5: #2e3135;
+  --slate-6: #363a3f;
+  --slate-7: #43484e;
+  --slate-8: #5a6169;
+  --slate-9: #696e77;
+  --slate-10: #777b84;
+  --slate-11: #d6d8de;
+  --slate-12: #f7f7fa;
+  --blue-1: #0d1520;
+  --blue-2: #111927;
+  --blue-3: #0d2847;
+  --blue-4: #003362;
+  --blue-5: #004074;
+  --blue-6: #104d87;
+  --blue-7: #205d9e;
+  --blue-8: #2870bd;
+  --blue-9: #ffc848;
+  --blue-10: #ffd36a;
+  --blue-11: #ffc848;
+  --blue-12: #ffe7ad;
+  --basePageBg: var(--admin-surface);
+  --baseBase: var(--admin-bg);
+  --baseBgSubtle: var(--admin-surface-2);
+  --baseBg: var(--admin-surface-2);
+  --baseBgHover: var(--admin-surface-3);
+  --baseBgActive: var(--admin-surface-3);
+  --baseLine: var(--admin-line-strong);
+  --baseBorder: var(--admin-line);
+  /* vendor 把 --baseBorderHover 当「占位 / 次要文字色」用（editor/styles/ui.module.css:216、286
+     两处全是 color，没有一处边框）：暗色下必须给亮灰。写死 #5a6169 时，
+     工具栏「段落样式」占位文案在深底上只有 2.86:1，基本看不清（P-090）。 */
+  --baseBorderHover: var(--admin-ink-2);
+  --baseSolid: var(--admin-ink-3);
+  --baseSolidHover: var(--admin-ink);
+  --baseText: var(--admin-ink);
+  --baseTextContrast: var(--admin-ink);
+  --accentText: var(--admin-accent-500);
+  --accentTextContrast: var(--admin-accent-500);
+  color: var(--admin-ink);
+  background-color: var(--admin-surface);
+  caret-color: var(--admin-ink);
+}
+
+[data-theme="dark"] .admin-mdx-editor .mdxeditor-toolbar {
+  background-color: var(--admin-surface-2);
+  border-bottom: 1px solid var(--admin-line);
+  color: var(--admin-ink);
+}
+
+[data-theme="dark"] .admin-mdx-editor .mdxeditor-toolbar svg {
+  color: var(--admin-ink);
+}
+
+[data-theme="dark"] .admin-mdx-prose {
+  color: var(--admin-ink);
+  caret-color: var(--admin-ink);
+}
+
+[data-theme="dark"] .admin-mdx-editor .cm-editor,
+[data-theme="dark"] .admin-mdx-editor .cm-scroller,
+[data-theme="dark"] .admin-mdx-editor .cm-content {
+  background-color: var(--admin-surface);
+  color: var(--admin-ink);
+}
+
+[data-theme="dark"] .admin-mdx-editor .cm-gutters {
+  background-color: var(--admin-surface-2);
+  color: var(--admin-ink-3);
+  border-color: var(--admin-line);
+}
+
+.admin-toolbar-button {
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--admin-accent-500) 10%, transparent);
+  color: var(--admin-ink);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.admin-toolbar-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-video-missing {
+  margin: 0;
+  padding: 12px;
+  color: var(--admin-ink-3);
+}
+
+.admin-media-insert {
+  position: relative;
+}
+
+.admin-media-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.admin-media-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(18, 22, 28, 0.4);
+  cursor: pointer;
+  animation: admin-fade var(--admin-fast) var(--admin-ease) both;
+  backdrop-filter: blur(6px);
+}
+
+.admin-media-dialog__panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 14px;
+  width: min(440px, 100%);
+  max-height: min(86vh, 720px);
+  overflow: auto;
+  padding: 20px 20px 16px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-lg);
+  background: var(--admin-surface);
+  box-shadow: var(--admin-shadow-3);
+  color: var(--admin-ink);
+  animation: admin-pop var(--admin-mid) var(--admin-ease-spring) both;
+}
+
+.admin-media-dialog__panel h3 {
+  margin: 0;
+  font-size: var(--admin-title);
+  font-weight: 750;
+}
+
+.admin-media-dialog__lead {
+  margin: 0;
+  color: var(--admin-ink-3);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.admin-media-dialog__panel.is-wide {
+  width: min(640px, 100%);
+}
+
+.admin-media-dialog__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.admin-media-dialog__actions.is-triple {
+  grid-template-columns: 1fr;
+}
+
+.admin-media-dialog__cancel {
+  justify-self: end;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--admin-ink-3);
+  cursor: pointer;
+}
+
+.admin-media-insert__link {
+  display: grid;
+  gap: 8px;
+  padding: 4px;
+}
+
+.admin-media-insert__link input {
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--admin-line);
+  border-radius: 6px;
+  background: var(--admin-bg);
+  color: inherit;
+}
+
+.admin-media-insert__link p {
+  margin: 0;
+  color: var(--admin-danger);
+  font-size: 0.75rem;
+}
+
+.admin-media-handle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--admin-line);
+  background: color-mix(in srgb, var(--admin-surface-2) 88%, transparent);
+}
+
+.admin-mdx-editor [data-editor-block-type="image"] > .admin-media-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+}
+
+.admin-media-handle__grip {
+  display: inline-flex;
+  min-height: 24px;
+  padding: 0 8px;
+  align-items: center;
+  border-radius: 6px;
+  background: var(--admin-accent-100);
+  color: var(--admin-accent-500);
+  cursor: grab;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.admin-media-handle__src {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--admin-ink-3);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-video-block {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 0 0 12px;
+  overflow: hidden;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  background: var(--admin-surface-2);
+}
+
+.admin-video-block .post-video {
+  width: calc(100% - 24px);
+  margin: 0 12px;
+}
+
+.admin-video-block .post-video-mark,
+.admin-video-block .admin-media-insert__link {
+  margin: 0 12px;
+}
+
+.admin-video-block__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-video-block__src {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--admin-ink-3);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-sort-grid {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-sort-grid.is-single {
+  grid-template-columns: 1fr;
+  max-width: 320px;
+}
+
+.admin-sort-grid.is-quad {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-sort-grid.is-nine {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-sort-grid__item {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+  cursor: grab;
+}
+
+.admin-sort-grid__item.is-dragging {
+  opacity: 0.55;
+}
+
+.admin-sort-grid__item img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.admin-sort-grid.is-single img {
+  aspect-ratio: auto;
+  height: auto;
+  max-height: 360px;
+  object-fit: contain;
+  background: var(--admin-surface-2);
+}
+
+.admin-sort-grid__tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--admin-ink-3);
+  font-size: 0.75rem;
+}
+
+.admin-sort-grid__tools button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--admin-accent-500);
+  cursor: pointer;
+}
+
+.admin-panel {
+  padding: 22px 24px;
+}
+
+/* 卡片 / 区块标题 = demo 的 .card__head h3 与 .section-head h2：14px / 600。
+   字号降到 14 之后字重不能还是 750 —— 14px 的 750 在中文下会糊成一团黑，
+   demo 这一档就是 600。 */
+.admin-panel h2,
+.admin-dash__head h2,
+.admin-section__title {
+  margin: 0;
+  font-size: var(--admin-heading);
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.admin-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.admin-section {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.admin-section:first-child,
+.admin-panel > .admin-section:first-of-type,
+.admin-form > .admin-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.admin-section__title + p,
+.admin-section__lead {
+  margin: 0;
+}
+
+.admin-section > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-section > summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--admin-mid) var(--admin-ease);
+}
+
+.admin-section[open] > summary::after {
+  transform: rotate(225deg);
+}
+
+@media (min-width: 769px) {
+  .admin-section > summary {
+    pointer-events: none;
+    cursor: default;
+  }
+
+  .admin-section > summary::after {
+    display: none;
+  }
+}
+
+/* 概览页纵向节奏 = demo 的 .view.stack（gap 14px）。原来是 20px，
+   卡片本身降到 18px 20px 内边距后，20px 的段间距会显得比卡片内部还松。 */
+.admin-dash {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-dash__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-dash__head p {
+  margin: 6px 0 0;
+}
+
+.admin-stats {
+  display: grid;
+  gap: 14px;
+  padding: 0;
+  list-style: none;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+}
+
+/* 概览 KPI 卡对齐 demo 的 .kpi：gap 12px / padding 16px 17px。
+   min-height 保留（demo 无，但四张卡内容高度都超过它，不影响观感）。 */
+.admin-stat-card {
+  display: grid;
+  gap: 12px;
+  min-height: 104px;
+  padding: 16px 17px;
+  line-height: var(--admin-leading);
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-lg);
+  background: var(--admin-surface);
+  color: inherit;
+  text-decoration: none;
+  box-shadow: var(--admin-shadow-1);
+  transition:
+    transform var(--admin-slow) var(--admin-ease),
+    box-shadow var(--admin-slow) var(--admin-ease),
+    border-color var(--admin-slow) var(--admin-ease);
+}
+
+.admin-stat-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--admin-shadow-3);
+  border-color: var(--admin-accent-200);
+}
+
+/* 首行 = demo 的 .kpi__head（图标与标签同一行，gap 8px）。
+   原实现是图标独占一行、标签另起一行，观感差别明显（page.tsx 已同步补这层结构）。 */
+.admin-stat-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 图标胶囊 = demo 的 .kpi__ico：28×28 / 圆角 9px / 彩色软底 + 彩色前景，
+   图标本身 15px（见 page.tsx 的 width/height）。默认档 = demo 无修饰的 .kpi__ico
+   （--brand-soft 底 + --brand-ink 字，即 --admin-accent-soft + --admin-accent-700，
+   演示配色设了 --brand-ink 的那几套正是本项目 accent-700 的语义）。
+   三类语义修饰见下。 */
+.admin-stat-card__icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-accent-soft);
+  color: var(--card-accent, var(--admin-accent-700));
+}
+
+/* 语义色三档：值与 demo 的 .kpi__ico--ok / --warn / --info 一一对应。
+   放基础规则之后靠层叠生效，不用 !important。暗色由 :root[data-theme="dark"] 的
+   --admin-ok/-warn/-info 自动跟随。 */
+.admin-stat-card__icon--ok {
+  background: var(--admin-ok-soft);
+  color: var(--admin-ok);
+}
+
+.admin-stat-card__icon--warn {
+  background: var(--admin-warn-soft);
+  color: var(--admin-warn);
+}
+
+.admin-stat-card__icon--info {
+  background: var(--admin-info-soft);
+  color: var(--admin-info);
+}
+
+/* 标签 = demo .kpi__label（12.5px / --fg-muted = --admin-ink-2 / 500），
+   脚注 = demo .kpi__foot（12px / --fg-subtle = --admin-ink-3）。原本两条共用一个
+   13.76px 弱化色规则，与 demo 的两档都不一样。 */
+.admin-stat-card__label {
+  color: var(--admin-ink-2);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.admin-stat-card__hint {
+  color: var(--admin-ink-3);
+  font-size: 12px;
+}
+
+/* 数值 = demo .kpi__value（27px / 640 / -.03em / 行高 1.05） */
+.admin-stat-card__value {
+  font-size: 27px;
+  font-weight: 640;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  color: var(--admin-ink);
+}
+
+.admin-form {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-form-row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.admin-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.admin-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.admin-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-chip {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 0 12px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--admin-line);
+  border-radius: 999px;
+  background: var(--admin-surface-2);
+  color: var(--admin-ink);
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 650;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.admin-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.admin-chip.is-on,
+.admin-chip:has(input:checked) {
+  border-color: var(--admin-accent-500);
+  background: var(--admin-accent-100);
+  color: var(--admin-accent-500);
+}
+
+.admin-inline-create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-inline-create input {
+  width: 100%;
+  height: var(--admin-control-field);
+  padding: 0 12px;
+  outline: none;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-bg);
+  color: var(--admin-ink);
+  font-size: var(--admin-body);
+  font-weight: 400;
+}
+
+.admin-inline-create input:focus {
+  border-color: var(--admin-accent-500);
+  box-shadow: 0 0 0 3px var(--admin-focus-ring);
+}
+
+.admin-fold {
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  align-self: start;
+  background: color-mix(in srgb, var(--admin-surface) 70%, transparent);
+}
+
+.admin-fold__head {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.admin-fold__mark {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--admin-mid) var(--admin-ease);
+}
+
+.admin-fold.is-open .admin-fold__mark {
+  transform: rotate(225deg);
+}
+
+.admin-fold__body {
+  display: grid;
+  overflow: hidden;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--admin-slow) var(--admin-ease);
+}
+
+.admin-fold.is-open .admin-fold__body {
+  grid-template-rows: 1fr;
+}
+
+.admin-fold__inner {
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+  gap: 12px;
+  padding: 0 12px;
+}
+
+.admin-fold.is-open .admin-fold__inner {
+  padding-bottom: 12px;
+}
+
+.post-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.post-workspace__rail {
+  display: flex;
+  width: 340px;
+  flex: 0 0 340px;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 12px 14px 18px;
+  border-right: 1px solid var(--admin-line);
+  background: color-mix(in srgb, var(--admin-surface) 86%, transparent);
+  overflow: hidden;
+  transition:
+    width var(--admin-slow) var(--admin-ease),
+    flex-basis var(--admin-slow) var(--admin-ease),
+    padding var(--admin-slow) var(--admin-ease);
+}
+
+.post-workspace__rail.is-collapsed {
+  width: 44px;
+  flex-basis: 44px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.post-workspace__rail-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.post-workspace__rail-body {
+  display: grid;
+  flex: 1 1 auto;
+  align-content: start;
+  grid-auto-rows: min-content;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  opacity: 1;
+  transition: opacity var(--admin-mid) var(--admin-ease);
+}
+
+.post-workspace__rail.is-collapsed .post-workspace__rail-body {
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.post-workspace__stage {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--admin-surface);
+}
+
+.post-workspace__titlebar {
+  display: flex;
+  position: relative;
+  /* 标题行整层压在编辑区之上：右上角 ⓘ 的说明卡是标题行的子节点（absolute + z-index:5），
+     而编辑器工具栏是 z-index:6 的 flex 项 —— 不把两边分层，工具栏会跨子树跟说明卡比大小、
+     直接盖住卡片（实测 5 个取样点 4 个命中工具栏）。见 P-091。 */
+  z-index: 2;
+  flex: 0 0 auto;
+  gap: 16px;
+  padding: 12px 16px;
+  align-items: center;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.admin-editor-settings {
+  display: none;
+}
+
+.post-workspace__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.post-workspace__title input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.25rem;
+  font-weight: 750;
+  outline: none;
+}
+
+.post-workspace__hint {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 16px 0;
+  color: var(--admin-ink-3);
+  font-size: 0.82rem;
+}
+
+.post-workspace__editor,
+.post-workspace__preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--admin-surface-2);
+  /* 自己成一个栈上下文（z-index:1），把编辑器内部的 z-index（工具栏 6）关在里面 ——
+     否则它会跟标题行的说明卡跨子树比大小，把卡片盖住（P-091）。 */
+  position: relative;
+  z-index: 1;
+}
+
+.post-workspace__preview {
+  padding: 16px 20px 48px;
+}
+
+.post-workspace__editor[hidden] {
+  display: none;
+}
+
+.post-workspace__editor .admin-mdx-editor {
+  height: 100%;
+}
+
+.form-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.admin-cover-preview {
+  max-width: 240px;
+  border-radius: var(--admin-radius-sm);
+}
+
+.admin-banner-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.admin-banner-preview {
+  height: 72px;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--admin-line);
+  text-align: left;
+  font-size: var(--admin-body);
+}
+
+.admin-table-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.admin-link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--admin-accent-500);
+  cursor: pointer;
+}
+
+.admin-muted {
+  margin: 0;
+  color: var(--admin-ink-3);
+  font-size: var(--admin-body);
+  font-weight: 400;
+}
+
+.admin-usage-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-usage {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+  font-size: var(--admin-body);
+}
+
+.admin-usage__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-usage__head strong {
+  font-size: var(--admin-body);
+  font-weight: 650;
+}
+
+.admin-usage__cap {
+  color: var(--admin-ink-3);
+  white-space: nowrap;
+}
+
+.admin-usage__cap.is-warn {
+  color: var(--admin-danger);
+  font-weight: 700;
+}
+
+.admin-usage__bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--admin-line-strong);
+}
+
+.admin-usage__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--admin-accent-500);
+  transition: width var(--admin-mid) var(--admin-ease);
+}
+
+.admin-usage__bar.is-warn > span {
+  background: var(--admin-danger);
+}
+
+.admin-usage__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-usage__row,
+.admin-usage__empty {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--admin-ink-3);
+}
+
+.admin-usage__row.is-file > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-usage__empty {
+  justify-content: flex-start;
+}
+
+.admin-media-grid,
+.admin-moment-list {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-media-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.admin-media-grid img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: var(--admin-radius-sm);
+}
+
+.admin-media-card {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-media-card__preview {
+  overflow: hidden;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+}
+
+.admin-media-card__preview img {
+  display: block;
+}
+
+.admin-media-card__audio {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 120px;
+  padding: 12px;
+  color: var(--admin-ink-3);
+  font-size: var(--admin-body);
+}
+
+.admin-media-card__note {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--admin-accent-500);
+}
+
+.admin-media-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-media-menu {
+  position: fixed;
+  z-index: 240;
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+  box-shadow: var(--admin-shadow-2);
+}
+
+.admin-media-menu button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--admin-radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: var(--admin-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-media-menu button:hover {
+  background: var(--admin-surface-3);
+}
+
+.admin-media-menu__warn {
+  margin: 0 0 4px;
+  padding: 6px 8px;
+}
+
+.admin-media-paths {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-media-paths li {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.admin-media-paths strong,
+.admin-media-paths code {
+  font-size: var(--admin-body);
+}
+
+.admin-media-paths code {
+  overflow-wrap: anywhere;
+  color: var(--admin-ink-3);
+}
+
+.admin-media-paths__url {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-media-paths__url a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--admin-accent-500);
+}
+
+.admin-media-paths__url span {
+  flex: none;
+  color: var(--admin-ink-3);
+  font-size: var(--admin-body);
+}
+
+.admin-media-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-media-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-media-picker__item {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-media-picker__item img {
+  width: 100%;
+  height: 88px;
+  object-fit: cover;
+  border-radius: var(--admin-radius-sm);
+}
+
+.admin-media-picker__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.admin-upload-progress {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 6px;
+}
+
+.admin-backup {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-backup-pending,
+.admin-backup-notice {
+  padding: 12px 14px;
+  border-radius: var(--admin-radius-sm);
+  line-height: 1.6;
+}
+
+.admin-backup-pending {
+  display: grid;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--admin-accent-500) 35%, transparent);
+  background: color-mix(in srgb, var(--admin-accent-500) 10%, transparent);
+}
+
+.admin-backup-pending p {
+  margin: 0;
+}
+
+.admin-backup-notice {
+  color: var(--admin-ink-3);
+  background: color-mix(in srgb, var(--admin-surface) 80%, transparent);
+}
+
+.admin-backup-restarting {
+  padding: 12px 14px;
+  border-radius: var(--admin-radius-sm);
+  line-height: 1.6;
+  border: 1px solid color-mix(in srgb, var(--admin-danger) 35%, transparent);
+  background: color-mix(in srgb, var(--admin-danger) 8%, transparent);
+  color: var(--admin-danger);
+  font-weight: 700;
+}
+
+.admin-danger-button {
+  display: inline-flex;
+  min-height: 44px;
+  padding: 0 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--admin-danger);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-danger);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 750;
+  transition:
+    filter var(--admin-fast) var(--admin-ease),
+    transform var(--admin-fast) var(--admin-ease);
+}
+
+.admin-danger-button:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.admin-danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.admin-clear-section {
+  border-color: color-mix(in srgb, var(--admin-danger) 28%, var(--admin-line));
+}
+
+.admin-clear-backdrop {
+  position: fixed;
+  z-index: 220;
+  inset: 0;
+  display: grid;
+  padding: 20px;
+  place-items: center;
+  background: rgba(18, 22, 28, 0.4);
+  backdrop-filter: blur(6px);
+  overscroll-behavior: contain;
+}
+
+.admin-clear-dialog {
+  display: grid;
+  width: min(560px, 100%);
+  max-height: min(760px, 92vh);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--admin-danger) 32%, var(--admin-line));
+  border-radius: var(--admin-radius-lg);
+  background: var(--admin-surface);
+  color: var(--admin-ink);
+  box-shadow: 0 24px 80px color-mix(in srgb, #000 28%, transparent);
+}
+
+.admin-clear-dialog__head {
+  display: flex;
+  padding: 18px 20px 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.admin-clear-dialog__head h3 {
+  margin: 0;
+  color: var(--admin-danger);
+  font-size: var(--admin-title);
+}
+
+.admin-clear-dialog__close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--admin-radius-sm);
+  background: transparent;
+  color: var(--admin-ink-3);
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.admin-clear-dialog__close:hover {
+  background: var(--admin-surface-3);
+  color: var(--admin-danger);
+}
+
+.admin-clear-dialog__close:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.admin-clear-dialog__body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  padding: 18px 20px 20px;
+  overflow-y: auto;
+}
+
+.admin-clear-dialog__body > p {
+  margin: 0;
+}
+
+.admin-clear-options {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-clear-option {
+  display: flex;
+  padding: 13px 14px;
+  align-items: flex-start;
+  gap: 11px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: color-mix(in srgb, var(--admin-surface-2) 76%, transparent);
+  cursor: pointer;
+}
+
+.admin-clear-option:has(input:checked) {
+  border-color: color-mix(in srgb, var(--admin-danger) 58%, var(--admin-line));
+  background: color-mix(in srgb, var(--admin-danger) 8%, var(--admin-surface-2));
+}
+
+.admin-clear-option input,
+.admin-clear-ack input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  accent-color: var(--admin-danger);
+}
+
+.admin-clear-option span {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-clear-option strong {
+  font-size: var(--admin-body);
+}
+
+.admin-clear-option small {
+  color: var(--admin-ink-3);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.admin-clear-scope {
+  padding: 10px 12px;
+  border-left: 3px solid var(--admin-danger);
+  border-radius: 0 var(--admin-radius-sm) var(--admin-radius-sm) 0;
+  background: color-mix(in srgb, var(--admin-danger) 7%, var(--admin-surface-2));
+  font-size: var(--admin-body);
+  font-weight: 700;
+}
+
+.admin-clear-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--admin-ink-3);
+  font-size: var(--admin-body);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.admin-clear-dialog .admin-field input {
+  border-radius: var(--admin-radius-sm);
+}
+
+.admin-clear-progress {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 0 0 var(--admin-radius-lg) var(--admin-radius-lg);
+  background: color-mix(in srgb, var(--admin-danger) 16%, var(--admin-surface-2));
+}
+
+.admin-clear-progress > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--admin-danger);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--admin-danger) 55%, transparent);
+  transition: width 50ms linear;
+  will-change: width;
+}
+
+@media (max-width: 560px) {
+  .admin-clear-backdrop {
+    padding: 12px;
+  }
+
+  .admin-clear-dialog {
+    max-height: calc(100vh - 24px);
+    border-radius: 14px;
+  }
+
+  .admin-clear-progress {
+    border-radius: 0 0 14px 14px;
+  }
+
+  .admin-clear-dialog__head {
+    padding: 14px 16px 12px;
+  }
+
+  .admin-clear-dialog__body {
+    padding: 16px;
+  }
+}
+
+/* —— 首页管理：左设置 + 右画布（滚动与收起规则见 P-033）—— */
+.home-editor {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.home-editor__rail {
+  display: flex;
+  width: 340px;
+  flex: 0 0 340px;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--admin-line);
+  background: color-mix(in srgb, var(--admin-surface) 86%, transparent);
+}
+
+.home-editor__rail-body {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 18px;
+  min-height: 0;
+  padding: 14px 16px 18px;
+  align-content: start;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+.home-editor__rail-foot {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.home-editor__group {
+  display: grid;
+  gap: 10px;
+}
+
+.home-editor__group h2 {
+  margin: 0;
+  font-size: var(--admin-heading);
+  font-weight: 600;
+}
+
+.home-editor__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-editor__list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-editor__check {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.home-editor__pick {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.home-editor__pick:hover {
+  background: var(--admin-surface-3);
+}
+
+.home-editor__pick.is-active {
+  border-color: var(--admin-accent-500);
+  color: var(--admin-accent-500);
+}
+
+.home-editor__tag {
+  flex: 0 0 auto;
+  color: var(--admin-ink-3);
+  font-size: 0.74rem;
+}
+
+.home-editor__grid-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.home-editor__stack-order {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+}
+
+.home-editor__stack-order button {
+  padding: 4px 10px;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  background: var(--admin-surface);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.home-editor__config {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.home-editor__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+
+.home-editor__canvas-pane {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--admin-surface-2);
+}
+
+.home-editor__toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--admin-line);
+  color: var(--admin-ink-3);
+  font-size: 0.84rem;
+}
+
+.home-editor__zoom {
+  display: flex;
+  gap: 4px;
+}
+
+.home-editor__vp {
+  display: flex;
+  gap: 4px;
+}
+
+.home-editor__vp button,
+.home-editor__zoom button {
+  padding: 4px 9px;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  background: var(--admin-surface);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.home-editor__vp button.is-active,
+.home-editor__zoom button.is-active {
+  border-color: var(--admin-accent-500);
+  color: var(--admin-accent-500);
+}
+
+.home-editor__toolbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.home-editor__canvas {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 0 48px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+
+.home-editor__canvas.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.home-editor__device {
+  container-type: size;
+  width: min(100%, 1440px);
+  aspect-ratio: 1440 / 900;
+  margin-inline: auto;
+  overflow: auto;
+  border: 1px solid var(--admin-line);
+  border-radius: 12px;
+  background: var(--admin-bg);
+  --h-unit: 1cqh;
+}
+
+.home-editor__device.is-phone {
+  width: min(100%, 390px);
+  aspect-ratio: 390 / 844;
+}
+
+.home-editor__device .home-grid {
+  min-height: 100%;
+  padding-bottom: 24px;
+}
+
+.home-editor__preview .glass-card {
+  background: color-mix(
+    in srgb,
+    var(--admin-surface) var(--home-module-fill, 32%),
+    transparent
+  );
+}
+
+/* 画布里的栅格不做出血，格子按内容缩到画布宽度 */
+.home-grid--canvas {
+  --grid-max: 1080px;
+  padding-bottom: 0;
+}
+
+.home-grid__ruler {
+  grid-column: var(--cell-col) / span var(--cell-col-span);
+  grid-row: var(--cell-row);
+  height: 0;
+  visibility: hidden;
+}
+
+/* 画布里的格子不要继承前台 Banner 的 -48px 叠压与 z-index 压底 */
+.home-grid--canvas .home-grid__area,
+.home-grid--canvas .home-grid__area:has(.home-grid__cell--banner) {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 0;
+}
+
+.home-grid--canvas .home-grid__area.is-sticky {
+  position: relative;
+  top: auto;
+}
+
+.home-editor__module {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  min-height: 0;
+  border: 1px dashed var(--admin-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--admin-surface) 60%, transparent);
+}
+
+.home-editor__module.is-fixed {
+  height: calc(var(--cell-h) * var(--h-unit));
+  max-height: calc(var(--cell-h) * var(--h-unit));
+  overflow: hidden;
+}
+
+.home-editor__module.is-selected {
+  border-color: var(--admin-accent-500);
+  border-style: solid;
+}
+
+.home-editor__area {
+  position: relative;
+}
+
+.home-editor__area.is-drop-target {
+  outline: 2px solid #4db8e8;
+  outline-offset: 3px;
+  border-radius: 14px;
+}
+
+.home-editor__ghost {
+  min-height: 80px;
+  border: 2px solid #4db8e8;
+  border-radius: 12px;
+  background: color-mix(in srgb, #4db8e8 10%, transparent);
+  pointer-events: none;
+}
+
+.home-editor__float {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
+  opacity: 0.92;
+  filter: drop-shadow(0 16px 28px rgba(15, 23, 42, 0.22));
+}
+
+.home-editor__float .home-editor__module {
+  height: 100%;
+  overflow: hidden;
+}
+
+.home-editor__module-bar {
+  display: flex;
+  padding: 6px 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--admin-line);
+  font-size: 0.78rem;
+}
+
+.home-editor__handle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  cursor: grab;
+  font-size: 0.78rem;
+  font-weight: 700;
+  touch-action: none;
+}
+
+.home-editor__handle:active {
+  cursor: grabbing;
+}
+
+.home-editor__coords {
+  color: var(--admin-ink-3);
+  white-space: nowrap;
+}
+
+.home-editor__preview {
+  min-height: 0;
+  padding: 8px;
+  overflow: hidden;
+}
+
+/* 画布里的 Banner / 卡片跟格子走，不再写死像素 */
+.home-editor__preview .home-banner {
+  height: 100%;
+  min-height: 0;
+}
+
+.home-editor__preview .home-backdrop {
+  display: none;
+}
+
+.home-editor__preview .dash-welcome,
+.home-editor__preview .dash-moments,
+.home-editor__preview .dash-recommend {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+}
+
+.home-editor__resize {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  width: 10px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.home-editor__resize.is-height {
+  top: auto;
+  right: 12px;
+  bottom: -5px;
+  left: 12px;
+  width: auto;
+  height: 10px;
+  cursor: row-resize;
+}
+
+.home-editor__resize:hover {
+  background: var(--admin-accent-100);
+}
+
+/* —— 模块管理：积木与代码 —— */
+.module-blocks {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.module-blocks h3 {
+  margin: 0;
+  font-size: 0.94rem;
+  font-weight: 800;
+}
+
+.module-blocks__library {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.module-blocks__list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.module-blocks__list li {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  background: var(--admin-surface);
+}
+
+.module-blocks__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.86rem;
+}
+
+.module-blocks__tools {
+  display: flex;
+  gap: 6px;
+}
+
+.module-blocks__tools button {
+  padding: 2px 8px;
+  border: 1px solid var(--admin-line);
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
+.module-code__tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.module-code__tabs .is-active {
+  border-color: var(--admin-accent-500);
+  color: var(--admin-accent-500);
+}
+
+.module-code {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px 16px;
+}
+
+.module-code textarea {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  background: var(--admin-surface-2);
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  resize: none;
+}
+
+@media (max-width: 1024px) and (min-width: 769px) {
+  .admin-rail,
+  .admin-rail.is-collapsed {
+    width: 72px;
+    flex-basis: 72px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .admin-workspace:not(.admin-workspace--nav-collapsed) .admin-rail {
+    width: 220px;
+    flex-basis: 220px;
+    padding: 16px 12px 14px;
+  }
+}
+
+@media (max-width: 768px) {
+  html:has(.admin-workspace),
+  html:has(.admin-workspace) body,
+  html:has(.auth-shell),
+  html:has(.auth-shell) body {
+    height: auto;
+    overflow: auto;
+  }
+
+  html:has(.admin-workspace) .site-navbar,
+  html:has(.auth-shell) .site-navbar,
+  html:has(.admin-workspace) .site-footer,
+  html:has(.auth-shell) .site-footer {
+    display: none;
+  }
+
+  html:has(.admin-workspace) .site-offset,
+  html:has(.auth-shell) .site-offset {
+    padding-top: 0;
+  }
+
+  .admin-workspace {
+    flex-direction: column;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+    padding-bottom: calc(var(--admin-tabbar-h) + env(safe-area-inset-bottom));
+  }
+
+  .admin-workspace--editor {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+
+  .admin-rail {
+    display: none;
+  }
+
+  .admin-topbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--admin-z-topbar);
+    align-items: center;
+    flex-direction: row;
+    gap: 10px;
+    /* 左右 14px = demo 窄屏的 `.topbar{padding:11px 14px}`；
+       与下面内容区的 14px 对齐，标题才落在卡片左边缘的正上方。 */
+    padding: 11px 14px 12px;
+    padding-top: calc(11px + env(safe-area-inset-top));
+  }
+
+  .admin-topbar__user {
+    display: none;
+  }
+
+  .admin-topbar__back {
+    display: inline-flex;
+  }
+
+  .admin-main {
+    min-height: 0;
+  }
+
+  .admin-page-swap,
+  .admin-stage {
+    overflow: visible;
+  }
+
+  /* 手机内容区左右 14px = demo 窄屏的 `.content{padding:16px 14px 92px}` */
+  .admin-workspace:not(.admin-workspace--editor) .admin-stage {
+    padding: 12px 14px calc(24px);
+  }
+
+  .admin-workspace--editor .admin-stage {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .admin-card {
+    margin-inline: 0;
+    padding: 16px;
+    border-radius: var(--admin-radius-md);
+  }
+
+  .admin-btn:not(.admin-btn--link):not(.admin-btn--icon) {
+    min-height: var(--admin-control-touch);
+  }
+
+  .admin-list__head {
+    display: none;
+  }
+
+  .admin-list {
+    gap: 10px;
+  }
+
+  .admin-list__row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid var(--admin-line);
+    border-radius: var(--admin-radius-md);
+    background: var(--admin-surface);
+  }
+
+  .admin-list__cell[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--admin-ink-3);
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .admin-list__cell--main[data-label]::before {
+    display: none;
+  }
+
+  /* 手机上行内操作会换行/堆叠（评论那一列是 column），4px 太挤，放宽到 8px */
+  .admin-list__actions {
+    padding-top: 4px;
+    gap: 8px;
+  }
+
+  /* 触屏分页保留 44px 点击区（demo 的 .pager__btn 只有桌面档 32px；
+     本项目手机上按钮统一走 --admin-control-touch，这里跟着走）。 */
+  .admin-pager a,
+  .admin-pager span {
+    min-width: var(--admin-control-touch);
+    height: var(--admin-control-touch);
+    padding: 0 12px;
+    font-size: var(--admin-body);
+  }
+
+  .admin-filter {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    align-items: stretch;
+  }
+
+  .admin-filter input {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: var(--admin-control-touch);
+    font-size: 16px;
+  }
+
+  .admin-filter select {
+    width: 100%;
+    min-width: 0;
+    min-height: var(--admin-control-touch);
+    font-size: 16px;
+  }
+
+  /* 触屏上表单控件统一抬到 44px / 16px（16px 是 iOS 聚焦不缩放的下限）：
+     .admin-field 与 .admin-filter 本来就有这一档，.admin-inline-create 之前没有，
+     桌面统一到 38px 后它在手机上会比其他输入框矮一截。 */
+  .admin-inline-create input {
+    height: var(--admin-control-touch);
+    font-size: 16px;
+  }
+
+  .admin-filter .admin-btn {
+    justify-self: start;
+    align-self: center;
+  }
+
+  .admin-desktop-only {
+    display: none !important;
+  }
+
+  .admin-fab {
+    display: inline-flex;
+  }
+
+  .admin-tabbar {
+    display: flex;
+    position: fixed;
+    z-index: var(--admin-z-tabbar);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: calc(var(--admin-tabbar-h) + env(safe-area-inset-bottom));
+    padding: 0 6px env(safe-area-inset-bottom);
+    align-items: stretch;
+    justify-content: space-around;
+    border-top: 1px solid var(--admin-line);
+    background: color-mix(in srgb, var(--admin-surface) 92%, transparent);
+    backdrop-filter: blur(16px);
+  }
+
+  .admin-workspace--editor .admin-tabbar,
+  .admin-workspace--credentials .admin-tabbar {
+    display: none;
+  }
+
+  /* 手机底栏项对齐 demo 的 .tabbar button：10.5px / 无字重覆盖（demo 继承 400）/
+     gap 3px / padding 6px 0 / 图标 19px。选中态沿用同一枚 .admin-nav__active 背景层
+     （= demo 的 brand-soft 底 + brand-ink 字）。
+     未对齐项：demo 底栏高度由内容撑开（≈64px），本项目固定 --admin-tabbar-h:56px，
+     且该变量还参与 .admin-workspace / .admin-stage 的手机 padding 计算，这里不动。 */
+  .admin-tabbar__link {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 0;
+    color: var(--admin-ink-3);
+    font-size: 10.5px;
+    text-decoration: none;
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .admin-tabbar__link.is-active {
+    color: var(--admin-accent-700);
+  }
+
+  :root[data-theme="dark"] .admin-tabbar__link.is-active {
+    color: var(--admin-accent-500);
+  }
+
+  .admin-tabbar__icon {
+    width: 19px;
+    height: 19px;
+  }
+
+  .admin-tabbar__badge {
+    position: absolute;
+    top: 4px;
+    right: calc(50% - 18px);
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--admin-danger);
+    color: #fff;
+    font-size: 10px;
+    line-height: 16px;
+    text-align: center;
+  }
+
+  .admin-more {
+    display: block;
+    position: fixed;
+    z-index: var(--admin-z-sheet);
+    inset: 0;
+  }
+
+  .admin-more__panel {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    max-height: min(86dvh, 640px);
+    padding: 10px 16px calc(20px + env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0;
+    background: var(--admin-surface);
+    box-shadow: var(--admin-shadow);
+  }
+
+  .admin-more__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .admin-more__link {
+    display: flex;
+    min-height: 72px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 6px;
+    border-radius: var(--admin-radius-md);
+    background: var(--admin-surface-2);
+    color: inherit;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .admin-more__link.is-active {
+    background: var(--admin-accent-soft);
+    color: var(--admin-accent-700);
+  }
+
+  :root[data-theme="dark"] .admin-more__link.is-active {
+    color: var(--admin-accent-500);
+  }
+
+  .admin-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .post-workspace {
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .post-workspace__rail {
+    display: none;
+  }
+
+  .admin-dialog__backdrop.admin-settings-sheet {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: var(--admin-z-sheet);
+    width: auto;
+    height: auto;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .post-workspace.is-sheet .post-workspace__rail,
+  .post-workspace.is-sheet .post-workspace__rail.is-collapsed {
+    display: flex;
+    position: fixed;
+    z-index: calc(var(--admin-z-sheet) + 1);
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: min(86dvh, calc(100dvh - 56px));
+    flex-basis: auto;
+    padding: 8px 14px calc(18px + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    background: var(--admin-surface);
+    pointer-events: auto;
+    isolation: isolate;
+  }
+
+  .post-workspace.is-sheet .post-workspace__rail-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px;
+    grid-template-areas:
+      "grab grab"
+      "title toggle";
+    align-items: center;
+    gap: 4px 8px;
+    justify-content: stretch;
+  }
+
+  .post-workspace.is-sheet .post-workspace__sheet-grab {
+    display: block;
+    grid-area: grab;
+    margin: 2px auto 6px;
+  }
+
+  .post-workspace.is-sheet .post-workspace__sheet-title {
+    display: block;
+    grid-area: title;
+    margin: 0;
+    font-size: var(--admin-heading);
+    font-weight: 750;
+  }
+
+  .post-workspace.is-sheet .admin-pane-toggle {
+    grid-area: toggle;
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+    justify-self: end;
+  }
+
+  .post-workspace.is-sheet .admin-pane-toggle .admin-pane-toggle__icon,
+  .post-workspace.is-sheet .admin-pane-toggle[aria-expanded="true"] .admin-pane-toggle__icon,
+  .post-workspace.is-sheet .admin-pane-toggle[aria-expanded="false"] .admin-pane-toggle__icon {
+    transform: rotate(-45deg);
+  }
+
+  .post-workspace.is-sheet .post-workspace__rail-body {
+    height: auto;
+    opacity: 1;
+    pointer-events: auto;
+    overflow: auto;
+  }
+
+  .post-workspace__desktop-actions {
+    display: none;
+  }
+
+  .admin-editor-settings {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 40px;
+    padding-inline: 12px;
+  }
+
+  .post-workspace__back {
+    display: inline-flex;
+  }
+
+  .post-workspace__titlebar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+
+  .post-workspace__title {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .post-workspace__title input {
+    font-size: 1.05rem;
+    min-height: 40px;
+  }
+
+  .post-workspace__hint {
+    display: none;
+  }
+
+  .admin-editor-dock {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    align-items: center;
+    border-top: 1px solid var(--admin-line);
+    background: var(--admin-surface);
+  }
+
+  .admin-editor-dock .admin-seg {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .admin-editor-dock .admin-btn {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding-inline: 14px;
+  }
+
+  .post-workspace__titlebar .admin-seg {
+    display: none;
+  }
+
+  .home-editor {
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .admin-pane-tabs {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--admin-line);
+    background: var(--admin-surface);
+  }
+
+  .home-editor.is-canvas .home-editor__rail,
+  .home-editor.is-settings .home-editor__canvas-pane {
+    display: none;
+  }
+
+  .home-editor__rail {
+    width: 100%;
+    flex: 1 1 auto;
+    border-right: 0;
+  }
+
+  .home-editor__canvas-pane {
+    min-width: 0;
+    overflow: auto;
+  }
+
+  .home-editor__canvas {
+    overflow: auto;
+  }
+
+  .module-code {
+    min-height: 0;
+    height: calc(100dvh - 180px);
+  }
+
+  .admin-dialog {
+    padding: 0;
+    place-items: end center;
+  }
+
+  .admin-dialog__panel,
+  .admin-media-dialog__panel {
+    width: 100%;
+    max-height: calc(100dvh - 12px);
+    border-radius: 18px 18px 0 0;
+  }
+
+  .admin-dialog__grab {
+    display: block;
+  }
+
+  .admin-media-dialog {
+    padding: 0;
+    place-items: end center;
+  }
+
+  .auth-shell {
+    min-height: 100dvh;
+    padding: 24px 16px;
+    place-items: stretch;
+  }
+
+  .auth-card {
+    width: 100%;
+    padding: 28px 20px;
+  }
+
+  .admin-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ============================================================
+   概览页：网格 / 卡片角标 / 阅读量榜 / 系统状态
+   「隐藏卡片」= 不渲染（见 DashboardView），网格按实际卡片数 auto-fit 重算，不留空洞。
+   角标在桌面 hover/focus-within 显现，触屏常驻（见文件末 hover:none 块）。
+   ============================================================ */
+.admin-dash__kpis {
+  display: grid;
+  gap: var(--admin-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.admin-dash__wide {
+  display: grid;
+  gap: var(--admin-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.admin-dash__full {
+  display: grid;
+  gap: var(--admin-space-3);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 卡片包裹层：既是同一行等高的载体，也是角标的定位上下文 */
+.admin-dash__slot {
+  position: relative;
+  min-width: 0;
+}
+
+.admin-dash__slot > :not(.admin-dash__hide) {
+  height: 100%;
+}
+
+/* KPI 卡内容顶对齐：行高被最高的卡拉齐后，不要让内部行距跟着摊开 */
+.admin-dash__slot > .admin-stat-card {
+  align-content: start;
+}
+
+/* 卡片首行：统一它与下方内容的间距，并给右上角角标（28px + 8px 内缩 = 右侧 36px）留净空。
+   卡片自身内边距桌面 24 / 手机 16，这里再补 28，两种宽度下角标都不会压住首行内容。 */
+.admin-dash__slot .admin-card > .admin-section:first-child {
+  margin-bottom: var(--admin-space-4);
+  padding-right: 28px;
+}
+
+/* 「最近文章」首行是「标题 + 右侧动作」（对照 demo 的 .section-head .right）：
+   排成一行，动作靠右，正好落在角标左侧的留白里 */
+.admin-dash__slot .admin-card > .admin-section:first-child:has(> .admin-btn) {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.admin-dash__slot .admin-card > .admin-section:first-child > .admin-btn {
+  justify-self: end;
+}
+
+/* 卡片角标：视觉 28px 圆钮，点击区靠 ::after 外扩到 44×44 */
+.admin-dash__hide {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--admin-line);
+  border-radius: 999px;
+  background: var(--admin-surface);
+  color: var(--admin-ink-3);
+  box-shadow: var(--admin-shadow-1);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--admin-fast) var(--admin-ease),
+    color var(--admin-fast) var(--admin-ease),
+    border-color var(--admin-fast) var(--admin-ease),
+    background-color var(--admin-fast) var(--admin-ease);
+}
+
+.admin-dash__hide::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.admin-dash__slot:hover .admin-dash__hide,
+.admin-dash__slot:focus-within .admin-dash__hide,
+.admin-dash__hide:focus-visible {
+  opacity: 1;
+}
+
+.admin-dash__hide:hover {
+  border-color: var(--admin-accent-300);
+  background: var(--admin-accent-50);
+  color: var(--admin-accent-600);
+}
+
+/* 空态标题：Tailwind preflight 会把 h2 压成正文，这里补回分组标题级
+   （= demo 的 .empty h3：14.5px / 600） */
+.admin-dash .admin-empty h2 {
+  margin: 0;
+  font-size: var(--admin-heading);
+  font-weight: 600;
+}
+
+/* —— 阅读量榜（对照 demo 的 .ranks / .rank；条宽由 tsx 内联百分比给出）—— */
+.admin-ranks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--admin-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-rank {
+  display: grid;
+  gap: 3px var(--admin-space-3);
+  align-items: baseline;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.admin-rank__name {
+  overflow: hidden;
+  font-size: var(--admin-body);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-rank__value {
+  color: var(--admin-ink-3);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-rank__bar {
+  grid-column: 1 / -1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--admin-surface-3);
+}
+
+.admin-rank__bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--admin-accent);
+  transition: width var(--admin-mid) var(--admin-ease);
+}
+
+/* —— 系统状态（对照 demo 的 .side-list / .side-row：行间极淡分隔线）—— */
+.admin-status-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-status-row {
+  display: flex;
+  gap: var(--admin-space-3);
+  align-items: center;
+  padding: var(--admin-space-3) 0;
+  border-top: 1px solid var(--admin-line);
+}
+
+.admin-status-row:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.admin-status-row:last-child {
+  padding-bottom: 0;
+}
+
+.admin-status-row > div {
+  min-width: 0;
+}
+
+.admin-status-row__icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+  color: var(--admin-ink-3);
+}
+
+.admin-status-row__title {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  align-items: center;
+  gap: var(--admin-space-2);
+  font-size: var(--admin-body);
+  font-weight: 600;
+}
+
+.admin-status-row__meta {
+  margin: 2px 0 0;
+  color: var(--admin-ink-3);
+  font-size: 0.86rem;
+}
+
+/* ============================================================
+   外观面板：右边缘把手 + 右侧滑出（配色 = 整个后台 / 卡片显隐 = 仅概览页）
+   两段作用域不同却共用一个入口，scope 标注不能省。
+   backdrop 直接复用 .admin-dialog__backdrop（弹窗基元），不另写一套。
+   ============================================================ */
+
+/* 外观入口只在前台导航栏（`Navbar` 里那个管理员可见的图标 → `/admin?appearance=1`）。
+   演进：右边缘常驻把手 → 后台顶栏按钮 → 前台导航图标。前两版都被否掉——入口要么不够显眼
+   （浅灰背景上的白底灰图标），要么在后台页面里多余。本文件只留面板本体
+   （.admin-appearance / __panel / __head / __group* / __scope / __actions）与配色色块、卡片开关。 */
+/* 后台标题行（.admin-topbar）不放任何额外按钮：外观入口在前台导航栏，深浅主题切换也在
+   前台导航栏的主题按钮上——后台这一行只保留返回、标题、用户名。
+   （曾短暂放过「外观」按钮与主题按钮，两个都按用户要求删掉了。） */
+
+/* 容器承载背板：面板无法 portal 到 body，就自己铺满视口（P-076 的 token 仍挂 :root） */
+.admin-appearance {
+  position: fixed;
+  z-index: var(--admin-z-dialog);
+  inset: 0;
+}
+
+/* 调色板这个小弹窗的背板不模糊（用户要求）：它只占右上角一角，把整页模糊反而显得重。
+   只覆盖这一处选择器，其他弹窗继续沿用基元 .admin-dialog__backdrop 的 blur。 */
+.admin-appearance .admin-dialog__backdrop {
+  backdrop-filter: none;
+}
+
+/* 右上角小弹窗（原来是贴右侧的整高抽屉）：落在站点顶栏下方偏右，从外侧划入。
+   top 用固定值避开顶部导航条——不读 --heo-navbar-height，后台不依赖前台变量。
+   尺寸对齐 demo 的 .accent-pop：width 240 / padding 12 / radius 12（--r-md）。 */
+.admin-appearance__panel {
+  position: absolute;
+  z-index: 1;
+  top: 76px;
+  right: 16px;
+  display: flex;
+  width: min(240px, calc(100vw - 32px));
+  max-height: calc(100vh - 92px);
+  flex-direction: column;
+  gap: var(--admin-space-3);
+  padding: var(--admin-space-3);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  background: var(--admin-surface);
+  box-shadow: var(--admin-shadow-3);
+}
+
+.admin-appearance__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--admin-space-3);
+  padding-bottom: var(--admin-space-3);
+  border-bottom: 1px solid var(--admin-line);
+}
+
+/* 面板本身是 role="dialog"（见 DashboardAppearancePanel），标题跟其他弹窗一样走标题档 16px；
+   组标题（配色 / 概览卡片）保持 14px，两级才不会压成一样大。 */
+.admin-appearance__head h2 {
+  margin: 0;
+  font-size: var(--admin-title);
+  font-weight: 750;
+}
+
+.admin-appearance__group {
+  display: grid;
+  gap: var(--admin-space-3);
+}
+
+.admin-appearance__group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--admin-space-2);
+}
+
+.admin-appearance__group-head h3 {
+  margin: 0;
+  font-size: var(--admin-heading);
+  font-weight: 600;
+}
+
+.admin-appearance__scope {
+  color: var(--admin-ink-3);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.admin-appearance__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-2);
+}
+
+.admin-appearance__actions > .admin-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* —— 配色：3 列色块 + 名称，选中态用主色描边环（色块本身的颜色来自 accents.ts 内联）—— */
+.admin-accent-grid {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* 色块按钮：面板收窄到 240px 后，三个一行只剩 ~68px 宽，
+   所以整体压到 40px 出头（用户拍板的上限 44px），色点 20px、名称 11px。
+   注意不要用 max-height 收口 —— 那会把 20px 的色点压成 ~19px（flex 收缩），
+   这里靠 padding + line-height:1 把自然高度控制在 42px 左右。
+   注意 demo 的 .swatch 实测约 61px 高（padding 8 + 22 色点 + 5 gap + 11.5px 文字），
+   比这里高——这里按用户给的「40 左右、不超过 44」执行，没有照抄 demo 那一档高度。 */
+.admin-accent-swatch {
+  display: flex;
+  min-height: 40px;
+  padding: 3px 4px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--admin-radius-sm);
+  background: transparent;
+  color: var(--admin-ink-2);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--admin-fast) var(--admin-ease),
+    border-color var(--admin-fast) var(--admin-ease),
+    box-shadow var(--admin-fast) var(--admin-ease),
+    color var(--admin-fast) var(--admin-ease);
+}
+
+.admin-accent-swatch > i {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--admin-ink) 16%, transparent);
+}
+
+.admin-accent-swatch:hover {
+  background: var(--admin-surface-2);
+  color: var(--admin-ink);
+}
+
+.admin-accent-swatch.is-active,
+.admin-accent-swatch[aria-pressed="true"] {
+  border-color: var(--admin-accent-500);
+  background: var(--admin-accent-50);
+  box-shadow: 0 0 0 3px var(--admin-accent-100);
+  color: var(--admin-accent-700);
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .admin-accent-swatch.is-active,
+:root[data-theme="dark"] .admin-accent-swatch[aria-pressed="true"] {
+  color: var(--admin-accent-400);
+}
+
+/* —— 概览卡片开关：原生 checkbox + accent-color，整行 label 都是点击区（≥44px）—— */
+.admin-card-toggles {
+  display: grid;
+  gap: var(--admin-space-1) var(--admin-space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-card-toggle {
+  display: flex;
+  min-height: var(--admin-control-touch);
+  padding: 0 var(--admin-space-2);
+  align-items: center;
+  gap: var(--admin-space-2);
+  border-radius: var(--admin-radius-sm);
+  color: var(--admin-ink);
+  font-size: var(--admin-body);
+  cursor: pointer;
+  transition: background-color var(--admin-fast) var(--admin-ease);
+}
+
+.admin-card-toggle:hover {
+  background: var(--admin-surface-2);
+}
+
+.admin-card-toggle input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--admin-accent-500);
+  cursor: pointer;
+}
+
+.admin-card-toggle input:disabled {
+  cursor: not-allowed;
+}
+
+.admin-card-toggle input:disabled + span {
+  opacity: 0.55;
+}
+
+/* —— 新增交互元素的键盘焦点：文件里没有全局 :focus-visible，逐个补 —— */
+.admin-dash__hide:focus-visible,
+.admin-accent-swatch:focus-visible,
+.admin-card-toggle input:focus-visible {
+  outline: 2px solid var(--admin-accent-500);
+  outline-offset: 2px;
+}
+
+/* 触屏：角标常驻（没有 hover 的设备否则找不到入口），并把点击区真正打开 */
+@media (hover: none) {
+  .admin-dash__hide {
+    opacity: 1;
+  }
+
+  .admin-dash__hide::after {
+    pointer-events: auto;
+  }
+
+  .admin-accent-swatch:hover,
+  .admin-card-toggle:hover {
+    background: transparent;
+  }
+}
+
+@media (max-width: 768px) {
+  /* 手机 2 列 KPI（与 demo 一致）：auto-fit 的 210px 下限在 390px 宽下会退成单列。
+     demo 的窄屏档：.kpis gap 10px / .kpi padding 14px / .kpi__value 23px。 */
+  .admin-dash__kpis {
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-stat-card {
+    padding: 14px;
+  }
+
+  .admin-stat-card__value {
+    font-size: 23px;
+  }
+}
+
+/* 460ms stagger is the only duration allowed over 280ms (page first paint). */
+.admin-stagger {
+  animation: admin-rise 460ms var(--admin-ease) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+@keyframes admin-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* —— 栏目内容入场（等价参照稿 §8 的 viewRise）——
+   切到概览页时，几个分组按 0 / 60 / 120ms 依次升起并轻微放大；第一组在最上，
+   所以视觉上是自上而下逐块弹出。参照稿作用于 `.view` 的直接子元素，这里同理，
+   但挂在 `.admin-dash` 的子元素上——因为概览页的 `.admin-stage > *` 只有
+   DashboardView 一个根节点，整块动就没有"逐块"的层次了。
+   时长/曲线/位移/缩放全部照抄参照稿：380ms / cubic-bezier(.22,.61,.36,1) / 18px / .985。
+   prefers-reduced-motion 由文件末尾的全局降级统一负责，不在这里重复。 */
+@keyframes admin-view-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.admin-dash > * {
+  animation: admin-view-rise var(--admin-enter) var(--admin-ease-enter) both;
+}
+
+.admin-dash > *:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.admin-dash > *:nth-child(n + 3) {
+  animation-delay: 120ms;
+}
+
+@keyframes admin-shimmer {
+  from {
+    background-position: -320px 0;
+  }
+  to {
+    background-position: 320px 0;
+  }
+}
+
+.admin-skeleton {
+  border-radius: var(--admin-radius-md);
+  background: linear-gradient(
+    90deg,
+    var(--admin-surface-2) 25%,
+    var(--admin-surface-3) 50%,
+    var(--admin-surface-2) 75%
+  );
+  background-size: 640px 100%;
+  animation: admin-shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-workspace *,
+  .auth-shell * {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

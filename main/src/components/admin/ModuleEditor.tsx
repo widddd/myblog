@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { GearIcon } from "@radix-ui/react-icons";
 
 import { adminJson } from "@/lib/client/admin";
 import { BLOCK_LIBRARY, builtinDefinition } from "@/lib/home/builtins";
@@ -52,6 +53,7 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
   const [config, setConfig] = useState<HomeModuleConfig>(module.config);
   const [tab, setTab] = useState<CodeTab>("html");
   const [settingsOpen, setSettingsOpen] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -114,27 +116,74 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
   const setCodeValue =
     tab === "html" ? setHtml : tab === "css" ? setCss : setJs;
 
+  useEffect(() => {
+    if (!sheetOpen) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSheetOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sheetOpen]);
+
+  function closeSettingsSheet() {
+    setSheetOpen(false);
+  }
+
+  function openSettingsSheet() {
+    setSettingsOpen(true);
+    setSheetOpen(true);
+  }
+
+  function toggleSettingsPane() {
+    if (sheetOpen) {
+      setSheetOpen(false);
+      return;
+    }
+    setSettingsOpen((current) => !current);
+  }
+
   return (
-    <div className="post-workspace">
+    <div className={cn("post-workspace", sheetOpen && "is-sheet")}>
+      {sheetOpen ? (
+        <button
+          aria-label="关闭设置"
+          className="admin-dialog__backdrop admin-settings-sheet"
+          onClick={closeSettingsSheet}
+          type="button"
+        />
+      ) : null}
       <aside
+        aria-labelledby={sheetOpen ? "module-settings-title" : undefined}
+        aria-modal={sheetOpen || undefined}
         className={cn("post-workspace__rail", !settingsOpen && "is-collapsed")}
+        role={sheetOpen ? "dialog" : undefined}
       >
         <div className="post-workspace__rail-head">
+          <span className="admin-dialog__grab post-workspace__sheet-grab" />
+          <p className="post-workspace__sheet-title" id="module-settings-title">
+            模块设置
+          </p>
           <button
-            aria-expanded={settingsOpen}
+            aria-expanded={sheetOpen ? true : settingsOpen}
             className="admin-pane-toggle"
-            onClick={() => setSettingsOpen((current) => !current)}
-            title={settingsOpen ? "收起设置" : "展开设置"}
+            onClick={toggleSettingsPane}
+            title={
+              sheetOpen ? "关闭设置" : settingsOpen ? "收起设置" : "展开设置"
+            }
             type="button"
           >
             <span aria-hidden="true" className="admin-pane-toggle__icon" />
             <span className="visually-hidden">
-              {settingsOpen ? "收起设置" : "展开设置"}
+              {sheetOpen ? "关闭设置" : settingsOpen ? "收起设置" : "展开设置"}
             </span>
           </button>
         </div>
         <div className="post-workspace__rail-body">
-          <label className="form-field">
+          <label className="admin-field">
             模块名称
             <input onChange={(event) => setName(event.target.value)} value={name} />
           </label>
@@ -223,7 +272,7 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
                         </div>
 
                         {NEEDS_TEXT.has(block.type) ? (
-                          <label className="form-field">
+                          <label className="admin-field">
                             {block.type === "html" ? "HTML 片段" : "文字"}
                             <textarea
                               onChange={(event) =>
@@ -236,7 +285,7 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
                         ) : null}
 
                         {block.type === "heading" ? (
-                          <label className="form-field">
+                          <label className="admin-field">
                             级别
                             <select
                               onChange={(event) =>
@@ -256,7 +305,7 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
                         ) : null}
 
                         {block.type === "button" ? (
-                          <label className="form-field">
+                          <label className="admin-field">
                             链接
                             <input
                               onChange={(event) =>
@@ -269,7 +318,7 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
 
                         {block.type === "image" ? (
                           <>
-                            <label className="form-field">
+                            <label className="admin-field">
                               图片地址
                               <input
                                 onChange={(event) =>
@@ -278,7 +327,7 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
                                 value={block.src ?? ""}
                               />
                             </label>
-                            <label className="form-field">
+                            <label className="admin-field">
                               替代文字
                               <input
                                 onChange={(event) =>
@@ -291,8 +340,8 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
                         ) : null}
 
                         {NEEDS_LIMIT.has(block.type) ? (
-                          <div className="admin-form-row">
-                            <label className="form-field">
+                          <div className="admin-field-row">
+                            <label className="admin-field">
                               条数
                               <input
                                 max={12}
@@ -306,7 +355,7 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
                                 value={block.limit ?? 3}
                               />
                             </label>
-                            <label className="form-field">
+                            <label className="admin-field">
                               来源
                               <select
                                 onChange={(event) =>
@@ -339,12 +388,12 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
           )}
 
           {error ? (
-            <p className="form-error" role="alert">
+            <p className="admin-error" role="alert">
               {error}
             </p>
           ) : null}
           <button
-            className="heo-button"
+            className="admin-btn"
             disabled={saving}
             onClick={() => void save()}
             type="button"
@@ -359,6 +408,15 @@ export function ModuleEditor({ module }: { module: HomeModuleView }) {
           <div className="post-workspace__title">
             <strong>{name || "未命名模块"}</strong>
           </div>
+          <button
+            aria-expanded={sheetOpen}
+            className="admin-btn admin-btn--ghost admin-editor-settings"
+            onClick={openSettingsSheet}
+            type="button"
+          >
+            <GearIcon />
+            设置
+          </button>
           {custom ? (
             <div className="module-code__tabs">
               {CODE_TABS.map((item) => (

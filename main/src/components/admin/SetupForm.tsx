@@ -9,7 +9,7 @@ type ApiError = {
   message?: string;
 };
 
-export function SetupForm() {
+export function SetupForm({ recovery = false }: { recovery?: boolean }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -20,16 +20,20 @@ export function SetupForm() {
     setSubmitting(true);
 
     const form = new FormData(event.currentTarget);
-    const payload = {
-      siteName: String(form.get("siteName") || ""),
-      siteUrl: String(form.get("siteUrl") || ""),
-      subtitle: String(form.get("subtitle") || ""),
-      username: String(form.get("username") || ""),
-      password: String(form.get("password") || ""),
-      passwordConfirm: String(form.get("passwordConfirm") || ""),
-      passphrase: String(form.get("passphrase") || ""),
-      passphraseConfirm: String(form.get("passphraseConfirm") || ""),
-    };
+    const payload = recovery
+      ? {
+          username: String(form.get("username") || ""),
+          password: String(form.get("password") || ""),
+          passwordConfirm: String(form.get("passwordConfirm") || ""),
+        }
+      : {
+          siteName: String(form.get("siteName") || ""),
+          siteUrl: String(form.get("siteUrl") || ""),
+          subtitle: String(form.get("subtitle") || ""),
+          username: String(form.get("username") || ""),
+          password: String(form.get("password") || ""),
+          passwordConfirm: String(form.get("passwordConfirm") || ""),
+        };
 
     try {
       const csrfToken = await fetchCsrfToken();
@@ -44,13 +48,13 @@ export function SetupForm() {
       const body = (await response.json()) as ApiError;
 
       if (!response.ok) {
-        throw new Error(body.message || "创建失败");
+        throw new Error(body.message || (recovery ? "重建失败" : "创建失败"));
       }
 
       router.replace("/admin/login");
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "创建失败");
+      setError(caught instanceof Error ? caught.message : recovery ? "重建失败" : "创建失败");
     } finally {
       setSubmitting(false);
     }
@@ -59,44 +63,51 @@ export function SetupForm() {
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
       <p className="admin-muted">
-        先给站点起名字，再设管理员和备份口令。备份口令只能设一次，请另外记好，不要和登录密码相同。
+        {recovery
+          ? "站点名称、首页布局和备份口令都还在。这里只补一个管理员账号，不会改备份口令。"
+          : "先给站点起名字，再设置管理员账号。备份口令会在执行加密备份或恢复时临时输入，不会保存。"}
       </p>
-      <label className="form-field">
-        站点名称
-        <input
-          autoComplete="organization"
-          autoFocus
-          maxLength={80}
-          name="siteName"
-          placeholder="会出现在导航和首页大标题"
-          required
-          type="text"
-        />
-      </label>
-      <label className="form-field">
-        站点地址（选填）
-        <input
-          maxLength={200}
-          name="siteUrl"
-          placeholder="https://example.com"
-          type="url"
-        />
-      </label>
-      <label className="form-field">
-        首页副标题（选填）
-        <input maxLength={200} name="subtitle" type="text" />
-      </label>
-      <label className="form-field">
+      {recovery ? null : (
+        <>
+          <label className="admin-field">
+            站点名称
+            <input
+              autoComplete="organization"
+              autoFocus
+              maxLength={80}
+              name="siteName"
+              placeholder="会出现在导航和首页大标题"
+              required
+              type="text"
+            />
+          </label>
+          <label className="admin-field">
+            站点地址（选填）
+            <input
+              maxLength={200}
+              name="siteUrl"
+              placeholder="https://example.com"
+              type="url"
+            />
+          </label>
+          <label className="admin-field">
+            首页副标题（选填）
+            <input maxLength={200} name="subtitle" type="text" />
+          </label>
+        </>
+      )}
+      <label className="admin-field">
         管理员用户名
         <input
           autoComplete="username"
+          autoFocus={recovery}
           maxLength={64}
           name="username"
           required
           type="text"
         />
       </label>
-      <label className="form-field">
+      <label className="admin-field">
         管理员密码
         <input
           autoComplete="new-password"
@@ -107,7 +118,7 @@ export function SetupForm() {
           type="password"
         />
       </label>
-      <label className="form-field">
+      <label className="admin-field">
         再输入一次密码
         <input
           autoComplete="new-password"
@@ -117,34 +128,13 @@ export function SetupForm() {
           type="password"
         />
       </label>
-      <label className="form-field">
-        备份口令
-        <input
-          autoComplete="new-password"
-          maxLength={128}
-          minLength={8}
-          name="passphrase"
-          required
-          type="password"
-        />
-      </label>
-      <label className="form-field">
-        再输入一次备份口令
-        <input
-          autoComplete="new-password"
-          maxLength={128}
-          name="passphraseConfirm"
-          required
-          type="password"
-        />
-      </label>
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
-      <button className="heo-button" disabled={submitting} type="submit">
-        {submitting ? "创建中…" : "创建站点"}
+      <button className="admin-btn" disabled={submitting} type="submit">
+        {submitting ? "处理中…" : recovery ? "重建管理员" : "创建站点"}
       </button>
     </form>
   );

@@ -45,6 +45,18 @@ export type PendingRestore = {
   restartAt: string | null;
 };
 
+const pendingPassphrases = new Map<string, string>();
+
+export function setPendingRestorePassphrase(name: string, passphrase: string): void {
+  pendingPassphrases.set(name, passphrase);
+}
+
+function takePendingRestorePassphrase(name: string): string | undefined {
+  const value = pendingPassphrases.get(name);
+  pendingPassphrases.delete(name);
+  return value;
+}
+
 export type RestoreOptions = {
   databasePath?: string;
   storage?: StorageDriver;
@@ -115,6 +127,7 @@ export async function readPendingRestore(
 export async function requestPendingRestore(
   name: string,
   databasePath = resolveDatabasePath(),
+  passphrase?: string,
 ): Promise<PendingRestore> {
   if (!isManagedBackupFileName(name)) {
     throw new BackupError("VALIDATION_ERROR", "备份文件名不合法", 400);
@@ -128,6 +141,9 @@ export async function requestPendingRestore(
     requestedAt: new Date().toISOString(),
     restartAt: null,
   };
+  if (passphrase) {
+    setPendingRestorePassphrase(name, passphrase);
+  }
   await writePendingRestore(pending, databasePath);
   logger.info("已预约恢复备份，站点可继续使用", { name });
   return pending;
@@ -253,6 +269,22 @@ export async function cancelPendingRestore(
       throw error;
     }
   }
+}
+
+export async function clearRestoreArtifacts(
+  databasePath = resolveDatabasePath(),
+): Promise<void> {
+  await cancelPendingRestore(databasePath);
+  await Promise.all(
+    [`${databasePath}.before-restore`, `${databasePath}.restore-tmp`].map(
+      (filePath) =>
+        unlink(filePath).catch((error) => {
+          if (!isNodeNotFoundError(error)) {
+            throw error;
+          }
+        }),
+    ),
+  );
 }
 
 async function snapshotCurrentDatabase(
@@ -421,7 +453,10 @@ export async function applyPendingRestore(
 
   logger.info("正在执行预约恢复", { name: pending.name, restartAt: pending.restartAt });
   try {
-    const result = await restoreFromBackup(pending.name, { databasePath });
+    const result = await restoreFromBackup(pending.name, {
+      databasePath,
+      passphrase: takePendingRestorePassphrase(pending.name),
+    });
     await cancelPendingRestore(databasePath);
     return result;
   } catch (error) {

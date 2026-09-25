@@ -5,10 +5,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 import { BackupError } from "../src/lib/backup/errors";
-import {
-  createHostSecretFromPassphrase,
-  hostSecretExists,
-} from "../src/lib/backup/host-secret";
+import { hostSecretExists } from "../src/lib/backup/host-secret";
 
 const ENV_PATH = path.resolve(process.cwd(), ".env");
 const EXAMPLE_PATH = path.resolve(process.cwd(), ".env.example");
@@ -171,7 +168,6 @@ async function main() {
 
   const rl = createInterface({ input, output });
   let wroteAdmin = false;
-  let wroteSecret = false;
   try {
     if (adminCount === 0 && !secretReady) {
       const siteName = (await rl.question("站点名称：")).trim();
@@ -185,7 +181,6 @@ async function main() {
         throw new BackupError("VALIDATION_ERROR", "管理员用户名不能为空", 400);
       }
       const adminPassword = await askConfirmedSecret(rl, "管理员密码");
-      const passphrase = await askConfirmedSecret(rl, "备份口令");
       const { runInitialSetup } = await import("../src/lib/auth/initial-setup");
       await runInitialSetup({
         siteName,
@@ -194,12 +189,9 @@ async function main() {
         username,
         password: adminPassword,
         passwordConfirm: adminPassword,
-        passphrase,
-        passphraseConfirm: passphrase,
       });
       wroteAdmin = true;
-      wroteSecret = true;
-      console.log("管理员、站点名称与备份半钥已设定。");
+      console.log("管理员与站点信息已设定。");
     } else {
       if (adminCount === 0) {
         if (!databaseReady) {
@@ -229,12 +221,7 @@ async function main() {
       }
 
       if (secretReady) {
-        console.log("备份口令已设定，不可更改。");
-      } else {
-        const passphrase = await askConfirmedSecret(rl, "备份口令");
-        await createHostSecretFromPassphrase(passphrase);
-        wroteSecret = true;
-        console.log("主机半钥已写入 data/backup-host-secret.json（不要打进备份包、不要提交仓库）。");
+        console.log("主机半钥仍在，备份口令将在每次备份或恢复时手动输入。");
       }
     }
   } finally {
@@ -245,7 +232,7 @@ async function main() {
   console.log("");
   console.log("初始化完成：");
   console.log(wroteAdmin || adminCount > 0 ? "  - 管理员已设定" : "  - 管理员未设定");
-  console.log(wroteSecret || secretReady ? "  - 备份半钥已设定（口令不可再改）" : "  - 备份半钥未设定");
+  console.log("  - 备份口令不会保存，备份与恢复时需手动输入");
   console.log("下一步：pnpm dev 或 pnpm build");
 }
 

@@ -175,3 +175,13 @@ export async function writeUpdateState(
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
+
+export async function clearUpdateState(
+  databasePath = resolveDatabasePath(),
+): Promise<void> {
+  await unlink(updateStatePath(databasePath)).catch((error) => {
+    if (!isNodeNotFoundError(error)) {
+      throw error;
+    }
+  });
+}

@@ -1,10 +1,13 @@
 import type { Prisma } from "@prisma/client";
 
+import { readDefaultPenName } from "@/lib/auth/account";
 import { cachedPublic, PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
 import { prisma } from "@/lib/db";
 import { resolvePublicImageUrl } from "@/lib/moments/media";
 import { getSetting } from "@/lib/settings";
 
+import { resolveAuthorName } from "./author";
+import { leadFromContent } from "./lead";
 import { isPublicId, postHref } from "./path";
 import type { PostCardModel, PostDetailModel, TaxonomyItem } from "./types";
 
@@ -74,10 +77,54 @@ async function toCards(rows: CardMetaRow[]): Promise<PostCardModel[]> {
           },
           select: { slug: true, excerpt: true },
         });
-  const excerpts = new Map(
+  const excerpts = new Map<string, string | null>(
     excerptRows.map((row) => [row.slug, row.excerpt] as const),
   );
+
+  await fillLeadsForCoverlessCards(rows, excerpts);
+
   return rows.map((row) => toCard(row, excerpts));
+}
+
+/**
+ * 无封面 = 卡片走「细条卡」，只显示标题 + 文章开头一小段；
+ * 没手写摘要的那些，用正文开头兜底（`leadFromContent`）。
+ *
+ * 只查这些卡片需要的内容，并且和摘要查询一样排除密码文（[P-047]），
+ * 避免把加密文章的正文开头带到前台列表里。
+ */
+async function fillLeadsForCoverlessCards(
+  rows: CardMetaRow[],
+  excerpts: Map<string, string | null>,
+): Promise<void> {
+  const slugs = rows
+    .filter(
+      (row) =>
+        !row.cover &&
+        !row.passwordHash &&
+        !excerpts.get(row.slug)?.trim(),
+    )
+    .map((row) => row.slug);
+
+  if (slugs.length === 0) {
+    return;
+  }
+
+  const leadRows = await prisma.post.findMany({
+    where: {
+      slug: { in: slugs },
+      passwordHash: null,
+      ...publishedWhere(),
+    },
+    select: { content: true, slug: true },
+  });
+
+  for (const row of leadRows) {
+    const lead = leadFromContent(row.content);
+    if (lead) {
+      excerpts.set(row.slug, lead);
+    }
+  }
 }
 
 async function pageSize(): Promise<number> {
@@ -182,7 +229,14 @@ async function publishedCardBy(
     async () => {
       const row = await prisma.post.findFirst({
         where: { ...where, ...publishedWhere() },
-        select: { id: true, ...cardMetaSelect },
+        select: {
+          id: true,
+          // 「已修改」与作者只在文章页用：卡片投影（PostCardModel）不带这些字段
+          revisedAt: true,
+          showRevisedAt: true,
+          authorName: true,
+          ...cardMetaSelect,
+        },
       });
 
       if (!row) {
@@ -194,6 +248,13 @@ async function publishedCardBy(
         ...post,
         id: row.id,
         wordCount: 0,
+        // 文章自己没填作者才去读默认笔名，省掉没必要的查询
+        authorName: resolveAuthorName(
+          row.authorName,
+          row.authorName?.trim() ? "" : await readDefaultPenName(),
+        ),
+        revisedAt: row.revisedAt,
+        showRevisedAt: row.showRevisedAt,
       };
     },
   );

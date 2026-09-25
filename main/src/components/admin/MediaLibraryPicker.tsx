@@ -61,7 +61,7 @@ export function MediaLibraryPicker({
   return (
     <div className="admin-media-picker">
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
@@ -100,7 +100,7 @@ export function MediaLibraryPicker({
       {pages > 1 ? (
         <div className="admin-media-picker__pager">
           <button
-            className="heo-button heo-button--ghost"
+            className="admin-btn admin-btn--ghost"
             disabled={page <= 1 || loading}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
             type="button"
@@ -111,7 +111,7 @@ export function MediaLibraryPicker({
             {page} / {pages}
           </span>
           <button
-            className="heo-button heo-button--ghost"
+            className="admin-btn admin-btn--ghost"
             disabled={page >= pages || loading}
             onClick={() => setPage((current) => current + 1)}
             type="button"

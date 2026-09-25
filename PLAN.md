@@ -129,4 +129,25 @@
 | 2026-08-30 | 媒体目录对齐 + 本地限额 + 访客 thumb 走 COS + 文章 `/posts/{publicId}/{name}` | 用户批准媒体目录与文章 URL Spec |
 | 2026-08-30 | 首页双视口自适应：电脑/手机两套几何，盒子决定内容；内页侧栏下沉；瞬间单张高度上限 | 用户批准计划稿 |
 | 2026-09-04 | Linux 精简安装：发版只换 tar.gz，不改 install.sh；`apply-update --file` 预约重启 | 用户要简易更新 |
-| 2026-09-04 | 发行 0.1.0：拒绝名单更新包、GitHub 检查、开箱创建页、站长手册；清空内容数据 | 用户批准计划 |
+| 2026-09-11 | 后台 UI 重写：独立 admin.css、手机底栏、双形态列表、写文章 sheet、motion 仅后台 | 用户批准 docs/admin-ui-rewrite-spec.md |
+
+### M11 — 后台 UI 重写（2026-09-11）
+
+- [x] 后台样式拆到 `src/app/admin/admin.css`，不重定义前台共享类
+- [x] 基元 `.admin-btn` / `.admin-field` / `.admin-card` / `.admin-list`；按钮不被 grid stretch
+- [x] 手机端底栏 + 更多 sheet；写文章设置 sheet；列表双形态
+- [x] motion 只进 `src/components/admin/`，LazyMotion + 280ms 上限
+
+
+### M10 — 更新页数据清理（2026-09-06）
+
+目标：在后台「更新」页提供受服务端保护的一键数据清理入口。只允许选择「删除数据」和「删除管理员账号」两个范围，可同时选择；确认后必须等待 15 秒，等待期间可取消。
+
+- [ ] 服务端清理协议：精确确认短语、不可恢复勾选、一次性令牌、服务端 15 秒闸门
+- [ ] 「删除数据」：清空文章/分类/标签/关联、瞬间/点赞、全部评论、媒体记录与本地/COS 媒体、备份及索引、更新暂存
+- [ ] 「删除管理员账号」：清空全部管理员；两项同选后进入无内容/无管理员恢复状态
+- [ ] 更新页危险操作弹窗：可多选、Escape/按钮取消、底部平滑红色倒计时进度条
+- [ ] Windows 单测与 lint/build/dev smoke test；不在真实生产库执行删除
+- [ ] 同步 Spec、模块注册表、API/架构/手册/README/AGENTS/pitfalls
+
+实施约定：`Setting`、`HomeModule`/`HomePlacement` 等站点配置保留；`data/backup-host-secret.json` 与运维日志保留。COS 清理把配置的桶视为本站专用，删除其中由应用列出的对象；备份口令相关 `BackupSecret` 哈希属于备份索引，随「删除数据」删除。

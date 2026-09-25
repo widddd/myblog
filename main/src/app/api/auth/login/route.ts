@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { issueCsrfToken } from "@/lib/auth/csrf";
+import { loginLimitKey } from "@/lib/auth/login-limit";
 import { verifyPasswordAgainstKnownOrDummy } from "@/lib/auth/password";
+import { clearRateLimit } from "@/lib/auth/rateLimit";
 import { createSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
+import { getClientIp } from "@/lib/utils/fingerprint";
 import { logger } from "@/lib/utils/logger";
 
 export const runtime = "nodejs";
@@ -60,6 +63,12 @@ export async function POST(request: Request) {
     }
 
     await createSession(admin);
+
+    // 成功的登录不占用暴力破解预算：清掉本 IP 的记账。
+    // 否则站长自己反复登录/退出几次就会被 429 挡在门外——表现是点了「登录」没反应，
+    // 刷新才进得去后台（会话其实早就建立了）。
+    clearRateLimit(loginLimitKey("login", getClientIp(request.headers)));
+
     const csrfToken = await issueCsrfToken();
 
     return NextResponse.json({

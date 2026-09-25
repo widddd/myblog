@@ -1,5 +1,6 @@
 "use client";
 
+import { ColorWheelIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -10,9 +11,11 @@ import { cn } from "@/lib/utils/cn";
 
 type NavbarProps = {
   siteName: string;
+  /** 已登录管理员：多渲染一个「外观」入口（访客拿到的 HTML 里没有它） */
+  isAdmin?: boolean;
 };
 
-export function Navbar({ siteName }: NavbarProps) {
+export function Navbar({ siteName, isAdmin = false }: NavbarProps) {
   const pathname = usePathname();
   const navRef = useRef<HTMLElement>(null);
   const [scrolled, setScrolled] = useState(false);
@@ -126,6 +129,19 @@ export function Navbar({ siteName }: NavbarProps) {
             <Link className="nav-icon-btn" href="/search" aria-label="搜索">
               ⌕
             </Link>
+            {/* 外观入口：只在管理员已登录时渲染（由 SiteHeader 在服务端判定）。
+                跳到后台并带 marker，概览页会直接把外观面板打开——前台不引入 admin.css，
+                面板的样式在后台那边，所以这里不原地弹。 */}
+            {isAdmin ? (
+              <Link
+                aria-label="外观设置"
+                className="nav-icon-btn"
+                href="/admin?appearance=1"
+                title="外观设置"
+              >
+                <ColorWheelIcon aria-hidden="true" />
+              </Link>
+            ) : null}
             <div
               className={cn(
                 "theme-toggle-slot",

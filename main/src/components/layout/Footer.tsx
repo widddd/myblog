@@ -1,10 +1,18 @@
 import Link from "next/link";
 
 import { ReleaseMark } from "@/components/common/ReleaseMark";
+import { UptimeModule } from "@/components/home/modules/UptimeModule";
+import { getHomeLayout } from "@/lib/home/layout";
 import { getPublicSettings } from "@/lib/settings";
 
-export async function Footer() {
-  const { siteName } = await getPublicSettings();
+export async function Footer({ showUptime = false }: { showUptime?: boolean }) {
+  const [{ siteName, siteStartedAt }, homeItems] = await Promise.all([
+    getPublicSettings(),
+    showUptime ? getHomeLayout() : Promise.resolve([]),
+  ]);
+  const uptime = showUptime
+    ? homeItems.find(({ module }) => module.builtinKey === "uptime")
+    : undefined;
 
   return (
     <footer className="site-footer">
@@ -17,6 +25,13 @@ export async function Footer() {
             © {new Date().getFullYear()} {siteName}
           </p>
         </div>
+        {uptime ? (
+          <UptimeModule
+            heading={uptime.module.config.heading}
+            startedAt={siteStartedAt}
+            variant="footer"
+          />
+        ) : null}
         <p>
           记录思考，也记录生活。
           <span> · </span>

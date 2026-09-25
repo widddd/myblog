@@ -3,6 +3,9 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { AdminSection } from "@/components/admin/AdminSection";
+import { DataClearDialog } from "@/components/admin/DataClearDialog";
+import { useAdminConfirm } from "@/components/admin/useAdminConfirm";
 import { adminJson } from "@/lib/client/admin";
 import { fetchCsrfToken } from "@/lib/client/csrf";
 
@@ -105,6 +108,7 @@ export function UpdatePanel({
   >([]);
   const [githubRepo, setGithubRepo] = useState("");
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const { confirm, dialog: confirmDialog } = useAdminConfirm();
 
   async function refresh() {
     const payload = await adminJson<UpdateListResponse>("/api/admin/update");
@@ -216,7 +220,7 @@ export function UpdatePanel({
       setError("请先检查更新并选择一个版本");
       return;
     }
-    const confirmed = window.confirm(
+    const confirmed = await confirm(
       `将从 GitHub 下载「${selectedTag}」的更新包并加入列表，不会立刻覆盖正在运行的程序。\n\n确定导入？`,
     );
     if (!confirmed) {
@@ -264,7 +268,7 @@ export function UpdatePanel({
   }
 
   async function uploadPackage(file: File) {
-    const confirmed = window.confirm(
+    const confirmed = await confirm(
       "将把这份程序更新包加入列表，不会立刻覆盖正在运行的程序。之后可在列表里点「应用」。\n\n确定导入？",
     );
     if (!confirmed) {
@@ -306,7 +310,7 @@ export function UpdatePanel({
   }
 
   async function apply(name: string) {
-    const confirmed = window.confirm(
+    const confirmed = await confirm(
       `将预约应用「${name}」。现在站点还能用，要到点或点「立刻重启」才会覆盖程序文件。\n\ndata、.env 和备份密钥不会被改。建议先打包当前程序以便回退。\n\n确定预约？`,
     );
     if (!confirmed) {
@@ -330,7 +334,7 @@ export function UpdatePanel({
   }
 
   async function restartPending() {
-    const confirmed = window.confirm(
+    const confirmed = await confirm(
       "将立刻重启，并用已预约的更新包覆盖当前程序文件。文章和图片不会被这份操作覆盖。确定继续？",
     );
     if (!confirmed) {
@@ -396,7 +400,7 @@ export function UpdatePanel({
   }
 
   async function remove(name: string) {
-    const confirmed = window.confirm(`删除更新包「${name}」？这不会影响当前正在运行的程序。`);
+    const confirmed = await confirm(`删除更新包「${name}」？这不会影响当前正在运行的程序。`);
     if (!confirmed) {
       return;
     }
@@ -435,6 +439,23 @@ export function UpdatePanel({
 
   const disabled = busy || restarting;
 
+  function handleDataClearCompleted(requiresSetup: boolean) {
+    if (requiresSetup) {
+      setNotice("数据与管理员账号已清空，即将进入重建管理员页面；也可停服后在 main/ 下执行 pnpm setup。");
+      window.setTimeout(() => {
+        router.replace("/admin/setup");
+      }, 1200);
+      return;
+    }
+    setFiles([]);
+    setPendingUpdate(null);
+    setRestorePending(false);
+    setLastApply(null);
+    setRestartAtInput("");
+    setNotice("已清空文章、瞬间、评论、媒体、备份和更新暂存；站点配置保持不变。");
+    router.refresh();
+  }
+
   return (
     <div className="admin-backup">
       {restarting ? (
@@ -442,8 +463,7 @@ export function UpdatePanel({
           正在重启并应用更新，请不要关闭本页。第一次可能要几分钟。
         </p>
       ) : null}
-      <div className="admin-section">
-        <h3 className="admin-section__title">当前程序</h3>
+      <AdminSection title="当前程序">
         <p className="admin-muted">
           {appRelease.label}
           {appRelease.channel ? `（${appRelease.channel}）` : ""}
@@ -452,12 +472,12 @@ export function UpdatePanel({
         {restorePending ? (
           <p className="admin-danger">已有预约恢复备份。请先到「备份」页取消，才能预约更新。</p>
         ) : null}
-        <div className="admin-form-actions">
-          <button className="heo-button" disabled={disabled} onClick={() => void packCurrent()} type="button">
+        <div className="admin-btn-row">
+          <button className="admin-btn" disabled={disabled} onClick={() => void packCurrent()} type="button">
             {disabled ? "处理中…" : "打包当前程序"}
           </button>
           <button
-            className="heo-button"
+            className="admin-btn"
             disabled={disabled}
             onClick={() => uploadInputRef.current?.click()}
             type="button"
@@ -480,21 +500,21 @@ export function UpdatePanel({
         <p className="admin-muted">
           打包只含程序文件，不含 data、.env 和 node_modules。导入后点「应用」只是预约，到点或立刻重启才会覆盖。
         </p>
-      </div>
-      <div className="admin-section">
-        <h3 className="admin-section__title">从 GitHub 检查</h3>
+      </AdminSection>
+      <DataClearDialog disabled={disabled || restorePending} onCompleted={handleDataClearCompleted} />
+      <AdminSection title="从 GitHub 检查">
         <p className="admin-muted">
           仓库在「设置」里填写。只在你点检查时向 GitHub 要公开 Release 列表，资产文件名必须是{" "}
           <code>myblog-update-*.tar.gz</code>。
         </p>
         {githubRepo ? <p className="admin-muted">当前仓库：{githubRepo}</p> : null}
-        <div className="admin-form-actions">
-          <button className="heo-button" disabled={disabled} onClick={() => void checkGithub()} type="button">
+        <div className="admin-btn-row">
+          <button className="admin-btn" disabled={disabled} onClick={() => void checkGithub()} type="button">
             检查更新
           </button>
           {githubReleases.length > 0 ? (
             <>
-              <label className="form-field">
+              <label className="admin-field">
                 选择版本
                 <select
                   disabled={disabled}
@@ -510,13 +530,13 @@ export function UpdatePanel({
                   ))}
                 </select>
               </label>
-              <button className="heo-button" disabled={disabled} onClick={() => void importGithub()} type="button">
+              <button className="admin-btn" disabled={disabled} onClick={() => void importGithub()} type="button">
                 导入该版本
               </button>
             </>
           ) : null}
         </div>
-      </div>
+      </AdminSection>
       {pendingUpdate ? (
         <div className="admin-section admin-backup-pending" role="status">
           <h3 className="admin-section__title">等待重启</h3>
@@ -530,7 +550,7 @@ export function UpdatePanel({
           </p>
           {restarting ? null : (
             <>
-              <label className="form-field">
+              <label className="admin-field">
                 预约重启时间
                 <input
                   min={toDatetimeLocal(new Date().toISOString())}
@@ -539,14 +559,14 @@ export function UpdatePanel({
                   value={restartAtInput}
                 />
               </label>
-              <div className="admin-form-actions">
-                <button className="heo-button" disabled={disabled} onClick={() => void saveRestartAt()} type="button">
+              <div className="admin-btn-row">
+                <button className="admin-btn" disabled={disabled} onClick={() => void saveRestartAt()} type="button">
                   保存重启时间
                 </button>
-                <button className="heo-button" disabled={disabled} onClick={() => void restartPending()} type="button">
+                <button className="admin-btn" disabled={disabled} onClick={() => void restartPending()} type="button">
                   立刻重启
                 </button>
-                <button className="admin-link-button" disabled={disabled} onClick={() => void cancelPending()} type="button">
+                <button className="admin-btn admin-btn--link" disabled={disabled} onClick={() => void cancelPending()} type="button">
                   取消预约
                 </button>
               </div>
@@ -556,59 +576,70 @@ export function UpdatePanel({
       ) : null}
       {notice ? <p className="admin-backup-notice">{notice}</p> : null}
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
-      <div className="admin-section">
-        <h3 className="admin-section__title">已有更新包</h3>
+      <AdminSection title="已有更新包">
         {files.length === 0 ? (
           <p className="admin-muted">还没有更新包。点「打包当前程序」、「导入更新包」或从 GitHub 检查后导入，会留在这里。</p>
         ) : (
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>文件</th>
-                <th>时间</th>
-                <th>大小</th>
-                <th>版本</th>
-                <th>文件数</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {files.map((file) => (
-                <tr key={file.name}>
-                  <td>{file.name}</td>
-                  <td>{new Date(file.createdAt).toLocaleString("zh-CN")}</td>
-                  <td>{formatSize(file.size)}</td>
-                  <td>{file.label ?? "未知版本"}</td>
-                  <td>{file.fileCount ?? "—"}</td>
-                  <td className="admin-table-actions">
-                    <a href={`/api/admin/update/download/${encodeURIComponent(file.name)}`}>下载</a>
-                    <button
-                      className="admin-link-button"
-                      disabled={disabled || restorePending}
-                      onClick={() => void apply(file.name)}
-                      type="button"
-                    >
-                      应用
-                    </button>
-                    <button
-                      className="admin-link-button"
-                      disabled={disabled}
-                      onClick={() => void remove(file.name)}
-                      type="button"
-                    >
-                      删除
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="admin-list admin-list--files">
+            <div className="admin-list__head">
+              <span>文件</span>
+              <span>时间</span>
+              <span>大小</span>
+              <span>版本</span>
+              <span>文件数</span>
+              <span />
+            </div>
+            {files.map((file) => (
+              <article className="admin-list__row" key={file.name}>
+                <div className="admin-list__cell admin-list__cell--main" data-label="文件">
+                  {file.name}
+                </div>
+                <div className="admin-list__cell" data-label="时间">
+                  {new Date(file.createdAt).toLocaleString("zh-CN")}
+                </div>
+                <div className="admin-list__cell" data-label="大小">
+                  {formatSize(file.size)}
+                </div>
+                <div className="admin-list__cell" data-label="版本">
+                  {file.label ?? "未知版本"}
+                </div>
+                <div className="admin-list__cell" data-label="文件数">
+                  {file.fileCount ?? "—"}
+                </div>
+                <div className="admin-list__actions">
+                  <a
+                    className="admin-btn admin-btn--link"
+                    href={`/api/admin/update/download/${encodeURIComponent(file.name)}`}
+                  >
+                    下载
+                  </a>
+                  <button
+                    className="admin-btn admin-btn--link"
+                    disabled={disabled || restorePending}
+                    onClick={() => void apply(file.name)}
+                    type="button"
+                  >
+                    应用
+                  </button>
+                  <button
+                    className="admin-btn admin-btn--link"
+                    disabled={disabled}
+                    onClick={() => void remove(file.name)}
+                    type="button"
+                  >
+                    删除
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
         )}
-      </div>
+      </AdminSection>
+      {confirmDialog}
     </div>
   );
 }

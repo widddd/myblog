@@ -1,20 +1,26 @@
 "use client";
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type AnimationEvent,
-  type ReactNode,
-} from "react";
-import { usePathname } from "next/navigation";
+import { AnimatePresence, m } from "motion/react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { ArrowLeftIcon } from "@radix-ui/react-icons";
 
-import { AdminNav } from "@/components/admin/AdminNav";
+import {
+  AdminMoreSheet,
+  AdminNav,
+  AdminTabBar,
+} from "@/components/admin/AdminNav";
+import { AdminMotion } from "@/components/admin/AdminMotion";
+import { DashboardAppearancePanel } from "@/components/admin/DashboardAppearancePanel";
 import { LogoutButton } from "@/components/admin/LogoutButton";
+import type { AdminAccentKey } from "@/lib/admin/accents";
+import type { DashboardCards } from "@/lib/admin/dashboard-cards";
 import { APP_RELEASE_LABEL } from "@/lib/release";
 import { cn } from "@/lib/utils/cn";
 
-/** 满高分栏布局：写文章、首页画布、模块编辑器都靠它撑满视口（P-033）。 */
+const ease = [0.16, 1, 0.3, 1] as const;
+
 function isEditorPath(pathname: string) {
   return (
     pathname === "/admin/posts/new" ||
@@ -59,85 +65,69 @@ function pageHeading(pathname: string): { title: string; lead: string } {
 export function AdminWorkspace({
   username,
   pendingComments,
+  accent,
+  cards,
   credentialsOnly = false,
   children,
 }: {
   username: string;
   pendingComments: number;
+  /** 当前配色（来自 Setting adminAccent），同时是「外观」入口的开关依据 */
+  accent?: AdminAccentKey;
+  /** 概览页卡片显隐（来自 Setting dashboardCards），只在概览页的面板里展示 */
+  cards?: DashboardCards;
   credentialsOnly?: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const [shownPath, setShownPath] = useState(pathname);
-  const [shownChildren, setShownChildren] = useState(children);
-  const [phase, setPhase] = useState<"in" | "out">("in");
-  const pendingRef = useRef({ path: pathname, node: children });
-  const editor = !credentialsOnly && isEditorPath(shownPath);
-  const shownHeading = credentialsOnly
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const editor = !credentialsOnly && isEditorPath(pathname);
+  const heading = credentialsOnly
     ? { title: "改账号", lead: "先改成你自己的用户名和密码" }
-    : pageHeading(shownPath);
-  const liveHeading = credentialsOnly
-    ? shownHeading
     : pageHeading(pathname);
-  const titleCrossfading = !editor && shownPath !== pathname;
   const [navOpen, setNavOpen] = useState(true);
+  const [moreOpen, setMoreOpen] = useState(false);
+  // 面板开关**从 URL 派生**，不用 useState。原因：同路由只换 query 时（在 /admin 点外观入口
+  // → /admin?appearance=1）组件不会重新挂载，useState 的惰性初始化会永远停在首次挂载那一刻
+  // 的值——表现就是"点了没反应"。派生后 URL 一变就重渲染，面板自然打开。
+  // 关闭时把 query 抹掉，因此下次再点入口仍能打开。
+  const appearanceOpen = searchParams.get("appearance") === "1";
+  const closeAppearance = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("appearance");
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
-    pendingRef.current = { path: pathname, node: children };
-    if (pathname === shownPath) {
-      setShownChildren(children);
-      return;
-    }
-    setPhase((current) => (current === "out" ? current : "out"));
-  }, [pathname, children, shownPath]);
-
-  useEffect(() => {
-    if (phase !== "out") {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      const next = pendingRef.current;
-      setShownPath(next.path);
-      setShownChildren(next.node);
-      setPhase("in");
-    }, 200);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
-
-  function handleSwapEnd(event: AnimationEvent<HTMLDivElement>) {
-    if (event.target !== event.currentTarget || phase !== "out") {
-      return;
-    }
-    const next = pendingRef.current;
-    setShownPath(next.path);
-    setShownChildren(next.node);
-    setPhase("in");
-  }
-
-  function toggleNav() {
-    setNavOpen((current) => !current);
-  }
+    const media = window.matchMedia("(max-width: 1024px)");
+    const sync = () => setNavOpen(!media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   return (
-    <div
-      className={cn(
-        "admin-workspace",
-        editor && "admin-workspace--editor",
-        !navOpen && "admin-workspace--nav-collapsed",
-      )}
-    >
+    <AdminMotion>
+      <div
+        className={cn(
+          "admin-workspace",
+          editor && "admin-workspace--editor",
+          credentialsOnly && "admin-workspace--credentials",
+          !navOpen && "admin-workspace--nav-collapsed",
+        )}
+      >
       <aside className={cn("admin-rail", !navOpen && "is-collapsed")}>
         <div className="admin-rail__top">
           <div className="admin-rail__brand">
             <p className="admin-rail__title">{navOpen ? "管理后台" : "管"}</p>
-            {navOpen ? (
-              <p className="admin-rail__user">{username}</p>
-            ) : null}
+            {navOpen ? <p className="admin-rail__user">{username}</p> : null}
           </div>
           <button
             aria-expanded={navOpen}
             className="admin-pane-toggle"
-            onClick={toggleNav}
+            onClick={() => setNavOpen((current) => !current)}
             title={navOpen ? "收起栏目" : "展开栏目"}
             type="button"
           >
@@ -168,40 +158,68 @@ export function AdminWorkspace({
       <div className="admin-main">
         {editor ? null : (
           <header className="admin-topbar">
+            <Link className="admin-btn admin-btn--icon admin-topbar__back" href="/" title="返回前台">
+              <ArrowLeftIcon />
+              <span className="visually-hidden">返回前台</span>
+            </Link>
             <div className="admin-topbar__stack">
-              {titleCrossfading ? (
-                <div className="admin-topbar__copy is-leave">
-                  <h1>{shownHeading.title}</h1>
-                  <p>{shownHeading.lead}</p>
-                </div>
-              ) : null}
-              <div
-                className={cn(
-                  "admin-topbar__copy",
-                  titleCrossfading && "is-enter",
-                )}
-              >
-                <h1>
-                  {titleCrossfading ? liveHeading.title : shownHeading.title}
-                </h1>
-                <p>
-                  {titleCrossfading ? liveHeading.lead : shownHeading.lead}
-                </p>
-              </div>
+              <AnimatePresence mode="wait">
+                <m.div
+                  className="admin-topbar__copy"
+                  key={heading.title}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.16, ease }}
+                >
+                  <h1>{heading.title}</h1>
+                  <p>{heading.lead}</p>
+                </m.div>
+              </AnimatePresence>
             </div>
             <p className="admin-topbar__user">你好，{username}</p>
           </header>
         )}
-        <div
-          className={cn(
-            "admin-page-swap",
-            phase === "out" ? "is-out" : "is-in",
-          )}
-          onAnimationEnd={handleSwapEnd}
-        >
-          <div className="admin-stage">{shownChildren}</div>
-        </div>
+        <AnimatePresence mode="wait">
+          <m.div
+            className="admin-page-swap"
+            key={pathname}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              transition: { duration: 0.22, ease },
+            }}
+            exit={{
+              opacity: 0,
+              y: 8,
+              transition: { duration: 0.16, ease },
+            }}
+          >
+            <div className="admin-stage">{children}</div>
+          </m.div>
+        </AnimatePresence>
       </div>
-    </div>
+      {credentialsOnly ? null : (
+        <>
+          <AdminTabBar
+            moreOpen={moreOpen}
+            onMore={() => setMoreOpen((current) => !current)}
+            pendingComments={pendingComments}
+          />
+          <AdminMoreSheet onClose={() => setMoreOpen(false)} open={moreOpen} />
+          {accent ? (
+            <DashboardAppearancePanel
+              accent={accent}
+              cards={cards}
+              onClose={closeAppearance}
+              open={appearanceOpen}
+              showCards={pathname === "/admin"}
+            />
+          ) : null}
+        </>
+      )}
+      </div>
+    </AdminMotion>
   );
 }

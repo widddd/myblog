@@ -4,6 +4,7 @@ import {
   CredentialsChangeRequiredError,
   UnauthorizedError,
 } from "@/lib/auth/guard";
+import { DataClearError } from "@/lib/admin/errors";
 import { BackupError } from "@/lib/backup/errors";
 import { logger } from "@/lib/utils/logger";
 import { UpdateError } from "@/lib/update/errors";
@@ -56,6 +57,9 @@ export function handleAdminError(error: unknown, fallbackMessage: string) {
     return jsonError(error.code, error.message, error.status);
   }
   if (error instanceof BackupError) {
+    return jsonError(error.code, error.message, error.status);
+  }
+  if (error instanceof DataClearError) {
     return jsonError(error.code, error.message, error.status);
   }
   if (error instanceof UpdateError) {

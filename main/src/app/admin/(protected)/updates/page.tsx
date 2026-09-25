@@ -21,7 +21,7 @@ export default async function AdminUpdatesPage() {
   const appRelease = currentBackupRelease();
 
   return (
-    <section className="heo-card admin-panel">
+    <section className="admin-card">
       <h2>程序更新</h2>
       <p className="admin-muted">
         导入一份新的博客程序包（或把当前程序打成包带走）。点「应用」只写入预约，到点或点「立刻重启」后才会覆盖{" "}

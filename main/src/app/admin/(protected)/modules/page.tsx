@@ -13,7 +13,7 @@ export default async function AdminModulesPage() {
   const items = await listHomeModules();
 
   return (
-    <section className="heo-card admin-panel">
+    <section className="admin-card">
       <div className="admin-panel-head">
         <h2>模块列表</h2>
         <NewModuleButton />
@@ -23,44 +23,60 @@ export default async function AdminModulesPage() {
         摆位置去 <Link href="/admin/home">首页管理</Link>。
       </p>
       <p className="admin-danger">删除自建模块后无法恢复。内置模块不能删。</p>
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>名称</th>
-            <th>类型</th>
-            <th>内容</th>
-            <th>首页</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map(({ module, placement }) => (
-            <tr key={module.id}>
-              <td>{module.name}</td>
-              <td>{module.kind === "custom" ? "自建" : "内置"}</td>
-              <td>
-                {module.kind === "custom"
-                  ? `${module.blocks.length} 个积木${
-                      module.html || module.css || module.js ? " · 含代码" : ""
-                    }`
-                  : (module.builtinKey ?? "-")}
-              </td>
-              <td>{placement.enabled ? "已启用" : "未启用"}</td>
-              <td className="admin-table-actions">
-                <Link className="admin-toolbar-button" href={`/admin/modules/${module.id}`}>
-                  编辑
-                </Link>
-                {module.system ? null : (
-                  <DeleteButton
-                    confirmText={`确定删除模块「${module.name}」？删除后无法恢复。`}
-                    url={`/api/admin/modules/${module.id}`}
-                  />
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="admin-list admin-list--modules">
+        <div className="admin-list__head">
+          <span>名称</span>
+          <span>类型</span>
+          <span>内容</span>
+          <span>首页</span>
+          <span>操作</span>
+        </div>
+        {items.map(({ module, placement }, index) => (
+          <article
+            className="admin-list__row admin-stagger"
+            key={module.id}
+            style={{ "--i": index } as React.CSSProperties}
+          >
+            <div className="admin-list__cell admin-list__cell--main" data-label="名称">
+              {module.name}
+            </div>
+            <div className="admin-list__cell" data-label="类型">
+              {module.kind === "custom" ? "自建" : "内置"}
+            </div>
+            <div className="admin-list__cell" data-label="内容">
+              {module.kind === "custom"
+                ? `${module.blocks.length} 个积木${
+                    module.html || module.css || module.js ? " · 含代码" : ""
+                  }`
+                : (module.builtinKey ?? "-")}
+            </div>
+            <div className="admin-list__cell" data-label="首页">
+              {/* 已放进首页 = 生效中 → ok（与文章「已发布」同档）；
+                  未启用 = 中性的「没开启」→ muted，不是错误 */}
+              <span
+                className={
+                  placement.enabled
+                    ? "admin-badge admin-badge--ok"
+                    : "admin-badge admin-badge--muted"
+                }
+              >
+                {placement.enabled ? "已启用" : "未启用"}
+              </span>
+            </div>
+            <div className="admin-list__actions">
+              <Link className="admin-btn admin-btn--ghost" href={`/admin/modules/${module.id}`}>
+                编辑
+              </Link>
+              {module.system ? null : (
+                <DeleteButton
+                  confirmText={`确定删除模块「${module.name}」？删除后无法恢复。`}
+                  url={`/api/admin/modules/${module.id}`}
+                />
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }

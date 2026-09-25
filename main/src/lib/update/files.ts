@@ -99,3 +99,21 @@ export async function moveUpdateFile(from: string, name: string): Promise<string
   }
   return dest;
 }
+
+export async function clearUpdatePackages(): Promise<string[]> {
+  await ensureUpdateDir();
+  const entries = await readdir(UPDATE_DIR, { withFileTypes: true });
+  const removed: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !isManagedUpdateFileName(entry.name)) {
+      continue;
+    }
+    await unlink(path.join(UPDATE_DIR, entry.name)).catch((error) => {
+      if (!isNodeNotFoundError(error)) {
+        throw error;
+      }
+    });
+    removed.push(entry.name);
+  }
+  return removed;
+}

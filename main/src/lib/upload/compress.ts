@@ -1,4 +1,4 @@
-import sharp, { type Metadata } from "sharp";
+import sharp, { type Metadata, type Sharp } from "sharp";
 
 export const MAX_INPUT_PIXELS = 40_000_000;
 
@@ -47,10 +47,10 @@ export function orientedDimensions(metadata: Metadata) {
 }
 
 function encodeForMime(
-  input: sharp.Sharp,
+  input: Sharp,
   mime: string,
   quality: number,
-): sharp.Sharp {
+): Sharp {
   switch (mime) {
     case "image/jpeg":
       return input.jpeg({ quality, mozjpeg: true });

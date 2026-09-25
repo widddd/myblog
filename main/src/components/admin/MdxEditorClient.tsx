@@ -122,6 +122,7 @@ export default function MdxEditorClient({
               <ListsToggle />
               <BlockTypeSelect />
               <Separator />
+              <span aria-hidden="true" className="admin-mdx-toolbar-break" />
               <CreateLink />
               <InsertImages />
               <InsertVideo />

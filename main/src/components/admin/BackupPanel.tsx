@@ -3,6 +3,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { AdminSection } from "@/components/admin/AdminSection";
+import { useAdminConfirm, useAdminPrompt } from "@/components/admin/useAdminConfirm";
 import { adminJson } from "@/lib/client/admin";
 import { fetchCsrfToken } from "@/lib/client/csrf";
 
@@ -44,7 +46,6 @@ type BackupListResponse = {
     running: boolean;
     lastBackupAt: string | null;
     pendingRestore: PendingRestore | null;
-    passphraseConfigured?: boolean;
     encrypt?: EncryptPolicy;
     appRelease?: AppRelease;
   };
@@ -76,14 +77,12 @@ export function BackupPanel({
   initialFiles,
   initialLastBackupAt,
   initialPendingRestore,
-  initialPassphraseConfigured,
   initialEncrypt,
   initialAppRelease,
 }: {
   initialFiles: BackupFile[];
   initialLastBackupAt: string | null;
   initialPendingRestore: PendingRestore | null;
-  initialPassphraseConfigured: boolean;
   initialEncrypt: EncryptPolicy;
   initialAppRelease: AppRelease;
 }) {
@@ -91,13 +90,9 @@ export function BackupPanel({
   const [files, setFiles] = useState(initialFiles);
   const [lastBackupAt, setLastBackupAt] = useState(initialLastBackupAt);
   const [pendingRestore, setPendingRestore] = useState(initialPendingRestore);
-  const [passphraseConfigured, setPassphraseConfigured] = useState(
-    initialPassphraseConfigured,
-  );
   const [encrypt, setEncrypt] = useState(initialEncrypt);
   const [appRelease, setAppRelease] = useState(initialAppRelease);
   const [passphrase, setPassphrase] = useState("");
-  const [passphraseConfirm, setPassphraseConfirm] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -106,6 +101,8 @@ export function BackupPanel({
     toDatetimeLocal(initialPendingRestore?.restartAt),
   );
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const { confirm, dialog: confirmDialog } = useAdminConfirm();
+  const { prompt, dialog: promptDialog } = useAdminPrompt();
 
   const lastLabel = useMemo(() => {
     if (!lastBackupAt) {
@@ -123,9 +120,6 @@ export function BackupPanel({
     setLastBackupAt(payload.data.lastBackupAt);
     setPendingRestore(payload.data.pendingRestore);
     setRestartAtInput(toDatetimeLocal(payload.data.pendingRestore?.restartAt));
-    if (typeof payload.data.passphraseConfigured === "boolean") {
-      setPassphraseConfigured(payload.data.passphraseConfigured);
-    }
     if (payload.data.encrypt) {
       setEncrypt(payload.data.encrypt);
     }
@@ -133,30 +127,6 @@ export function BackupPanel({
       setAppRelease(payload.data.appRelease);
     }
     router.refresh();
-  }
-
-  async function savePassphrase() {
-    setError("");
-    setNotice("");
-    setBusy(true);
-    try {
-      await adminJson("/api/admin/backup/passphrase", {
-        method: "POST",
-        body: JSON.stringify({
-          passphrase,
-          confirm: passphraseConfirm,
-        }),
-      });
-      setPassphrase("");
-      setPassphraseConfirm("");
-      setPassphraseConfigured(true);
-      setNotice("备份口令已设定，之后不能再改。");
-      await refresh();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "设定备份口令失败");
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function setEncryptEnabled(enabled: boolean) {
@@ -225,7 +195,7 @@ export function BackupPanel({
   }
 
   async function restartPending() {
-    const confirmed = window.confirm(
+    const confirmed = await confirm(
       "将立刻重启，并用已预约的备份覆盖当前全部文章、图片和设置。覆盖后无法用现在的数据还原。确定继续？",
     );
     if (!confirmed) {
@@ -278,7 +248,7 @@ export function BackupPanel({
   }
 
   async function restoreUpload(file: File) {
-    const confirmed = window.confirm(
+    const confirmed = await confirm(
       "将把这份备份加入列表，不会立刻覆盖当前数据。之后可在列表里点「恢复」预约。\n\n确定上传？",
     );
     if (!confirmed) {
@@ -326,7 +296,11 @@ export function BackupPanel({
     setNotice("");
     setBusy(true);
     try {
-      await adminJson("/api/admin/backup/run", { method: "POST" });
+      await adminJson("/api/admin/backup/run", {
+        method: "POST",
+        body: JSON.stringify({ passphrase: passphrase || undefined }),
+      });
+      setPassphrase("");
       await refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "备份失败");
@@ -335,9 +309,21 @@ export function BackupPanel({
     }
   }
 
-  async function restore(name: string) {
-    const confirmed = window.confirm(
-      `将预约恢复「${name}」。现在站点还能用，要到点或点「立刻重启」才会覆盖当前数据。\n\n覆盖后无法用现在的数据还原。换电脑恢复加密包请用 pnpm restore --passphrase。\n\n确定预约？`,
+  async function restore(name: string, encrypted: boolean) {
+    let passphraseForRestore = "";
+    if (encrypted) {
+      const typed = await prompt("请输入备份口令（仅本次恢复使用，不会保存）：");
+      if (typed == null) {
+        return;
+      }
+      passphraseForRestore = typed.trim();
+    }
+    if (encrypted && passphraseForRestore.length < 8) {
+      setError("加密备份恢复需要输入至少 8 个字符的口令");
+      return;
+    }
+    const confirmed = await confirm(
+      `将预约恢复「${name}」。现在站点还能用，要到点或点「立刻重启」才会覆盖当前数据。\n\n覆盖后无法用现在的数据还原。${encrypted ? "口令仅保存在当前进程内存，重启前不会写入文件。" : ""}\n\n确定预约？`,
     );
     if (!confirmed) {
       return;
@@ -348,7 +334,11 @@ export function BackupPanel({
     try {
       await adminJson("/api/admin/backup/restore", {
         method: "POST",
-        body: JSON.stringify({ name, confirm: true }),
+        body: JSON.stringify({
+          name,
+          confirm: true,
+          ...(encrypted ? { passphrase: passphraseForRestore } : {}),
+        }),
       });
       setNotice(
         `已预约恢复「${name}」。站点照常使用，请设定重启时间或点「立刻重启」。`,
@@ -395,7 +385,7 @@ export function BackupPanel({
   }
 
   async function remove(name: string) {
-    if (!window.confirm(`确定删除备份「${name}」？删除后无法恢复。`)) {
+    if (!(await confirm(`确定删除备份「${name}」？删除后无法恢复。`))) {
       return;
     }
     setError("");
@@ -414,7 +404,7 @@ export function BackupPanel({
   }
 
   const locked = busy || restarting;
-  const canRunBackup = !encrypt.enabled || passphraseConfigured;
+  const canRunBackup = true;
 
   return (
     <div className="admin-backup">
@@ -423,8 +413,7 @@ export function BackupPanel({
           正在重启并恢复备份，请不要关闭本页。
         </p>
       ) : null}
-      <div className="admin-section">
-        <h3 className="admin-section__title">加密</h3>
+      <AdminSection title="加密">
         <label className="admin-backup-toggle">
           <input
             checked={encrypt.enabled}
@@ -440,68 +429,39 @@ export function BackupPanel({
             : "未检测到 COS HTTPS，默认打开加密。"}
           {encrypt.userSet ? " 当前是你手动设定的。" : " 当前是默认值。"}
         </p>
-        {passphraseConfigured ? (
-          <p className="admin-muted">备份口令已经设好，不能再改。</p>
-        ) : (
-          <form
-            className="admin-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void savePassphrase();
-            }}
-          >
-            <p className="admin-muted">
-              打开加密前需要先设备份口令。只能设一次，设完不能改。不加密备份不需要口令。
-            </p>
-            <p className="admin-danger">口令设完不能改，请先记下来。</p>
-            <label className="form-field">
-              备份口令
-              <input
-                autoComplete="new-password"
-                minLength={8}
-                onChange={(event) => setPassphrase(event.target.value)}
-                required
-                type="password"
-                value={passphrase}
-              />
-            </label>
-            <label className="form-field">
-              再输入一次
-              <input
-                autoComplete="new-password"
-                minLength={8}
-                onChange={(event) => setPassphraseConfirm(event.target.value)}
-                required
-                type="password"
-                value={passphraseConfirm}
-              />
-            </label>
-            <div className="admin-form-actions">
-              <button className="heo-button" disabled={locked} type="submit">
-                {locked ? "处理中…" : "设定备份口令"}
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-      <div className="admin-section">
-        <h3 className="admin-section__title">做备份</h3>
+        <p className="admin-muted">
+          加密备份不会保存口令。每次点击“立即备份”或恢复加密备份时，都必须手动输入口令。
+        </p>
+      </AdminSection>
+      <AdminSection title="做备份">
         <p className="admin-muted">
           上次备份：{lastLabel}
           <span> · </span>
           当前版本：{appRelease.label}
         </p>
-        <div className="admin-form-actions">
+        {encrypt.enabled ? (
+          <label className="admin-field">
+            加密口令（每次备份临时输入，不保存）
+            <input
+              autoComplete="off"
+              minLength={8}
+              onChange={(event) => setPassphrase(event.target.value)}
+              type="password"
+              value={passphrase}
+            />
+          </label>
+        ) : null}
+        <div className="admin-btn-row">
           <button
-            className="heo-button"
-            disabled={locked || !canRunBackup}
+            className="admin-btn"
+            disabled={locked || !canRunBackup || (encrypt.enabled && passphrase.length < 8)}
             onClick={() => void run()}
             type="button"
           >
             {locked ? "处理中…" : "立即备份"}
           </button>
           <button
-            className="heo-button"
+            className="admin-btn"
             disabled={locked}
             onClick={() => uploadInputRef.current?.click()}
             type="button"
@@ -521,17 +481,13 @@ export function BackupPanel({
             type="file"
           />
         </div>
-        {encrypt.enabled && !passphraseConfigured ? (
-          <p className="admin-muted">设好备份口令后才能做加密备份。也可以先关掉加密再备份。</p>
-        ) : (
-          <p className="admin-muted">
-            {encrypt.enabled
-              ? "当前会生成加密包。只拿走文件打不开。"
-              : "当前会生成非加密包。会保存到列表，配置了 COS 时也会上传。"}
-            点恢复只是预约，到点或点「立刻重启」才会覆盖。
-          </p>
-        )}
-      </div>
+        <p className="admin-muted">
+          {encrypt.enabled
+            ? "当前会生成加密包；每次备份和恢复都要手动输入口令，口令不会保存。"
+            : "当前会生成非加密包。会保存到列表，配置了 COS 时也会上传。"}
+          点恢复只是预约，到点或点「立刻重启」才会覆盖。
+        </p>
+      </AdminSection>
       {pendingRestore ? (
         <div className="admin-section admin-backup-pending" role="status">
           <h3 className="admin-section__title">等待重启</h3>
@@ -545,7 +501,7 @@ export function BackupPanel({
           </p>
           {restarting ? null : (
             <>
-              <label className="form-field">
+              <label className="admin-field">
                 预约重启时间
                 <input
                   min={toDatetimeLocal(new Date().toISOString())}
@@ -554,9 +510,9 @@ export function BackupPanel({
                   value={restartAtInput}
                 />
               </label>
-              <div className="admin-form-actions">
+              <div className="admin-btn-row">
                 <button
-                  className="heo-button"
+                  className="admin-btn"
                   disabled={locked}
                   onClick={() => void saveRestartAt()}
                   type="button"
@@ -564,7 +520,7 @@ export function BackupPanel({
                   保存重启时间
                 </button>
                 <button
-                  className="heo-button"
+                  className="admin-btn"
                   disabled={locked}
                   onClick={() => void restartPending()}
                   type="button"
@@ -572,7 +528,7 @@ export function BackupPanel({
                   立刻重启
                 </button>
                 <button
-                  className="admin-link-button"
+                  className="admin-btn admin-btn--link"
                   disabled={locked}
                   onClick={() => void cancelPending()}
                   type="button"
@@ -586,84 +542,92 @@ export function BackupPanel({
       ) : null}
       {notice ? <p className="admin-backup-notice">{notice}</p> : null}
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
-      <div className="admin-section">
-        <h3 className="admin-section__title">已有备份</h3>
+      <AdminSection title="已有备份">
       {files.length === 0 ? (
         <p className="admin-muted">还没有备份。点「立即备份」或「上传备份」会留在这里。</p>
       ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>文件</th>
-              <th>时间</th>
-              <th>大小</th>
-              <th>版本</th>
-              <th>加密</th>
-              <th>位置</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {files.map((file) => (
-              <tr key={file.name}>
-                <td>{file.name}</td>
-                <td>{new Date(file.createdAt).toLocaleString("zh-CN")}</td>
-                <td>{formatSize(file.size)}</td>
-                <td>{file.releaseLabel ?? "未知版本"}</td>
-                <td>
-                  {file.encrypted
-                    ? `已加密${file.keyFingerprint ? ` · ${file.keyFingerprint}` : ""}`
-                    : "未加密"}
-                </td>
-                <td>
-                  {file.local === false && file.cos
-                    ? "仅 COS"
-                    : file.cos
-                      ? "本地 + COS"
-                      : "本地"}
-                </td>
-                <td className="admin-table-actions">
-                  {file.local === false && file.cos ? (
-                    <button
-                      className="admin-link-button"
-                      disabled={locked}
-                      onClick={() => void pullFromCos(file.name)}
-                      type="button"
-                    >
-                      从 COS 拉回
-                    </button>
-                  ) : (
-                    <a href={`/api/admin/backup/download/${encodeURIComponent(file.name)}`}>
-                      下载
-                    </a>
-                  )}
+        <div className="admin-list admin-list--files">
+          <div className="admin-list__head">
+            <span>文件</span>
+            <span>时间</span>
+            <span>大小</span>
+            <span>版本</span>
+            <span>加密</span>
+            <span>位置</span>
+            <span />
+          </div>
+          {files.map((file) => (
+            <article className="admin-list__row" key={file.name}>
+              <div className="admin-list__cell admin-list__cell--main" data-label="文件">
+                {file.name}
+              </div>
+              <div className="admin-list__cell" data-label="时间">
+                {new Date(file.createdAt).toLocaleString("zh-CN")}
+              </div>
+              <div className="admin-list__cell" data-label="大小">
+                {formatSize(file.size)}
+              </div>
+              <div className="admin-list__cell" data-label="版本">
+                {file.releaseLabel ?? "未知版本"}
+              </div>
+              <div className="admin-list__cell" data-label="加密">
+                {file.encrypted
+                  ? `已加密${file.keyFingerprint ? ` · ${file.keyFingerprint}` : ""}`
+                  : "未加密"}
+              </div>
+              <div className="admin-list__cell" data-label="位置">
+                {file.local === false && file.cos
+                  ? "仅 COS"
+                  : file.cos
+                    ? "本地 + COS"
+                    : "本地"}
+              </div>
+              <div className="admin-list__actions">
+                {file.local === false && file.cos ? (
                   <button
-                    className="admin-link-button"
+                    className="admin-btn admin-btn--link"
                     disabled={locked}
-                    onClick={() => void restore(file.name)}
+                    onClick={() => void pullFromCos(file.name)}
                     type="button"
                   >
-                    恢复
+                    从 COS 拉回
                   </button>
-                  <button
-                    className="admin-link-button"
-                    disabled={locked}
-                    onClick={() => void remove(file.name)}
-                    type="button"
+                ) : (
+                  <a
+                    className="admin-btn admin-btn--link"
+                    href={`/api/admin/backup/download/${encodeURIComponent(file.name)}`}
                   >
-                    删除
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    下载
+                  </a>
+                )}
+                <button
+                  className="admin-btn admin-btn--link"
+                  disabled={locked}
+                  onClick={() => void restore(file.name, file.encrypted)}
+                  type="button"
+                >
+                  恢复
+                </button>
+                <button
+                  className="admin-btn admin-btn--link"
+                  disabled={locked}
+                  onClick={() => void remove(file.name)}
+                  type="button"
+                >
+                  删除
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
       )}
-      </div>
+      </AdminSection>
+      {confirmDialog}
+      {promptDialog}
     </div>
   );
 }

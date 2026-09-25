@@ -27,6 +27,21 @@
 | 交付前 | docs/agents-maintenance.md + AGENTS.md §8 |
 | 大改动 | docs/spec-template.md |
 
+## UI 验证（快路径，AI 每次改 UI 都走这条）
+
+一条命令拿到图和尺寸，别把慢活捆进来：
+
+```bash
+# 终端 A（用户/常驻）：pnpm dev
+pnpm shot /posts --measure .post-card --json     # 桌面 + 窄屏，约 2–3s
+```
+
+- 脚本：`main/scripts/ui-shot.mjs`（`pnpm shot <path|url>`，图落在 `main/.ui-shots/`，已 gitignore）；**实测命令整体 2.6s 返回**
+- 只在**已经在跑的** server 上出图：不启动服务、不连数据库、不写业务数据
+- 复用浏览器 profile、CDP `Browser.close` 退出 → 第二次起 <1s
+- 自己写这类脚本时：`spawn` 的浏览器必须 `child.unref()` + `child.kill()`（**Windows 不支持 `process.kill(-pid)`**），收尾把 stdout 冲干净后硬退出——否则命令干完活也不返回，会被当成"卡住"
+- **禁止**和 `tsc --noEmit` / `next build` / 起 dev server 写进同一条命令；类型检查各自单独跑（原因与实测数据见 [pitfalls.md](pitfalls.md) P-086）
+
 ## 实现前影响面分析（动手前输出）
 
 1. 涉及哪些现有模块？（查 module.md）

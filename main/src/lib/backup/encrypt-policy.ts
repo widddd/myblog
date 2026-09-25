@@ -1,5 +1,3 @@
-import { hostSecretExists } from "@/lib/backup/host-secret";
-import { BackupError } from "@/lib/backup/errors";
 import {
   defaultEncryptEnabled,
   isHttpsEndpoint,
@@ -41,13 +39,6 @@ export async function resolveBackupEncrypt(): Promise<BackupEncryptPolicy> {
 }
 
 export async function setBackupEncrypt(enabled: boolean): Promise<BackupEncryptPolicy> {
-  if (enabled && !(await hostSecretExists())) {
-    throw new BackupError(
-      "HOST_SECRET_MISSING",
-      "打开加密备份前请先设定备份口令",
-      409,
-    );
-  }
   await setSetting("backupEncrypt", enabled);
   return resolveBackupEncrypt();
 }

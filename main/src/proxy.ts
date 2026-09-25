@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { verifyCsrfRequest } from "@/lib/auth/csrf";
+import {
+  LOGIN_LIMIT,
+  LOGIN_WINDOW_MS,
+  loginLimitKey,
+} from "@/lib/auth/login-limit";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { getClientIp } from "@/lib/utils/fingerprint";
 
-const LOGIN_LIMIT = 5;
-const LOGIN_WINDOW_MS = 15 * 60 * 1_000;
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function withSecurityHeaders(
@@ -74,7 +77,10 @@ export async function proxy(request: NextRequest) {
     ) {
       const ip = getClientIp(request.headers);
       const result = rateLimit(
-        pathname === "/api/auth/setup" ? `setup:${ip}` : `login:${ip}`,
+        loginLimitKey(
+          pathname === "/api/auth/setup" ? "setup" : "login",
+          ip,
+        ),
         LOGIN_LIMIT,
         LOGIN_WINDOW_MS,
       );

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { adminJson } from "@/lib/client/admin";
+import { useAdminConfirm } from "@/components/admin/useAdminConfirm";
 import type { AdminCommentView } from "@/lib/comments/types";
 
 export function CommentRowActions({ comment }: { comment: AdminCommentView }) {
@@ -12,6 +13,7 @@ export function CommentRowActions({ comment }: { comment: AdminCommentView }) {
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
   const [error, setError] = useState("");
+  const { confirm, dialog } = useAdminConfirm();
 
   async function run(task: () => Promise<void>) {
     if (busy) {
@@ -30,11 +32,11 @@ export function CommentRowActions({ comment }: { comment: AdminCommentView }) {
   }
 
   return (
-    <div className="admin-table-actions admin-comment-actions">
+    <div className="admin-list__actions admin-comment-actions">
       {comment.status === "pending" ? (
         <>
           <button
-            className="admin-link-button"
+            className="admin-btn admin-btn--link"
             disabled={busy}
             onClick={() =>
               void run(() =>
@@ -49,7 +51,7 @@ export function CommentRowActions({ comment }: { comment: AdminCommentView }) {
             通过
           </button>
           <button
-            className="admin-link-button"
+            className="admin-btn admin-btn--link"
             disabled={busy}
             onClick={() =>
               void run(() =>
@@ -66,7 +68,7 @@ export function CommentRowActions({ comment }: { comment: AdminCommentView }) {
         </>
       ) : null}
       <button
-        className="admin-link-button"
+        className="admin-btn admin-btn--link"
         disabled={busy}
         onClick={() => setReplying((value) => !value)}
         type="button"
@@ -74,17 +76,23 @@ export function CommentRowActions({ comment }: { comment: AdminCommentView }) {
         回复
       </button>
       <button
-        className="admin-link-button"
+        className="admin-btn admin-btn--link"
         disabled={busy}
         onClick={() => {
-          if (!window.confirm("确定删除这条评论？回复会一并删除，删除后无法恢复。")) {
-            return;
-          }
-          void run(() =>
-            adminJson(`/api/admin/comments/${comment.id}`, {
-              method: "DELETE",
-            }),
-          );
+          void (async () => {
+            if (
+              !(await confirm(
+                "确定删除这条评论？回复会一并删除，删除后无法恢复。",
+              ))
+            ) {
+              return;
+            }
+            void run(() =>
+              adminJson(`/api/admin/comments/${comment.id}`, {
+                method: "DELETE",
+              }),
+            );
+          })();
         }}
         type="button"
       >
@@ -117,16 +125,17 @@ export function CommentRowActions({ comment }: { comment: AdminCommentView }) {
             rows={3}
             value={reply}
           />
-          <button className="heo-button" disabled={busy} type="submit">
+          <button className="admin-btn" disabled={busy} type="submit">
             发送回复
           </button>
         </form>
       ) : null}
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="admin-error" role="alert">
           {error}
         </p>
       ) : null}
+      {dialog}
     </div>
   );
 }

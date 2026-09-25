@@ -2,10 +2,12 @@ import type { Prisma } from "@prisma/client";
 
 import { revalidatePublicContent } from "@/lib/admin/revalidate";
 import { AdminHttpError } from "@/lib/admin/http";
+import { readDefaultPenName } from "@/lib/auth/account";
 import { hashPassword } from "@/lib/auth/password";
 import { prisma } from "@/lib/db";
 import { slugify } from "@/lib/utils/slugify";
 import type { AdminPostView } from "@/lib/posts/admin-types";
+import { normalizeAuthorName } from "@/lib/posts/author";
 import { normalizePostContent } from "@/lib/posts/normalize-content";
 import { ARTICLE_SEGMENT } from "@/lib/posts/path";
 import { allocatePublicId } from "@/lib/posts/public-id";
@@ -30,6 +32,7 @@ function toAdminPost(
     publicId: row.publicId,
     slug: row.slug,
     title: row.title,
+    authorName: row.authorName,
     content: row.content,
     excerpt: row.excerpt,
     cover: row.cover,
@@ -46,7 +49,18 @@ function toAdminPost(
     tags: row.tags.map((item) => item.tag),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    revisedAt: row.revisedAt,
+    showRevisedAt: row.showRevisedAt,
   };
+}
+
+/** 标签集合比对：顺序无所谓，只比成员是否一致 */
+function sameIds(next: number[], current: number[]): boolean {
+  if (next.length !== current.length) {
+    return false;
+  }
+  const set = new Set(next);
+  return current.every((id) => set.has(id));
 }
 
 function resolveSlug(title: string, requested?: string | null) {
@@ -170,10 +184,15 @@ export async function createAdminPost(input: PostWrite) {
   const passwordHash = input.password
     ? await hashPassword(input.password)
     : null;
+  // 作者默认取管理员账号上的笔名（编辑器也会预填，这里是服务端兜底）
+  const authorName =
+    normalizeAuthorName(input.authorName) ??
+    normalizeAuthorName(await readDefaultPenName());
 
   const row = await prisma.post.create({
     data: {
       title: input.title,
+      authorName,
       publicId: await allocatePublicId(),
       slug,
       content: normalizePostContent(input.content),
@@ -186,6 +205,7 @@ export async function createAdminPost(input: PostWrite) {
       publishedAt: schedule.publishedAt,
       pinned: input.pinned ?? false,
       recommend: input.recommend ?? false,
+      showRevisedAt: input.showRevisedAt ?? true,
       passwordHash,
       categoryId: input.categoryId ?? null,
       tags: input.tagIds
@@ -209,6 +229,16 @@ export async function updateAdminPost(id: number, input: PostPatch) {
       title: true,
       status: true,
       publishedAt: true,
+      authorName: true,
+      content: true,
+      excerpt: true,
+      cover: true,
+      bannerStyle: true,
+      bannerColor: true,
+      bannerColor2: true,
+      passwordHash: true,
+      categoryId: true,
+      tags: { select: { tagId: true } },
     },
   });
   if (!current) {
@@ -241,6 +271,43 @@ export async function updateAdminPost(id: number, input: PostPatch) {
         ? await hashPassword(input.password)
         : null;
 
+  const nextContent =
+    input.content === undefined ? undefined : normalizePostContent(input.content);
+  const nextPasswordHash =
+    passwordHash === undefined ? current.passwordHash : passwordHash;
+  const nextCategoryId =
+    input.categoryId === undefined ? current.categoryId : (input.categoryId ?? null);
+  const nextAuthorName =
+    input.authorName === undefined
+      ? current.authorName
+      : normalizeAuthorName(input.authorName);
+
+  // 只比「读者能看到的内容」：状态、发布时间、浏览量、更新时间的被动刷新都不算一次修改。
+  const contentChanged =
+    (nextContent !== undefined && nextContent !== current.content) ||
+    (input.title !== undefined && input.title !== current.title) ||
+    slug !== current.slug ||
+    (input.authorName !== undefined && nextAuthorName !== current.authorName) ||
+    (input.excerpt !== undefined && (input.excerpt ?? null) !== current.excerpt) ||
+    (input.cover !== undefined && (input.cover ?? null) !== current.cover) ||
+    (input.bannerStyle !== undefined && input.bannerStyle !== current.bannerStyle) ||
+    (input.bannerColor !== undefined &&
+      (input.bannerColor ?? null) !== current.bannerColor) ||
+    (input.bannerColor2 !== undefined &&
+      (input.bannerColor2 ?? null) !== current.bannerColor2) ||
+    nextPasswordHash !== current.passwordHash ||
+    nextCategoryId !== current.categoryId ||
+    (input.tagIds !== undefined &&
+      !sameIds(input.tagIds, current.tags.map((item) => item.tagId)));
+
+  const nextStatus = schedule?.status ?? current.status;
+  // 只有「已经发布 + 改完还是发布 + 内容真的变了」才记一次修订；
+  // 发布前反复编辑、定时转发布都不算（那些情况 revisedAt 会早于 publishedAt，前台自然不显示）。
+  const revisedAt =
+    current.status === "published" && nextStatus === "published" && contentChanged
+      ? new Date()
+      : undefined;
+
   const row = await prisma.$transaction(async (tx) => {
     if (input.tagIds) {
       await tx.postTag.deleteMany({ where: { postId: id } });
@@ -250,10 +317,8 @@ export async function updateAdminPost(id: number, input: PostPatch) {
       data: {
         title: input.title,
         slug,
-        content:
-          input.content === undefined
-            ? undefined
-            : normalizePostContent(input.content),
+        authorName: input.authorName === undefined ? undefined : nextAuthorName,
+        content: nextContent,
         excerpt: input.excerpt,
         cover: input.cover,
         bannerStyle: input.bannerStyle,
@@ -263,6 +328,8 @@ export async function updateAdminPost(id: number, input: PostPatch) {
         publishedAt: schedule?.publishedAt,
         pinned: input.pinned,
         recommend: input.recommend,
+        showRevisedAt: input.showRevisedAt,
+        revisedAt,
         passwordHash,
         categoryId: input.categoryId,
         tags: input.tagIds
