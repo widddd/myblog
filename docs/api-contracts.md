@@ -1,7 +1,7 @@
 # api-contracts.md — API 路由契约
 
 > 新增/修改路由时同步本文件。错误响应统一：`{ code: string, message: string }`，不透传堆栈。
-> 状态：M1 认证、M2 上传/解锁/浏览量、M3 后台管理、M4 评论、M5 搜索/瞬间点赞/定时发布、M6 备份、M8 首页模块化、M9 程序更新、M10 更新页数据清理已落地。前台列表/详情由 RSC 直查 Prisma；公开文章/Setting REST 属可选预留，仍未实现。
+> 状态：M1 认证、M2 上传/解锁/浏览量、M3 后台管理、M4 评论、M5 搜索/瞬间点赞/定时发布、M6 备份、M8 首页模块化、M9 程序更新、M10 更新页数据清理、瞬间可见范围（全局可见期 + 可见范围组；开发库迁移已应用，生产首次部署前需执行一次迁移）、**静态页面（后台建页 + 可配置目录，开发库迁移已应用）**已落地。前台列表/详情由 RSC 直查 Prisma；公开文章/Setting REST 属可选预留，仍未实现。
 
 ## 通用约定
 
@@ -18,15 +18,16 @@
 | POST | `/api/auth/setup` | 服务端按状态分派：无管理员且无主机半钥时接收 `{siteName,siteUrl?,subtitle?,username,password,passwordConfirm}` 并创建站点；无管理员但已有主机半钥时仅接收 `{username,password,passwordConfirm}` 重建管理员，不改站点配置或备份口令；已有管理员一律 409。两种模式均带 CSRF、限速 5 次/15 分/IP | ✅ |
 | POST | `/api/auth/logout` | CSRF 头 | 销毁 session 与 CSRF cookie | ✅ |
 | GET | `/api/auth/csrf` | — | `{token}`（HMAC 绑 session）；`Cache-Control: no-store` | ✅ |
+| GET | `/api/upload/limits` | — | `{maxImages,maxBytes,imageTypes}`；公开只读，给 Android 壳决定「相册里一次能选几张」。**两个数都在后台设置页可改**：`maxImages` ← `uploadMaxImagesPerBatch`，`maxBytes` ← `uploadMaxSizeMB`；换算分别走 `lib/upload/limits.ts` 的 `resolveMaxImagesPerBatch()` / `resolveUploadMaxBytes()` —— 后者与 `handleUpload()` 是**同一个函数**，保证"接口说的"和"上传时会怎样"一致。生效时机：同一个进程里 `setSetting()` 写完**立即**刷新缓存，下一次 GET 就是新值；`getSetting` 的 60s 进程内缓存只在值由**别的进程**写入或直接改库时才咬合。响应带 `Cache-Control: public, max-age=300`——**中间有反代/CDN 且它缓存了这条响应时，客户端最多可能拿到 5 分钟旧值** | ✅ |
 | GET | `/api/posts` | `?page&pageSize&category&tag&q` | 已发布文章列表（密码文无 content/excerpt）；RSC 已覆盖，REST 可选 | 📋 |
 | GET | `/api/posts/[slug]` | — | 详情；RSC 已覆盖，REST 可选 | 📋 |
 | POST | `/api/posts/[slug]/unlock` | `{password}` + CSRF | 段名可为 `publicId` 或旧 slug；`{data:{unlocked:true,expiresIn:7200}}` + publicId 专属 HttpOnly cookie；错误 401；5 次/15 分/IP+段名 | ✅ |
 | POST | `/api/posts/[slug]/view` | CSRF | 段名可为 `publicId` 或旧 slug；`{data:{views,counted}}`；IP+publicId 60s 内重复返回 200 且不增加 | ✅ |
-| GET | `/api/moments` | `?page` | 瞬间流（含点赞数/是否已赞） | ✅ |
-| POST | `/api/moments/[id]/like` | CSRF | `{data:{liked,likeCount}}`；fingerprint 去重翻转；20 次/分/IP → 429 | ✅ |
-| GET | `/api/comments` | `?targetType&targetId&page` | 仅 approved 树形两级；`data` 为顶层+replies；不含 email/ip；密码文未解锁返回空列表 | ✅ |
-| POST | `/api/comments` | `{targetType,targetId,nickname,email?,content,parentId?,honeypot?}` | → pending；频控 1 条/60s/IP → 429；蜜罐非空仍 200 且不落库；父评论必须同对象且为顶层；密码文未解锁 401 `LOCKED` | ✅ |
-| GET | `/sitemap.xml` | — | 已发布文章/分类/标签；密码文只给 URL；不含 `/admin` | ✅ |
+| GET | `/api/moments` | `?page` | 瞬间流（含点赞数/是否已赞）。**带可见期过滤**：只回未过期瞬间（生效天数 = min(Setting `momentVisibleDays`, 所用可见范围组的天数)，0 = 不限制） | ✅ |
+| POST | `/api/moments/[id]/like` | CSRF | `{data:{liked,likeCount}}`；fingerprint 去重翻转；20 次/分/IP → 429。**已过期瞬间按「不存在」处理 → 404**（与列表同一个可见期 where） | ✅ |
+| GET | `/api/comments` | `?targetType&targetId&page` | 仅 approved 树形两级；`data` 为顶层+replies；不含 email/ip；密码文未解锁返回空列表。**瞬间目标同样按可见期过滤**：不在可见期内直接返回空列表 `{data:[],total:0}`（读取侧与写入侧一致，不再只靠写入 404） | ✅ |
+| POST | `/api/comments` | `{targetType,targetId,nickname,email?,content,parentId?,honeypot?}` | → pending；频控 1 条/60s/IP → 429；蜜罐非空仍 200 且不落库；父评论必须同对象且为顶层；密码文未解锁 401 `LOCKED`；**目标瞬间不在可见期内 404**（读/写两侧都走同一个可见期判定） | ✅ |
+| GET | `/sitemap.xml` | — | 已发布文章/分类/标签/**启用中的静态页面**（`/{dir}/{slug}`，priority 0.4，目录读 Setting `staticPagesDir`）；密码文只给 URL；不含 `/admin` | ✅ |
 | GET | `/robots.txt` | — | 允许前台；禁止 `/admin`、`/api/admin`、`/api/auth` | ✅ |
 | GET | `/rss.xml` | — | 最近 30 篇**非密码**已发布文；摘要已转义 | ✅ |
 | GET | `/api/search` | `?q&page` | 标题+公开正文命中；密码文仅标题；空 q 空列表；60 次/分/IP | ✅ |
@@ -44,8 +45,10 @@
 | GET/POST | `/api/admin/pen-names` | 笔名清单（写文章页的作者下拉）/ 新建笔名 `{name}`；重名 400 `CONFLICT`（前端会回查已有记录，不阻断） | ✅ |
 | POST | `/api/admin/preview` | `{content}`（≤200_000 字）→ `{data:{html}}`；走 `renderMdx` + sanitize，供写文章预览 | ✅ |
 | GET/POST | `/api/admin/categories`、`/api/admin/tags` | 分类/标签列表与新建 | ✅ |
-| GET/POST | `/api/admin/moments` | 瞬间列表/发布 | ✅ |
-| PATCH/DELETE | `/api/admin/moments/[id]` | 编辑/删除（顺带删该瞬间评论） | ✅ |
+| GET/POST | `/api/admin/moments` | 瞬间列表（含 `visibility`：生效天数/到期时刻/是否过期/被谁收紧、`visibilityText` 短语）/ 发布（可选 `visibilityGroupId`；组不存在 404） | ✅ |
+| PATCH/DELETE | `/api/admin/moments/[id]` | 编辑/删除（顺带删该瞬间评论）。PATCH 是部分更新：`visibilityGroupId` 传 `null` = 显式改回「跟随全局可见期」，不传 = 不动 | ✅ |
+| GET/POST | `/api/admin/moment-groups` | 可见范围组列表（`{globalDays, groups:[{id,name,days,daysLabel,effectiveDays,effectiveLabel,cappedByGlobal}]}`）/ 新建 `{name,days}` → 201；重名 409 | ✅ |
+| GET/PATCH/DELETE | `/api/admin/moment-groups/[id]` | GET = **删除前预览** `{id,name,days,affectedMoments,globalDays,globalLimited,fallbackNote}`；PATCH = 改名/改天数（空对象 400，重名 409）；DELETE 不删瞬间，用它的瞬间回落全局可见期 | ✅ |
 | GET | `/api/admin/comments` | `?status=pending\|approved&targetType=post\|moment\|board&page`；扁平列表含 email/ip/targetLabel | ✅ |
 | POST | `/api/admin/comments` | `{targetType,targetId,content,parentId?}` 管理员回复，直接 approved + isAdmin | ✅ |
 | PATCH/DELETE | `/api/admin/comments/[id]` | PATCH `{status:approved\|rejected}`（rejected=删除待审）；DELETE 含级联子回复 | ✅ |
@@ -57,7 +60,7 @@
 | POST | `/api/admin/uploads/thumbs/regenerate` | 按 `thumbMaxPx` 重生成缩略图（先本地后 COS 取源，thumb 写本地+COS） | ✅ |
 | POST | `/api/admin/uploads/thumbs2/regenerate` | 删除全部 `images/thumbs2/` 后按 `thumb2MaxPx` 重建；只写本地，不上 COS | ✅ |
 | POST | `/api/admin/uploads/migrate` | 把本地尚未上云的原图/音视频/thumb 补传到新目录树；HEAD 已存在跳过；未配 COS 503；进行中 409 | ✅ |
-| GET/PUT | `/api/admin/settings` | 全量 KV；PUT 只接受已知可写 key（含 COS 五项、`thumbMaxPx`、`thumb2MaxPx`、`backupLocalMaxMB`、`localMediaMaxMB`、`siteStartedAt`、`updateGithubRepo`、`adminAccent`、`dashboardCards`），不含 `lastBackupAt`；GET 不回显 `cosSecretId`/`cosSecretKey`，另给 `cosSecretIdSet`/`cosSecretKeySet`；空字符串表示不改凭证。`adminAccent` 是枚举（6 套预设之一，非法值 400）；`dashboardCards` 落库前归一（未知键丢弃、缺键补 true、非布尔按默认）。两者都**不进公开设置** | ✅ |
+| GET/PUT | `/api/admin/settings` | 全量 KV；PUT 只接受已知可写 key（含 COS 五项、`thumbMaxPx`、`thumb2MaxPx`、`localMediaMaxMB`、**`momentVisibleDays`（瞬间全局可见期 0–3650，0 = 永久公开）**、`backupLocalMaxMB`、`siteStartedAt`、`updateGithubRepo`、`adminAccent`、`dashboardCards`），不含 `lastBackupAt`；GET 不回显 `cosSecretId`/`cosSecretKey`，另给 `cosSecretIdSet`/`cosSecretKeySet`；空字符串表示不改凭证。`adminAccent` 是枚举（6 套预设之一，非法值 400）；`dashboardCards` 落库前归一（未知键丢弃、缺键补 true、非布尔按默认）。两者都**不进公开设置** | ✅ |
 | POST | `/api/admin/settings/usage` | 当场扫一次本机 `uploads`/`backups`，返回媒体合计/分项与各备份包体积；打开设置页不扫 | ✅ |
 | POST | `/api/admin/cos/test` | 用当前设置 HEAD/List `backups/`；未配齐 503 | ✅ |
 | POST | `/api/admin/backup/run` | 手动触发备份（随加密开关打加密或明文包）；同步执行后 `{data:{name,size,createdAt,encrypted,releaseLabel,cosUploaded}}`；已有任务 409；加密开启且未设定备份口令 409 `HOST_SECRET_MISSING` | ✅ |
@@ -73,8 +76,11 @@
 | GET/PUT | `/api/admin/account` | GET `{id,username,penName,mustChangeCredentials}`；PUT `{currentPassword,penName?,username?,newPassword?}`，三项至少改一项（`penName` 允许空串=清掉，改笔名会立即失效前台文章缓存，见 P-089）；首次使用必须带新密码。这两个端点是唯一允许 `mustChangeCredentials=true` 的管理 API，其它 `/api/admin/*` 回 403 `CREDENTIALS_CHANGE_REQUIRED` | ✅ |
 | DELETE | `/api/admin/backup/restore` | 取消预约；`{data:{ok:true}}` | ✅ |
 | GET/PUT | `/api/admin/home/layout` | 首页格点。GET 返回 `{moduleId,...,enabled,col,colSpan,row,hPct,mobileCol,mobileColSpan,mobileRow,mobileHPct,sort}`；PUT `{items:[{moduleId,enabled,col,colSpan,row,hPct,mobileCol,mobileColSpan,mobileRow,mobileHPct}]}` 整表替换。桌面/手机两套几何，越界收进 12 列，`hPct` 0–100（0=随内容），`sort` 按桌面 `row,col` 重算 | ✅ |
-| GET/POST | `/api/admin/modules` | 模块目录列表（含 `blockCount`/`hasCode`/`enabled`）/ 新建 custom `{name,html?,css?,js?,blocks?,config?}` → 201 `{data:{id}}` | ✅ |
+| GET | `/api/admin/modules` | 模块目录列表（含 `blockCount`/`hasCode`/`enabled`）/ 新建 custom `{name,html?,css?,js?,blocks?,config?}` → 201 `{data:{id}}` | ✅ |
 | GET/PATCH/DELETE | `/api/admin/modules/[id]` | 详情 `{module,placement}` / 修改（内置只接受 `name`+`config`，代码与积木被忽略）/ 删除（内置 409 `SYSTEM_MODULE`，仍在首页启用中 409 `MODULE_IN_USE`） | ✅ |
+| GET/POST | `/api/admin/pages` | 静态页面列表（`{dir, reserved:[{segment,decision,reason}], items:[{id,slug,title,description,enabled,hasCode,codeSize,href}]}`）/ 新建 `{slug,title,description?,html?,css?,js?,enabled?}` → 201 `{data:{id}}`；地址名占用 409 `SLUG_TAKEN`、保留段 400 | ✅ |
+| GET/PATCH/DELETE | `/api/admin/pages/[id]` | 详情（含三段代码）/ 部分更新 / 删除。地址名与目录的合法性都在服务端再判一次，不依赖前端校验 | ✅ |
+| GET/PUT | `/api/admin/pages/dir` | 静态页面目录（单值）。GET `?dir=xxx` 是**改目录前的体检** `{ok,message,from,to,affected}`（`affected` = 会因地址整体搬迁而受影响的已启用页面数）；PUT `{staticPagesDir}` 落库并 `revalidatePublicContent()`。目录名保留段 400 | ✅ |
 | GET | `/api/admin/update` | `{data:{appRelease,pendingUpdate,restorePending,lastApply,files:[{name,size,createdAt,channel,version,label,packedAt,fileCount}]}}` | ✅ |
 | POST | `/api/admin/update/pack` | 把当前程序打成 `data/updates/myblog-update-….tar.gz`；`{data:{name,size,fileCount,createdAt}}`；已有打包任务 409 `UPDATE_BUSY`；备份进行中 409 `BACKUP_BUSY`；最长 120s | ✅ |
 | POST | `/api/admin/update/upload` | multipart `file`（`.tar.gz`，≤512MB）；检视白名单后入库，不立刻应用；含 `data/`/`.env`/`..` 或缺少 `package.json`/`src/` 则 400 | ✅ |
@@ -85,7 +91,9 @@
 | DELETE | `/api/admin/update/apply` | 取消预约；`{data:{ok:true}}` | ✅ |
 | GET/POST | `/api/admin/update/github` | GET 解析 Setting `updateGithubRepo`，列公开 Release 中 `myblog-update-*.tar.gz` 资产；POST `{tag}` 下载并 `stageImportedUpdate`。未填仓库 400；只管理员点检查时请求 | ✅ |
 | POST | `/api/admin/update/clear` | `{targets:["data"|"admin"],confirmation,acknowledged:true}`；范围可同时选两项，确认短语必须精确匹配（`删除数据` / `删除管理员账号` / `删除数据和管理员账号`）。返回一次性 `operationId`、`executeAt`、`serverNow`、`waitMs`；只创建待确认操作，不立即删除 | ✅ |
-| PUT | `/api/admin/update/clear` | `{operationId}`；绑定创建令牌的管理员，服务端时间未到 `executeAt` 返回 409 `WAIT_REQUIRED`，到时消费令牌并清理。`data` 会清内容表、媒体、本地/COS 对象、备份/更新暂存；`admin` 会删除全部管理员；两项同选后销毁当前 session | ✅ |
+| PUT | `/api/admin/update/clear` | `{operationId}`；绑定创建令牌的管理员，服务端时间未到 `executeAt` 返回 409 `WAIT_REQUIRED`，到时消费令牌并清理。`data` 会清内容表（含 `MomentVisibilityGroup`、`PenName`，清单见 `lib/data-clear/coverage.ts`）、媒体、本地/COS 对象、备份/更新暂存，响应里的 `deleted` 给出逐表条数（`posts`/`categories`/`tags`/`postTags`/`penNames`/`moments`/`momentLikes`/`momentVisibilityGroups`/`comments`/`uploads`/`backupSecrets`/`admins`）；`admin` 会删除全部管理员；两项同选后销毁当前 session | ✅ |
 | DELETE | `/api/admin/update/clear` | `{operationId}`；当前管理员可在执行前使令牌失效，返回 `{data:{cancelled:true}}` | ✅ |
 
 `html`/`css`/`js` 各限 32KB，只有管理员可写且**不过** sanitize（pitfalls P-034）。三个写端点成功后都调 `revalidatePublicContent()` 刷新 `/`。
+
+静态页面的 `html`/`css`/`js` 是**同一条决策**（管理员内容面，P-034）：各限 32KB、只有管理员可写、不过 sanitize，前台地址 `/{Setting staticPagesDir}/{slug}`。上面四个写端点也都在成功后 `revalidatePublicContent()`。

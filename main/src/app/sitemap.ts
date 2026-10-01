@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 
 import { cachedPublic, PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
+import { getStaticPagesDir, listEnabledStaticPages } from "@/lib/pages/admin";
 import { postHref } from "@/lib/posts/path";
 import { listArchivePosts, listCategories, listTags } from "@/lib/posts/query";
 import { getSiteOrigin } from "@/lib/seo/site";
@@ -8,10 +9,12 @@ import { getSiteOrigin } from "@/lib/seo/site";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return cachedPublic(["sitemap"], [PUBLIC_CACHE_TAGS.seo, PUBLIC_CACHE_TAGS.posts], async () => {
     const origin = await getSiteOrigin();
-    const [posts, categories, tags] = await Promise.all([
+    const [posts, categories, tags, staticPageDir, staticPages] = await Promise.all([
       listArchivePosts(),
       listCategories(),
       listTags(),
+      getStaticPagesDir(),
+      listEnabledStaticPages(),
     ]);
 
     const staticRoutes: MetadataRoute.Sitemap = [
@@ -49,6 +52,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       })),
     ];
 
-    return [...staticRoutes, ...postRoutes, ...taxonomyRoutes];
+    const staticPageRoutes = staticPages.map((page) => ({
+      url: `${origin}/${staticPageDir}/${page.slug}`,
+      lastModified: page.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.4,
+    }));
+
+    return [...staticRoutes, ...postRoutes, ...taxonomyRoutes, ...staticPageRoutes];
   });
 }

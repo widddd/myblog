@@ -24,6 +24,10 @@ import {
   type LightboxTransform,
   type Point,
 } from "@/lib/client/lightbox-zoom";
+import {
+  lightboxOriginalUrl,
+  lightboxProxyFallback,
+} from "@/lib/client/lightbox-src";
 
 type SelectedImage = {
   src: string;
@@ -99,14 +103,6 @@ function selectedFromImage(image: HTMLImageElement): SelectedImage {
     width: image.naturalWidth || undefined,
     height: image.naturalHeight || undefined,
   };
-}
-
-function proxyUrl(key: string) {
-  const encoded = key
-    .split("/")
-    .map(encodeURIComponent)
-    .join("/");
-  return `/api/uploads/${encoded}?proxy=1`;
 }
 
 function fitBox(naturalWidth: number, naturalHeight: number) {
@@ -347,30 +343,50 @@ function LightboxStage({
     }
     let cancelled = false;
     const id = cacheId(image);
-    const url = image.key ? proxyUrl(image.key) : image.src;
+    const url = lightboxOriginalUrl(image);
 
     void (async () => {
-      try {
-        const loaded = await loadOriginal(id, url, (percent) => {
-          if (!cancelled) {
-            setProgress(percent);
-          }
-        });
-        if (cancelled) {
-          return;
-        }
+      const apply = (loaded: CachedOriginal) => {
         setOriginalSrc(loaded.src);
         if (loaded.width > 0 && loaded.height > 0) {
           hasOriginalSizeRef.current = true;
           setBox({ width: loaded.width, height: loaded.height });
         }
+      };
+      const withProgress = (percent: number) => {
+        if (!cancelled) {
+          setProgress(percent);
+        }
+      };
+
+      try {
+        apply(await loadOriginal(id, url, withProgress));
+        return;
       } catch {
         if (cancelled) {
           return;
         }
-        setProgress(100);
-        setOriginalSrc(image.src);
       }
+
+      // 直连对象存储失败（最常见的原因：桶上没配 CORS）→ 退回站点同源代理
+      const fallback = lightboxProxyFallback(image, url);
+      if (fallback) {
+        try {
+          apply(await loadOriginal(id, fallback, withProgress));
+          return;
+        } catch {
+          if (cancelled) {
+            return;
+          }
+        }
+      }
+
+      if (cancelled) {
+        return;
+      }
+      // 最后兜底：让 <img> 直接加载 src（没有进度环，但图能出来）
+      setProgress(100);
+      setOriginalSrc(image.src);
     })();
 
     return () => {

@@ -10,7 +10,9 @@ import {
 } from "@radix-ui/react-icons";
 
 import { DashboardView } from "@/components/admin/DashboardView";
+import { MomentCompose } from "@/components/admin/MomentCompose";
 import { prisma } from "@/lib/db";
+import { loadMomentComposeData } from "@/lib/moments/compose-data";
 import { APP_RELEASE_LABEL } from "@/lib/release";
 import { getDashboardCards, getSetting } from "@/lib/settings";
 
@@ -76,6 +78,7 @@ export default async function AdminDashboardPage() {
     backupKeep,
     cosBucket,
     cosRegion,
+    composeData,
   ] = await Promise.all([
     prisma.post.count(),
     prisma.post.count({ where: { status: "published" } }),
@@ -110,6 +113,8 @@ export default async function AdminDashboardPage() {
     getSetting<number>("backupKeep"),
     getSetting<string>("cosBucket"),
     getSetting<string>("cosRegion"),
+    // 「快速发瞬间」卡片：与 /admin/moments 用同一份取数（lib/moments/compose-data.ts）
+    loadMomentComposeData(),
   ]);
 
   const totalViews = viewAgg._sum.views ?? 0;
@@ -184,6 +189,26 @@ export default async function AdminDashboardPage() {
           {formatSize(mediaSize)} · 按上传记录统计
         </span>
       </Link>
+    ),
+    composeMoment: (
+      <article className="admin-card">
+        <div className="admin-section">
+          <h2 className="admin-section__title">快速发瞬间</h2>
+          <Link
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            href="/admin/moments"
+          >
+            全部瞬间
+          </Link>
+        </div>
+        {/* 与 /admin/moments 的发布区同一个组件：输入框 + 图片按钮 + 可见范围（详细设置在右侧抽屉） */}
+        <MomentCompose
+          globalDays={composeData.globalDays}
+          groups={composeData.groups}
+          maxImages={composeData.maxImages}
+          settingsData={composeData.settingsData}
+        />
+      </article>
     ),
     rankViews: (
       <article className="admin-card">

@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { ADMIN_ACCENT_KEYS } from "@/lib/admin/accents";
 import { resolveDashboardCards } from "@/lib/admin/dashboard-cards";
+import { MOMENT_VISIBILITY_DAYS_MAX } from "@/lib/moments/visibility";
+import { normalizeDirectory, STATIC_PAGE_SEGMENT_MAX } from "@/lib/pages/directories";
 import type { SettingKey } from "@/lib/settings";
 
 export const WRITABLE_SETTING_KEYS = [
@@ -12,6 +14,7 @@ export const WRITABLE_SETTING_KEYS = [
   "backupPeriodDays",
   "backupKeep",
   "uploadMaxSizeMB",
+  "uploadMaxImagesPerBatch",
   "homeModuleOpacity",
   "homeBackdropOpacity",
   "siteUrl",
@@ -24,10 +27,12 @@ export const WRITABLE_SETTING_KEYS = [
   "cosPublicBaseUrl",
   "thumbMaxPx",
   "thumb2MaxPx",
+  "momentVisibleDays",
   "backupLocalMaxMB",
   "localMediaMaxMB",
   "adminAccent",
   "dashboardCards",
+  "staticPagesDir",
 ] as const satisfies readonly Exclude<SettingKey, "lastBackupAt">[];
 
 export type WritableSettingKey = (typeof WRITABLE_SETTING_KEYS)[number];
@@ -38,6 +43,8 @@ export const settingsPutSchema = z
     announcement: z.string().max(500),
     banner: z.string().max(500),
     pageSize: z.number().int().min(1).max(50),
+    // 0 = 永久公开；>0 = 瞬间对外只显示这么多天。生成器按 30 天步进，自定义值必须为整天。
+    momentVisibleDays: z.number().int().min(0).max(MOMENT_VISIBILITY_DAYS_MAX),
     homeModuleOpacity: z.number().int().min(0).max(100),
     homeBackdropOpacity: z.number().int().min(0).max(100),
     siteUrl: z
@@ -94,6 +101,7 @@ export const settingsPutSchema = z
     backupLocalMaxMB: z.number().int().min(64).max(10240),
     localMediaMaxMB: z.number().int().min(64).max(10240),
     uploadMaxSizeMB: z.number().int().min(1).max(50),
+  uploadMaxImagesPerBatch: z.number().int().min(1).max(50),
     thumbMaxPx: z.number().int().min(128).max(1280),
     thumb2MaxPx: z.number().int().min(128).max(640),
     cosBucket: z.string().trim().max(80),
@@ -115,6 +123,14 @@ export const settingsPutSchema = z
         }
       }, "COS 访问域名须为 https"),
     adminAccent: z.enum(ADMIN_ACCENT_KEYS),
+    // 静态页面目录：形状与保留段判定共用 lib/pages/directories.ts 的 normalizeDirectory，
+    // 避免「后台表单拦了、API 又放行」两套口径。
+    staticPagesDir: z
+      .string()
+      .max(STATIC_PAGE_SEGMENT_MAX)
+      .refine((value) => normalizeDirectory(value).ok, {
+        message: "静态页面目录不合法",
+      }),
     // 未知卡片键丢弃、缺键补默认 true、非布尔值按默认，落库前归一化
     dashboardCards: z
       .record(z.string(), z.unknown())

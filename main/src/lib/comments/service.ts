@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 
 import { AdminHttpError } from "@/lib/admin/http";
 import { prisma } from "@/lib/db";
+import { findVisibleMomentId } from "@/lib/moments/query";
 import { postHref } from "@/lib/posts/path";
 import { publishedWhere } from "@/lib/posts/query";
 import { isPostUnlocked } from "@/lib/posts/unlock";
@@ -57,12 +58,10 @@ async function assertTargetExists(
     return;
   }
 
-  const moment = await prisma.moment.findUnique({
-    where: { id: targetId },
-    select: { id: true },
-  });
-  if (!moment) {
-    throw new AdminHttpError("NOT_FOUND", "瞬间不存在", 404);
+  // 已过期的瞬间在公开侧按"不存在"处理：评论和点赞都不能再落到它上面
+  const moment = await findVisibleMomentId(targetId);
+  if (moment === null) {
+    throw new AdminHttpError("NOT_FOUND", "瞬间不存在或已不在可见期内", 404);
   }
 }
 
@@ -158,6 +157,15 @@ export async function listApprovedComments(options: {
   if (
     options.targetType === "post" &&
     !(await canReadPostComments(options.targetId))
+  ) {
+    return { data: [], total: 0, page, pageSize };
+  }
+
+  // 已过期（不在可见期内）的瞬间：读取侧也要按"不存在"处理，
+  // 否则知道 id 的人仍能从这里把隐藏瞬间的评论读出来（写入侧已 404）。
+  if (
+    options.targetType === "moment" &&
+    (await findVisibleMomentId(options.targetId)) === null
   ) {
     return { data: [], total: 0, page, pageSize };
   }

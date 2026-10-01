@@ -43,3 +43,13 @@ next-env.d.ts
 
 # UI 截图产物（pnpm shot，见 scripts/ui-shot.mjs）
 /.ui-shots/
+
+
+# Android 客户端在仓库根的 androidapp/（与 main/ 平级，不放 main/ 里——会被 tsconfig 与 ESLint 扫到）。
+# 它的忽略规则由 androidapp/.gitignore 管；这里只兜住「签名材料绝不入库」这一类。
+*.apk
+*.aab
+*.keystore
+
+# 宣传片截图产物（与 .ui-shots 同类，字节级制品不进仓）
+/.promo-shots/

@@ -16,9 +16,16 @@
 
 - **任务**：个人博客系统（前台：主页/瞬间/文章/搜索/留言板；后台：文章管理、发布编辑器、评论、备份、程序更新）
 - **技术栈**：Next.js 16 App Router + React 19 + TypeScript + Tailwind 4；Prisma 6 + SQLite（better-sqlite3 adapter）；next-mdx-remote v6 + Shiki；mdx-editor v4.2.3 源码 vendor；iron-session；sharp；motion（仅后台）；Node.js ≥22
-- **核心命令**（在 `main/` 下执行）：`pnpm setup`（投产初始化）；`pnpm dev` / `pnpm build` / `pnpm start`（启动走 `scripts/boot.cjs`）；`pnpm pack:update` / `pnpm apply-update --pending`；`pnpm prisma migrate dev`；`pnpm prisma studio`
+- **核心命令**（在 `main/` 下执行）：`pnpm setup`（投产初始化）；`pnpm dev` / `pnpm build` / `pnpm start`（启动走 `scripts/boot.cjs`）；`pnpm test`（单测）+ `node scripts/check-admin-classes.mjs`（改后台类名后的自查）；`pnpm lint`；`pnpm shot`（**UI 验证快路径**，对着已在跑的 server 截图+量尺寸，见 P-086）；`pnpm doc:check`（只读体检文档，**不进交付清单**）；`pnpm db:seed`；`pnpm pack:update` / `pnpm apply-update --pending`；`pnpm restore`；`pnpm import:halo --dir <decoded>`（一次性：Halo 备份导入文章/瞬间/页面，缺省只预览）；`pnpm prisma migrate dev`；`pnpm prisma studio`
 - **语言约定**：与用户沟通用中文；代码注释与 commit message 用英文或中文均可，日志输出中文
 - **角色定位**：你是**资深经验的全栈工程师**。AGENTS.md 与 docs/ 是项目规章与手册，凭专业判断做事，但**未经确认不得擅自改架构、引依赖、动已验证的决策**
+- **输出纪律（AI 每轮自检；插件的施压提示只在内部影响做事方式，不进入输出）**：
+  1. **只报目标级状态**：说进展就写「哪个子目标 / 怎么验收 / 结果」，**禁止**把插件的失败观察计数、猜测阈值或未经验证的等级判定（如「失败 0 次」「X 次观测」「L1/L2 候选」）写进回复——这些数字没有任务名与验收条件，用户无法核对，属于噪声。
+  2. **只有需要换方法时才提失败**：确实要换方案时，一句话说明「已试 A、B，都不满足验收 X，因此换 C」，不播报等级。
+  3. **不把插件当事件播报**：注入的旁白、评分、绩效、自评卡、口号一律不出现在回复里；插件的作用是让我更肯干、更肯验证，而不是让你读它的提示词。需要说明时只用事实：改了什么、凭什么说它成立。
+  4. **语气稳定**：不给输出叠人格标签，不中途换人称或腔调；风格只影响语气，不影响第 1 条的事实标准与上面的行为底线。
+  5. **交付格式固定**：结论 → 证据 → 待你执行项 → 剩余风险，四段以内说清，不写过程流水账。
+  6. **临时备份当场清**：为迁移/批量操作做的文件级备份（`.bak` 之类）**必须在验证通过后立刻删除**。理由：`data/backups/` 的清理逻辑只认 `myblog-*.tar.gz`（`lib/backup/backup.ts` 的 `pruneLocalBackups` + `filename.ts` 的受管文件名判定），其他名字的文件既不会被轮转清理，也不会出现在后台备份列表里——留着就是看不见、不清理的垃圾。要长期留档的备份，走后台「备份」生成受管文件，或把副本放到工作区之外。
 
 ### 硬性资源约束（用户钦定）
 
@@ -48,9 +55,13 @@
 | `main/src/editor/` | mdx-editor vendor 源码（冻结） | [docs/architecture.md](docs/architecture.md) |
 | `main/src/components/` | UI 组件（layout/home/home/modules/widgets/post/moment/comment/common/admin，含更新页数据清理弹窗） | [docs/ai/module.md](docs/ai/module.md) |
 | `main/prisma/` | schema + migrations + seed | [docs/data-models.md](docs/data-models.md) |
-| `main/scripts/` | `boot.cjs` / `install.sh`（Linux 首装一次）/ `pnpm setup` / `pnpm restore` / `pack:update` / `apply-update --file` / `ui-shot.mjs`（`pnpm shot`：**改 UI 后的验证快路径**，对已在跑的 server 截图+量尺寸，不启服务不碰库，见 P-086） | [docs/ai/module.md](docs/ai/module.md) |
+| `main/scripts/` | `boot.cjs` / `install.sh`（Linux 首装一次）/ `pnpm setup` / `pnpm restore` / `pack:update` / `apply-update --file` / `import-halo.ts`（`pnpm import:halo --dir <decoded>`：**Halo 备份导入文章/瞬间/自定义页面+图片**，缺省只预览、`--apply` 才写库，见 [docs/halo-import-spec.md](docs/halo-import-spec.md)）/ `ui-shot.mjs`（`pnpm shot`：**改 UI 后的验证快路径**，对已在跑的 server 截图+量尺寸，不启服务不碰库，见 P-086）/ `doc-contract.mjs`（**可选**：`node scripts/doc-contract.mjs` 只读体检索引/命令表/状态源/pitfalls，**不进交付清单、不阻塞交付**；用户决定以熟悉度替代工具门槛，见 [docs/AUDIT-AGENTS-MECHANISM.md](docs/AUDIT-AGENTS-MECHANISM.md) §12） | [docs/ai/module.md](docs/ai/module.md) |
 | `main/data/` | 运行时数据：blog.db、uploads/、backups/、updates/、backup-host-secret.json（gitignore） | [docs/architecture.md](docs/architecture.md) |
-| `changelog/` | 改动清单：按「可提交分组」写文件级说明 + 验证证据，写 commit message / 发行说明时直接摘取（新批次加一个 `*-CHANGELOG.md`）。**只留本机、不进仓库**——内部施工笔记不发布，见 P-092 | [docs/README.md](docs/README.md) |
+| `changelog/` | 改动清单：按「可提交分组」写文件级说明 + 验证证据，写 commit message / 发行说明时直接摘取。**结构：`changelog/README.md` 是索引；已提交的批次进 `changelog/committed/<短哈希>-<版本或主题>/`，还没提交的放 `changelog/pending/`**（提交后移目录并更新索引）。**只留本机、不进仓库**——内部施工笔记不发布，见 P-092 | [changelog/README.md](changelog/README.md) |
+| `promo/` | 宣传片工程（onetake 流水线）：`film/comp.html` 是纯 `f(t)` 合成，`promo/tools/*.py` 从本地 dev server 抓板/量元素，成片 `film/film.mp4`。**只留本机、不进仓库**（同 reference/demo/changelog，见 P-092）；不参与站点运行时，不是应用代码 | [promo/README.md](promo/README.md) |
+| `androidapp/` | Android 客户端 **SmartBlog**（GeckoView 自带内核宿主，图标是「和自己对话」气泡）。**与 `main/` 平级、不放 `main/` 里**——放进去会被 `main/tsconfig.json` 的 `**/*.ts` 与 ESLint 扫到。构建链独立（Gradle 9.4.1 + AGP 9.1.0 + JDK 21 + `D:\AndroidSDK`），与站点运行时解耦。能力：开屏圆形 logo、自有全屏相册（`accept` 纯图片时替代系统选择器，能选几张由 `GET /api/upload/limits` 决定）、其它文件走系统选择器。**只提交源码与构建配置**：wrapper（`gradle-wrapper.jar`/`gradlew`）、AAR/JAR、构建产物、IDE 与签名材料全部由 `androidapp/.gitignore` 排除（16 个文件、零二进制），恢复步骤见 [docs/android/build.md](docs/android/build.md) §4b | [docs/android/README.md](docs/android/README.md) |
+| `docs/android/` | Android 专用文档：`architecture.md`（宿主结构/地址存储/返回键/深浅色）、`build.md`（工具链/版本硬约束/ABI）、`debug.md`（三个证据源 + 症状→根因判据表）。**宿主地址类坑仍登记在 `docs/pitfalls.md`**（见 P-110） | [docs/android/README.md](docs/android/README.md) |
+| [docs/geckoview-client-spec.md](docs/geckoview-client-spec.md) | Android 客户端立项依据：旧系统 WebView 的探针实测数据（为何只有自带内核可行）、GeckoView 方案与验收口径；已实施，工程见 `androidapp/` | [docs/android/README.md](docs/android/README.md) |
 | `docs/ai/module.md` | **模块注册表（写代码前必读）** | — |
 | `docs/home-modules-spec.md` | 首页模块化：格点模型、内置 11 模块、自定义代码边界（改首页前必读） | — |
 | `docs/responsive-layout-spec.md` | 双视口自适应：盒子决定内容、电脑/手机两套几何、走手机套含横屏 | — |
@@ -61,8 +72,9 @@
 | `docs/backup-encryption-spec.md` | 拆分密钥备份：主机半钥 + 包内半钥、`pnpm setup` | — |
 | `docs/cos-storage-spec.md` | 腾讯云 COS：备份上云、媒体双写、访客 thumb 走 COS（改存储/备份前必读） | — |
 | `docs/media-layout-spec.md` | 媒体目录树、本地限额、缩略图定位、文章 `/posts/{base62}/{name}` | — |
-| `docs/data-clear-spec.md` | 更新页一键数据清理：范围、确认、15 秒闸门与保留边界 | — |
+| `docs/data-clear-spec.md` | 更新页一键数据清理：范围、确认、15 秒闸门与保留边界；**新增 Prisma 模型必须在 `lib/data-clear/coverage.ts` 登记**（漏了 `pnpm test` 直接失败，见 P-103） | — |
 | `docs/admin-ui-rewrite-spec.md` | 后台 UI 重写：独立 CSS、手机底栏、双形态列表；§10 第三轮（冷灰表面 + 6 套可切换配色 + 概览卡片显隐） | — |
+| [docs/moment-visibility-spec.md](docs/moment-visibility-spec.md) | 瞬间可见范围：全局可见期 + 可见范围组，生效天数 = min(全局, 组)；开发库迁移已应用，**生产首次部署前需执行一次迁移**（改瞬间对外可见性前必读） | — |
 | `docs/pitfalls.md` | 已知陷阱 P-001 起递增 | — |
 | `docs/api-contracts.md` | API 路由契约 | — |
 | `docs/collaboration-workflow.md` | 任务隔离、操作授权、Spec 流程 | — |
@@ -120,7 +132,7 @@
 - **P-050 媒体目录 / 文章 URL**：本地与 COS 同一套分片 key；改首页外文章地址只走 `postHref`；旧 `/posts/{slug}` 301
 - **P-051 二级缩略图**：只本地 `images/thumbs2/{hh}/{hash}.webp`；禁止写进瞬间 JSON；缺文件回退一级；`isThumbKey` 不得把 `thumbs2` 当成一级
 - **P-052 媒体库删除**：默认同时删本地原图+一/二级 thumb+COS；下拉可选仅本地；关联文章警告仍可删，不要再 409 卡死
-- **P-055 版本角标**：前台页脚左下角与后台侧栏左下角只标 `lib/release.ts` 的 `APP_RELEASE_LABEL`（现为 0.1.1）
+- **P-055 版本角标**：前台页脚左下角与后台侧栏左下角只标 `lib/release.ts` 的 `APP_RELEASE_LABEL`（现为 0.1.2）
 - **P-056 上传两步**：写文章只入库本地原图；点发布才生成 thumb 并上 COS；图片超 10MB 先警告再按原格式压缩，禁止直接 413
 - **P-057 灯箱缩放**：滚轮/双指只走 `Lightbox` + `lightbox-zoom.ts`，禁止手势库；舞台按原图像素再 scale，禁止画进缩略图盒子；关闭灯箱不要 revoke 原图 blob
 - **P-058 评论默认收起**：`CommentSection` 默认 `collapsible`；文章/瞬间/留言板都要点开才展开，不要再给文章/留言板做展开特例
@@ -130,7 +142,7 @@
 - **P-062 运行时间只走模块**：站点运行时间是内置 `uptime` 模块；开始时间只进 Setting `siteStartedAt`；空则前台不渲染，禁止写进 `page.tsx`
 - **P-063 写文章左栏折叠**：设置卡片收起后只留标题；左栏 Grid 必须 `align-content:start`，禁止 stretch 把收起块撑成方块
 - **P-064 程序更新**：只走 `boot.cjs` 在拉起 Next 之前覆盖；boot 调用的 TS 脚本禁止顶层 await；禁止把 `data/`/`.env` 打进包；与预约恢复互斥；正规包必须是完整 `src/`；生产构建 `NODE_OPTIONS=--max-old-space-size=768`
-- **P-065 发版只换包**：空机跑一次 `install.sh`；以后只导 `tar.gz`（后台或 `--file`），不要改安装脚本、不要上传 Windows 的 `node_modules`
+- **P-065 发版只换包**：空机跑一次 `install.sh`；以后只导 `tar.gz`（后台或 `--file`），不要改安装脚本、不要上传 Windows 的 `node_modules`（**包内必须带 `.env.example`；首装脚本不许硬依赖包内文件**，见 P-113）
 - **P-066 拒绝名单打包 / GitHub / 站点名**：打包不要再写允许清单；GitHub 只后台点检查；`siteName` 禁止默认 MyBlog，创建时手填
 - **P-068 数据清理安全边界**：15 秒必须由服务端闸门执行；只删选定数据并保留配置；清理期间禁止备份竞态
 - **P-070 后台样式隔离**：后台 CSS 只进 `admin.css`；不得重定义 `.heo-button` / `.form-field` / `.heo-card`
@@ -148,6 +160,13 @@
 - **P-090 变体按钮文字色别在暗色块里族级统一钉**：`[data-theme="dark"] .admin-btn` 是 (0,2,0)，会盖掉 (0,1,0) 的 `.admin-btn--ghost/--link`，而暗色 `--admin-on-accent` 是近黑 → 没底色的按钮在深色下 1.08:1 看不清。族级颜色改动先算权重；vendor token 名会骗人（`--baseBorderHover` 在 editor 里只当文字色用）。自检走 CDP 对比度审计（暗色遍历 `.admin-workspace *` 合成背景算 WCAG），别靠眼睛
 - **P-091 浮层被盖住先给两边分层，别只加浮层 z-index**：编辑器工具栏是 flex 项、`z-index:6` 照样生效，会跨子树压掉标题行里 `z-index:5` 的 ⓘ 说明卡（实测 5 个取样点 4 个被挡）。修法：标题行 `z-index:2` + 编辑区 `z-index:1`（各自成栈上下文）；验证走 `elementFromPoint` 五点取样，修后 0/5 被挡
 - **P-092 从远端撤私密内容**：撤内容前先在**仓库之外**备份（`--all` 会把同一仓库里的备份分支一起重写）；`filter-branch` 收尾会把工作区重置成重写后的 HEAD（文件会被从磁盘删掉）；**验证通过前禁止 `gc --prune=now`**；删远端仓库需 token 带 `delete_repo`（GCM 默认没有）；验证别用含糊的 `main`（与同名目录冲突，失败命令的空输出会被误读成"命中 0"）。**远端只留程序代码 + 项目文档**：`reference/`、`demo/`、`changelog/` 已在 `.gitignore`，只留本机
+- **P-114 脚本里别调应用层的写库函数**：`tsx scripts/*.ts` 里调 `createAdminPost()` / `listPublishedPosts()` 会抛 `Invariant: static generation store missing` / `incrementalCache missing`（`next/cache` 要请求上下文）；脚本直接走 Prisma，导入完 `pm2 restart` 让前台立刻可见
+- **P-115 程序别装在 `$HOME`**：`/root` 当项目根时 pm2 的 `.pm2/rpc.sock` 落在项目里，`next build` 被 Turbopack 读 socket 打崩 → 更新永远失败 + 调度器 60 秒重启死循环（`.next` 会回滚、`src/` 已被覆盖）。程序放 `/opt/myblog`，或把 pm2 家目录挪到 `/var/lib/pm2`；循环开关是 `data/update-pending.json`（失败时不会自动取消）
+- **P-116 生产 cookie 带 `Secure` + 明文 HTTP = 登不进后台**：表现是「CSRF 校验失败」，`curl` 却一切正常（它不理会 `Secure`）。生产必须 HTTPS；没 TLS 的临时解是在 nginx 加 `proxy_cookie_flags myblog.session nosecure;`（同名 csrf 一行），上 HTTPS 后删掉
+- **P-117 nginx 备份别放 `sites-enabled/`**：`include sites-enabled/*` **不看扩展名**，`.bak` 会一起被加载并撞 `server_name`（warn 刷屏，且"改了没效果"）；备份放 `/root/nginx-backup/`，用 `nginx -T | grep 'configuration file'` 看哪份在生效
+- **P-118 封面与正文图不是一条路**：正文图渲染时按 hash 改写（配了 COS 自动走 COS 直链），封面 `Post.cover` 被 `CoverMedia` **原样**使用 → 封面必须写缩略图/COS 地址，写原图就是每个列表页拉 3–5MB；外部导入脚本照 `editorImageUrl()` 的口径写
+- **P-119 灯箱原图别默认走 `?proxy=1`**：原图 3–5MB，站点中转实测 1.03 MB/s vs COS 直连 8.10 MB/s；大对象一律直连对象存储、只有站内路径才代理，并给「直连→代理→`<img>` 直载」三级降级；要进度环就在桶上加 CORS（必须 `Expose-Headers: Content-Length`）
+- **P-120 打包不认 `.gitignore`**：`packCurrentApp()` 是文件系统遍历，过滤只认 `lib/update/paths.ts` 的拒绝名单 → 新增任何「落在项目目录里的本机产物」（截图/抓板/临时导出）必须**同时进 `.gitignore` 和 `DENIED_ROOTS`**，否则会被发到服务器（实测 `.ui-shots/` + `.promo-shots/` 35 个文件 = 整包 3.01MB 里的 2.51MB；改后 0.62MB）
 
 ## 5. 工作流底线
 
@@ -161,7 +180,7 @@
 
 ## 6. 状态摘要
 
-- 当前阶段：**第三轮后台重写进行中**（见 [ADMIN-REWRITE-PLAN.md](ADMIN-REWRITE-PLAN.md)）——冷灰表面 + 6 套可切换配色（默认石墨；色值事实源 `lib/admin/accents.ts`，服务端注入 `:root:root`）、侧栏分 4 组、概览页重写为 7 张可显隐卡片（Setting `dashboardCards` + `adminAccent`，各三处同步）、**「外观」入口在前台导航 `Navbar`**（`SiteHeader` 服务端读 session 判定管理员，访客拿到的 HTML 里没有它；点击带 `?appearance=1` 进后台并自动展开**右上角弹窗**，面板样式仍在 `admin.css`，前台不引入它。开关**从 URL 派生**，不用 state——见 P-079）——**后台标题行 `.admin-topbar` 不放任何额外按钮**（只有返回、标题、用户名），「概览卡片」区块只在概览页显示。已完成 token / 基元 / 布局壳 / 概览页；列表页与表单页随 token 自动跟随；写文章页与弹窗已随 token 对齐。**质感对齐已完成**（2026-02，逐项量参照稿后改）：侧栏节奏与字号、KPI 彩色语义图标 + 数值字重、徽章语义色五档（ok/warn/danger/info/muted）、阴影三式（含 -20/-28px 负扩散）、卡片内边距 18/20、按钮层次（ghost 中性化、去主色光晕）、列表表头与行距、全局焦点环、空态、输入框统一 38/9、圆角归并到 token、外观面板 240/12/12。此前：后台 UI 重写（独立 `admin.css`、手机底栏、双形态列表、写文章 sheet）、M10 数据清理、M9 程序更新与 M8 首页模块化已完成，本地发行 0.1.0；**本轮（第三轮后台重写质感对齐、作者与文章时间口径、卡片与登录链路修复）已提交为发行 0.1.1**（`changelog/` 三份清单即本版更新说明）；M7 上机部署由用户执行
+- 当前阶段：**功能开发继续，无「待发版」积压**——**静态页面已实施**：后台 `/admin/pages` 建页（每页 HTML/CSS/JS 三栏，复用自建模块那条「管理员内容面」决策），前台地址 `/{Setting staticPagesDir}/{slug}`（目录默认 `pages`，可随时改）。冲突防护是三闸：写入时保留清单（block/warn 两档，同时管目录与 slug）+ 运行期 `notFound()` 让位（`[dir]/[slug]` 是 Next 里优先级最低的动态段，框架路由永远优先）+ `lib/pages/directories.test.ts` 拿真实 `src/app/` 顶层路由做回归守卫。**开发库迁移 `20261001061500_static_page` 已应用**，上生产前目标机仍需执行一次 `pnpm prisma migrate dev`（否则 `/admin/pages` 报「表不存在」）；读 `StaticPage` 统一经 `lib/db-schema.ts` 的 `requirePrismaModel()`（模型没进当前进程时给「重启 `pnpm dev`」的提示）；详见 pitfalls P-105～P-109。瞬间可见范围（全局可见期 + 可见范围组）已实施，**开发库迁移已于 2026-09-30 应用**（`_prisma_migrations` 最新 `20260927160000_moment_visibility_group`，`Moment.visibilityGroupId` 与外键 SET NULL 就位；见 [docs/moment-visibility-spec.md](docs/moment-visibility-spec.md)）。**上生产前记得在目标机执行 `pnpm prisma migrate dev`**，否则会复现「表不存在」运行时报错。后台第三轮重写的**已释放范围**：冷灰表面 + 6 套可切换配色（默认石墨；色值事实源 `lib/admin/accents.ts`，服务端注入 `:root:root`）、侧栏分 4 组、概览页 8 张可显隐卡片（Setting `dashboardCards` + `adminAccent`，各三处同步；新增的「快速发瞬间」卡复用瞬间发布组件，取数走 `lib/moments/compose-data.ts`）、「外观」入口在前台导航 `Navbar`（点击带 `?appearance=1` 进后台并展开右上角弹窗，开关从 URL 派生见 P-079）、token / 基元 / 布局壳 / 概览页 / 列表页 / 表单页 / 写文章页与弹窗、质感对齐（2026-02 逐项量参照稿：侧栏节奏与字号、KPI 彩色语义图标、徽章语义色五档、阴影三式、卡片内边距 18/20、按钮层次、列表行距、全局焦点环、空态、输入框统一 38/9、圆角归并到 token、外观面板 240/12/12）。**尚未释放**：`ADMIN-REWRITE-PLAN.md` 里仍未收口的阶段（事实源是该计划文件）。此前 M10 数据清理、M9 程序更新、M8 首页模块化已完成；**最新发行 = 0.1.2**（静态页面、瞬间可见范围与瞬间发布区改版、Android 客户端 SmartBlog、上传上限单一事实源、Halo 备份导入、灯箱 COS 直连、部署踩坑修复；批次清单见 `changelog/`，**0.1.2 之后已无未发布积压**）；M7 上机部署与 Android 客户端装机由用户执行。
 - 已证伪/否决路线：Lucia（停止维护）、自写 JWT、Drizzle、public 目录运行时写上传文件、系统 tar 打包、pm2 cluster、整包拷贝 theme-hao 的 zhheoblog.css、Halo 编辑器（Vue 3 + GPL-3.0，且产出 HTML 与本项目 MDX 管线不兼容）、`react-grid-layout` 等重型拖拽库、CSS Grid 行跨越做侧栏列
 - 编辑器 vendor 基线：mdx-editor v4.2.3（MIT）
 

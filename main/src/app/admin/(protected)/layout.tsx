@@ -35,7 +35,8 @@ export default async function AdminProtectedLayout({
     redirect("/admin/login");
   }
 
-  // 外观面板在布局壳顶栏（任意后台页可换配色），所以这里把两个设置一并读出来下传。
+  // 外观面板挂在布局壳上（入口是前台导航栏的「外观」图标 → /admin?appearance=1），
+  // 所以这里把两个设置一并读出来下传。
   const [pendingComments, accent, cards] = await Promise.all([
     countPendingComments(),
     getAdminAccent(),

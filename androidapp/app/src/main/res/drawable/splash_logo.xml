@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 开屏用的**圆形** logo：与 docs/android/icon.svg 同一组路径，只是底从圆角方改成正圆。
+     路径数据要和 ic_launcher_foreground.xml 保持一致，改一处记得改另一处。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 正圆底 + 斜向蓝渐变 -->
+    <path android:pathData="M54,0 A54,54 0 1 1 54,108 A54,54 0 1 1 54,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108">
+                <item android:offset="0" android:color="#FF4FA8F5" />
+                <item android:offset="1" android:color="#FF2A4FD0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 回声气泡：另一个「我」 -->
+    <path
+        android:fillAlpha="0.42"
+        android:fillColor="#FFFFFF"
+        android:pathData="M37.8,28.8 H49.3 A7.9,7.9 0 0 1 57.2,36.7 V43 A7.9,7.9 0 0 1 49.3,50.9 H37.8 A7.9,7.9 0 0 1 29.9,43 V36.7 A7.9,7.9 0 0 1 37.8,28.8 Z" />
+
+    <!-- 主气泡 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54.6,45.6 H68.2 A10,10 0 0 1 78.2,55.6 V62.9 A10,10 0 0 1 68.2,72.9 H54.6 A10,10 0 0 1 44.6,62.9 V55.6 A10,10 0 0 1 54.6,45.6 Z" />
+
+    <!-- 尾巴 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M53,70.8 L44.6,82.4 L63.5,72.9 Z" />
+</vector>

@@ -4,6 +4,7 @@
 - 提案人：AI
 - 状态：已实施
 - 相关红线：复用优先、首页只走模块（P-035）、存储可插拔、面板优先、二级图不上 COS（P-049 / P-051）
+- 后续追加：**瞬间可见范围**（全局可见期 + 可见范围组，2026-09）——规则见 [moment-visibility-spec.md](moment-visibility-spec.md)，踩坑见 P-094 / P-095 / P-096
 
 ## 1. 目标
 
@@ -45,12 +46,20 @@
 - 灯箱全屏透明底；舞台按原图像素，transform 缩放到视口；滚轮 / 双指捏合放大，放大后拖动，缩回适配倍率回正中。同一页内原图 blob 缓存，关闭后再开不重新下载。
 - 瞬间页评论栏默认收起，点「评论 n」展开；不改文章页 / 留言板。
 
+### 2.5 瞬间可见范围（2026-09 追加，详见 [moment-visibility-spec.md](moment-visibility-spec.md)）
+
+- 首页瞬间模块**只显示未过期的瞬间**：`listHomeMoments()` 与瞬间页、点赞、评论写入共用同一个可见期 where（`lib/moments/visibility.ts` 的 `buildMomentVisibilityFilter()`）。
+- 生效天数 = **min(Setting `momentVisibleDays`, 该瞬间所用可见范围组的天数)**，0 = 不限制；全局是天花板，分组只能更短。
+- 默认 `momentVisibleDays = 0`：即"全局永久公开 + 无分组"→ 该函数返回 `undefined`（不带条件），首页瞬间输出与本功能之前完全一致。
+- 本模块的其它行为（打字机、二级缩略图瀑布、高度由 `hPct` 锁死）不变；过期瞬间不会进图池，也不会留下占位格。
+
 ## 3. 影响面分析
 
 - 涉及模块：`lib/storage/media-keys`、`lib/upload/handle`、`lib/uploads/thumbs`、`lib/settings`、`lib/home/*`、`lib/moments/*`、`components/home/modules`、`components/moment`、`Lightbox`、后台设置/媒体库。
 - 新增配置：`thumb2MaxPx`（默认值 / zod / SettingsForm / 生成与重生读取）。
 - 不破坏红线：不改 `page.tsx`；不进 COS；不新增依赖；SQL 仍走 Prisma。
 - 无 Prisma 表迁移。`Upload.variants.thumb2` 为 JSON 增量。
+- 后续追加（瞬间可见范围）：新增表 `MomentVisibilityGroup` 与 `Moment.visibilityGroupId`（迁移 `20260927160000_moment_visibility_group`），并给 Setting 加 `momentVisibleDays`；首页瞬间模块的取数多了一层可见期 where，见 §2.5。
 
 ## 4. 输入输出边界
 
@@ -72,6 +81,7 @@
 - 改 `thumb2MaxPx` 后重生：首页/瞬间不因文件名 404。
 - [x] 1 张竖图完整但不超过约半屏；多张先方面再展开；原图在视口正中。
 - COS 桶内不应出现 `images/thumbs2/`。
+- （2026-09 追加）全局可见期设 N 天后，首页瞬间模块与瞬间页都只剩 N 天内的瞬间；过期瞬间不进图池、不占格；默认 0 时输出与本功能之前一致 —— 详见 [moment-visibility-spec.md](moment-visibility-spec.md) §6。
 
 ## 7. 审批
 

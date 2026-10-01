@@ -95,7 +95,7 @@
 | 徽章 | 圆角 pill + 软底 | 现有有 | 对齐几何 |
 | 侧栏 | 252px、分组标题、选中软底 | 现有 rail（可收起） | 对齐宽度与选中态 |
 | 底部栏 | 4 项（概览/文章/设置/更多） | **4 项 + 「更多」按钮**：仪表盘/文章/瞬间/评论 + 更多 | **保留现有 4+更多**（位置数一致），只改视觉 |
-| 概览页 | KPI×4 + 阅读榜 + 系统状态 + 最近文章 | 只有 5 张 `count` 卡 | **重写**（§5/§6） |
+| 概览页 | KPI×4 + 快速发瞬间 + 阅读榜 + 系统状态 + 最近文章 | 只有 5 张 `count` 卡 | **重写**（§5/§6） |
 
 > 注意：demo 底栏是 4 项，后台实为 10 个入口，spec §3.3 已定「5 项 + 更多 sheet」。**以 spec 为准，demo 的 4 项是简化演示。**
 
@@ -167,7 +167,7 @@
 **入口 A：顶栏「外观」按钮 + 滑出面板（批量）** ⚠️ *（原设计为概览页右边缘常驻把手，已变更，见下方变更记录）*
 
 1. **布局壳顶栏右侧**一个「外观」按钮（调色盘图标 + 文字，图标用当前主色），与深浅主题切换按钮并排；
-2. 点击从右侧滑出面板，列出全部 7 张卡片，每张一个开关；
+2. 点击从右侧滑出面板，列出全部 8 张卡片，每张一个开关；
 3. 面板底部固定两个动作：**「全部显示」**、**「恢复默认」**；
 4. 面板是**唯一能看到并恢复已隐藏卡片**的地方——这很关键，因为「隐藏」= 不渲染，被隐藏的卡在页面上没有痕迹。
 
@@ -195,7 +195,9 @@
 11. **把手不随卡片隐藏而消失**，面板始终可达。
 12. 卡片右上角若有既有内容（如系统状态卡的徽章），角标改为左上角或仅在 hover 时覆盖——逐卡确认，不许压住信息。
 
-### 6.2 可开关卡片清单（7 张）
+### 6.2 可开关卡片清单（8 张；`composeMoment` 于 2026-10 追加）
+
+数组顺序 = 版面顺序：KPI 区四张，半宽行按下面的先后两两成行。
 
 | key | 卡片 | 归属区 |
 |---|---|---|
@@ -203,17 +205,23 @@
 | `kpiComments` | 评论 | KPI 区 |
 | `kpiViews` | 累计阅读 | KPI 区 |
 | `kpiMedia` | 媒体文件 | KPI 区 |
-| `rankViews` | 阅读量最高 Top 5 | 大卡区 |
-| `systemStatus` | 系统状态 | 大卡区 |
-| `recentPosts` | 最近文章 | 全宽区 |
+| `composeMoment` | 快速发瞬间 | 半宽行第 1 位 |
+| `systemStatus` | 系统状态 | 半宽行第 2 位 |
+| `rankViews` | 阅读量最高 Top 5 | 半宽行第 3 位 |
+| `recentPosts` | 最近文章 | 半宽行第 4 位 |
+
+语义：后四张两两成行（快速发瞬间 · 系统状态 / 阅读量最高 · 最近文章）。「快速发瞬间」复用 `/admin/moments` 的 `MomentCompose`，取数走 `lib/moments/compose-data.ts`。
 
 ### 6.3 自动重排实现（纯 CSS，无 JS 测量）
 
 ```css
 /* KPI 区：4 张时 4 列，隐藏后自动降列 */
 .admin-dash__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
-/* 大卡区：2 张并排，剩 1 张时占满 */
-.admin-dash__wide { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+/* 半宽行：**固定两列**（auto-fit 会在 4 张时排成 3+1），奇数末张占满整行不留空洞 */
+.admin-dash__wide { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.admin-dash__wide > .admin-dash__slot:last-child:nth-child(odd) { grid-column: 1 / -1; }
+/* 窄屏一律单列 */
+@media (max-width: 768px) { .admin-dash__wide { grid-template-columns: minmax(0, 1fr); } }
 ```
 
 隐藏 = **不渲染该卡**（不是 `display:none`），保证网格按实际卡片数重算，且不产生空洞。
@@ -221,7 +229,8 @@
 ### 6.4 持久化方案
 
 - **存储**：Setting KV 新增 `dashboardCards`，值形如
-  `{"kpiPosts":true,"kpiComments":true,"kpiViews":true,"kpiMedia":true,"rankViews":true,"systemStatus":true,"recentPosts":true}`
+  `{"kpiPosts":true,"kpiComments":true,"kpiViews":true,"kpiMedia":true,"composeMoment":true,"systemStatus":true,"rankViews":true,"recentPosts":true}`
+  （键集合的事实源是 `lib/admin/dashboard-cards.ts`；旧值缺新键时按默认 true 补，不会因为加卡片把老数据判成脏值）
 - **为什么不用 localStorage**：单管理员但可能多设备；Setting KV 是项目既有体系，且能与「面板优先」原则一致。
 - **读**：概览页 server component 读一次，作为 client 组件初始值（无闪烁）。
 - **写**：复用 `PUT /api/admin/settings`，**乐观更新**（先切 UI，失败回滚并提示）。

@@ -23,6 +23,7 @@ type SettingsValues = {
   backupLocalMaxMB: number;
   localMediaMaxMB: number;
   uploadMaxSizeMB: number;
+  uploadMaxImagesPerBatch: number;
   thumbMaxPx: number;
   thumb2MaxPx: number;
   homeModuleOpacity: number;
@@ -133,6 +134,7 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             backupLocalMaxMB: Number(values.backupLocalMaxMB),
             localMediaMaxMB: Number(values.localMediaMaxMB),
             uploadMaxSizeMB: Number(values.uploadMaxSizeMB),
+            uploadMaxImagesPerBatch: Number(values.uploadMaxImagesPerBatch),
             thumbMaxPx: Number(values.thumbMaxPx),
             thumb2MaxPx: Number(values.thumb2MaxPx),
             siteUrl: values.siteUrl.trim(),
@@ -365,6 +367,21 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             }
             type="number"
             value={values.uploadMaxSizeMB}
+          />
+        </label>
+        <label className="admin-field">
+          一次最多选几张图（手机相册 / 瞬间配图）
+          <input
+            min={1}
+            max={50}
+            onChange={(event) =>
+              setValues((current) => ({
+                ...current,
+                uploadMaxImagesPerBatch: Number(event.target.value),
+              }))
+            }
+            type="number"
+            value={values.uploadMaxImagesPerBatch}
           />
         </label>
         <label className="admin-field">

@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 
-import {
-  CredentialsChangeRequiredError,
-  UnauthorizedError,
-} from "@/lib/auth/guard";
+import { CredentialsChangeRequiredError, UnauthorizedError } from "@/lib/auth/guard";
 import { DataClearError } from "@/lib/admin/errors";
 import { BackupError } from "@/lib/backup/errors";
+import { SchemaNotReadyError } from "@/lib/db-schema";
 import { logger } from "@/lib/utils/logger";
 import { UpdateError } from "@/lib/update/errors";
 
@@ -57,6 +55,9 @@ export function handleAdminError(error: unknown, fallbackMessage: string) {
     return jsonError(error.code, error.message, error.status);
   }
   if (error instanceof BackupError) {
+    return jsonError(error.code, error.message, error.status);
+  }
+  if (error instanceof SchemaNotReadyError) {
     return jsonError(error.code, error.message, error.status);
   }
   if (error instanceof DataClearError) {

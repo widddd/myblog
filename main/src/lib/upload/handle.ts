@@ -29,6 +29,7 @@ import {
 import {
   IMAGE_INTAKE_MAX_BYTES,
   IMAGE_ORIGINAL_MAX_BYTES,
+  resolveUploadMaxBytes,
 } from "@/lib/upload/limits";
 import { logger } from "@/lib/utils/logger";
 import { parseUploadDuration } from "@/lib/uploads/locations";
@@ -352,12 +353,10 @@ function looksLikeImage(file: File) {
 
 export async function handleUpload(request: Request): Promise<UploadResult> {
   await loadCosSettings();
-  const configuredMax = await getSetting<number>("uploadMaxSizeMB");
-  const maxSizeMB =
-    configuredMax && Number.isFinite(configuredMax) && configuredMax > 0
-      ? Math.min(configuredMax, 50)
-      : 10;
-  const maxBytes = Math.floor(maxSizeMB * 1024 * 1024);
+  // 换算逻辑与 GET /api/upload/limits 共用（以前这段只写在这里，接口再抄一遍就会漂）
+  const maxBytes = resolveUploadMaxBytes(await getSetting<number>("uploadMaxSizeMB"));
+  // 仅用于错误文案；Setting 被校验为 1..50 的整数，所以回推是精确的
+  const maxSizeMB = maxBytes / (1024 * 1024);
   const imageStoredMax = Math.min(maxBytes, IMAGE_ORIGINAL_MAX_BYTES);
   const contentLength = Number(request.headers.get("content-length") ?? 0);
   if (

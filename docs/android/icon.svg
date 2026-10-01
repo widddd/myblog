@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108"
+     role="img" aria-label="和自己对话 —— App 图标">
+  <title>和自己对话 · App 图标</title>
+  <!--
+    设计说明（改之前先读）：
+      主题是「和自己对话」，不是「聊天」。所以画的是**一个气泡和它的回声**：
+        · 实心白气泡 = 你
+        · 半透明回声气泡 = 另一个你
+      不是两个等重气泡（那读起来像"和别人聊天"），也不是单气泡加波浪线（那像 wifi）。
+      全部落在自适应图标的安全区内（108 画布中心 66 圆），任何遮罩形状都不会切到图形。
+    Android 侧对应资源：
+      app/src/main/res/drawable/ic_launcher_background.xml   ← 渐变底
+      app/src/main/res/drawable/ic_launcher_foreground.xml   ← 下面这组路径
+      app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml     ← 合成
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4FA8F5"/>
+      <stop offset="1" stop-color="#2A4FD0"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="108" height="108" rx="24" ry="24"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect width="108" height="108" fill="url(#bg)"/>
+
+    <!-- 回声气泡：另一个「我」 -->
+    <path fill="#FFFFFF" fill-opacity="0.42"
+          d="M37.8,28.8 H49.3 A7.9,7.9 0 0 1 57.2,36.7 V43 A7.9,7.9 0 0 1 49.3,50.9 H37.8 A7.9,7.9 0 0 1 29.9,43 V36.7 A7.9,7.9 0 0 1 37.8,28.8 Z"/>
+
+    <!-- 主气泡：你 -->
+    <path fill="#FFFFFF"
+          d="M54.6,45.6 H68.2 A10,10 0 0 1 78.2,55.6 V62.9 A10,10 0 0 1 68.2,72.9 H54.6 A10,10 0 0 1 44.6,62.9 V55.6 A10,10 0 0 1 54.6,45.6 Z"/>
+
+    <!-- 尾巴：话从嘴里出来，又指回自己 -->
+    <path fill="#FFFFFF" d="M53,70.8 L44.6,82.4 L63.5,72.9 Z"/>
+  </g>
+</svg>

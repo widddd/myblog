@@ -9,6 +9,7 @@ import { ADMIN_ACCENTS, type AdminAccentKey } from "@/lib/admin/accents";
 import {
   DASHBOARD_CARD_META,
   DEFAULT_DASHBOARD_CARDS,
+  showAllDashboardCards,
   type DashboardCards,
 } from "@/lib/admin/dashboard-cards";
 import { adminJson } from "@/lib/client/admin";
@@ -17,7 +18,7 @@ import { cn } from "@/lib/utils/cn";
 const EASE = [0.16, 1, 0.3, 1] as const;
 
 type DashboardAppearancePanelProps = {
-  /** 开关由布局壳顶栏的按钮控制 */
+  /** 开关由布局壳控制（`?appearance=1` 派生，入口是前台导航栏的「外观」图标） */
   open: boolean;
   onClose: () => void;
   /** 服务端读到的当前配色（乐观反馈的基线） */
@@ -29,8 +30,9 @@ type DashboardAppearancePanelProps = {
 };
 
 /**
- * 外观面板：由布局壳顶栏的按钮唤出（入口在 `AdminWorkspace`），因此任意后台页面都能换配色；
- * 「概览卡片」区块只在概览页出现。
+ * 外观面板：**入口是前台导航栏的「外观」图标**（`Navbar` → `/admin?appearance=1`，开关从
+ * URL 派生），因此任意后台页面都能换配色；「概览卡片」区块只在概览页出现。
+ * 后台标题行刻意不放按钮（见 admin.css），所以别在文案里写「顶栏外观」。
  *
  * 两个区块作用域不同，UI 上分别标注——否则用户会以为切配色只影响当前页。
  * 读写都走 `/api/admin/settings`，改完 `router.refresh()` 让服务端重新注入 `:root` 锚点
@@ -163,16 +165,11 @@ export function DashboardAppearancePanel({
                 </div>
                 <div className="admin-appearance__actions">
                   {/* 「全部显示」= 一律全开。**不能复用 DEFAULT_DASHBOARD_CARDS**：
-                      那是「恢复默认」的语义，将来默认值未必是全开，两者会被混为一谈。 */}
+                      那是「恢复默认」的语义，将来默认值未必是全开，两者会被混为一谈。
+                      逻辑在 lib/admin/dashboard-cards.ts（概览页那行「全部显示」共用同一份）。 */}
                   <button
                     className="admin-btn admin-btn--ghost"
-                    onClick={() =>
-                      applyCards(
-                        Object.fromEntries(
-                          DASHBOARD_CARD_META.map((meta) => [meta.key, true]),
-                        ) as DashboardCards,
-                      )
-                    }
+                    onClick={() => applyCards(showAllDashboardCards())}
                     type="button"
                   >
                     全部显示

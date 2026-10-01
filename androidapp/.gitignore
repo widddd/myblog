@@ -1,0 +1,53 @@
+# Android 客户端：**只提交源码与构建配置**
+#
+# 原则（同 AGENTS.md P-092「远端只留程序代码 + 项目文档」）：
+#   二进制、依赖、缓存、构建产物、签名材料、机器相关文件 —— 一律不进版本库。
+#   本机这些文件照常存在（构建不受影响），只是 git 不看它们。
+
+# ── 构建产物 ─────────────────────────────────────────────────────────
+build/
+app/release/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.hprof
+lint-results*
+captures/
+
+# ── Gradle 本地状态与缓存 ────────────────────────────────────────────
+.gradle/
+.gradle-cache/
+.kotlin/
+
+# ── Gradle wrapper（依赖，不提交）────────────────────────────────────
+# gradle-wrapper.jar 是 45KB 二进制；gradlew / gradlew.bat 是它配套的启动脚本。
+# 实测 gradlew **不会自举**（jar 缺失时报 "Unable to access jarfile"），
+# 所以全新克隆必须先恢复它，步骤见 docs/android/build.md §4b。
+# 注意只忽略 wrapper 子目录——以后若加 gradle/libs.versions.toml（版本目录，属源码）仍可被跟踪。
+gradle/wrapper/
+gradlew
+gradlew.bat
+
+# ── 依赖二进制 ──────────────────────────────────────────────────────
+# AAR / JAR 一律从 Maven 拉（见 app/build.gradle.kts 的依赖块），不进仓库。
+# 若将来确实要 vendor 一个 jar，需在下面显式 `!path/to/x.jar` 放行。
+*.aar
+*.jar
+
+# ── 机器相关 / IDE ──────────────────────────────────────────────────
+local.properties
+.idea/
+*.iml
+.navigation/
+.cxx/
+.externalNativeBuild/
+
+# ── 签名材料（绝不入库）─────────────────────────────────────────────
+*.keystore
+*.jks
+keystore.properties
+
+# ── 其它 ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

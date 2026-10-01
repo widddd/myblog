@@ -72,7 +72,13 @@ model Moment {
   content   String      
   images    String       @default("[]") // JSON: [{key, thumb, width, height}]
   createdAt DateTime     @default(now())
+  // 可见范围组：为空 = 跟随「全局可见期」；有值 = 用该组的天数。
+  // 最终对外可见天数 = min(全局可见期, 组天数)，任一侧 0 视为不限制（见 lib/moments/visibility.ts）。
+  visibilityGroupId Int?
+  visibilityGroup   MomentVisibilityGroup? @relation(fields: [visibilityGroupId], references: [id], onDelete: SetNull)
   likes     MomentLike[]
+
+  @@index([visibilityGroupId])
 }
 
 model MomentLike {
@@ -82,6 +88,34 @@ model MomentLike {
   moment      Moment  @relation(fields: [momentId], references: [id], onDelete: Cascade)
 
   @@unique([momentId, fingerprint])
+}
+
+// 瞬间可见范围组（3 天可见组 / 7 天可见组 / 1 个月可见组…）：发布瞬间时可选，后台可增删改。
+// 删除组不会删瞬间：外键 SetNull，这些瞬间回落到「全局可见期」。
+model MomentVisibilityGroup {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  days      Int // 发布后对外可见的天数，1–MAX_MOMENT_VISIBILITY_DAYS
+  createdAt DateTime @default(now())
+  moments   Moment[]
+}
+
+// 静态页面：管理员自定义的独立页面，挂在 Setting `staticPagesDir` 指定的目录下，
+// 前台地址 = /{staticPagesDir}/{slug}。目录名与地址段都必须是单段 URL 安全字符，
+// 且不得占用保留段（见 lib/pages/static-page.ts）；前台路由是 Next 里优先级最低的
+// 动态段，框架路由与本站自有路由永远优先。
+model StaticPage {
+  id          Int      @id @default(autoincrement())
+  // 地址最后一段，全库唯一（目录是单值，所以 slug 唯一就等于地址唯一）
+  slug        String   @unique
+  title       String
+  description String   @default("") // meta description / 索引页副标题
+  html        String   @default("")
+  css         String   @default("")
+  js          String   @default("")
+  enabled     Boolean  @default(true) // 关掉即前台 404，页面内容保留
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // SQLite 不支持 Prisma enum，用字符串常量约束（见 docs/data-models.md）

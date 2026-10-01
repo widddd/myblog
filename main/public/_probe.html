@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>渲染引擎探针 v3</title>
+</head>
+<body style="font-family:monospace;font-size:15px;line-height:1.6;padding:12px;margin:0;background:#fff;color:#111">
+<h1 style="font-size:18px;margin:0 0 8px">渲染引擎探针 v3</h1>
+<div id="stage" style="background:#eee;padding:4px 8px;margin-bottom:8px">阶段: 脚本未启动</div>
+<div id="out"><pre style="margin:0;white-space:pre-wrap">等待中...</pre></div>
+<div style="margin-top:12px"><button id="cp" type="button" style="font-size:16px;padding:10px 16px">展开结果以复制</button></div>
+<textarea id="copy" style="position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0"></textarea>
+
+<script>
+/* 看门狗：只用 ES3 语法，保证在任何引擎里都能先跑起来。
+   它的唯一职责是——如果后面的脚本块死了，页面上要看得见为什么。 */
+function stage(s) { var e = document.getElementById("stage"); if (e) { e.innerHTML = "阶段: " + s; } }
+function showError(msg) {
+  var o = document.getElementById("out");
+  if (o) {
+    o.innerHTML = "<pre style='margin:0;white-space:pre-wrap;word-break:break-all;color:#b00'>"
+      + "!!! 探针出错 !!!\n" + String(msg).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</pre>";
+  }
+}
+window.onerror = function (m, u, l) { showError("脚本错误: " + m + " @line " + l); return false; };
+stage("看门狗已就绪");
+</script>
+
+<script>
+/* 第 1 段：只测「语法级」特性。刻意单独成块——某个语法不支持时，
+   死的是这一段，看门狗仍能报出原因，不会连累主检测。 */
+try {
+  stage("测语法特性");
+  var syn = [];
+  function tryEval(label, code) {
+    try { eval(code); syn.push(label + ": OK"); }
+    catch (e) {
+      syn.push(label + ": " + (e && e.name === "SyntaxError" ? "语法不支持(SyntaxError)" : "ERR:" + e));
+    }
+  }
+  tryEval("可选链 ?.", "({a:{b:1}})?.a?.b");
+  tryEval("空值合并 ??", "(null ?? 5)");
+  tryEval("逻辑赋值 ||=", "(function(){var o={};o.x ||= 3;return o.x})()");
+  window.__syn = syn;
+  stage("语法特性测完");
+} catch (e) { showError("第1段异常: " + e); }
+</script>
+
+<script>
+/* 第 2 段：行为检测（真正的答案在这里）。 */
+try {
+  stage("行为检测");
+  var t = [];
+  function chk(n, f) { var v; try { v = f() ? "OK" : "MISS"; } catch (e) { v = "ERR:" + e; } t.push(n + "  =>  " + v); }
+  function sup(p, v) { try { return !!(window.CSS && CSS.supports && CSS.supports(p, v)); } catch (e) { return false; } }
+  function px(style) {
+    var d = document.createElement("div");
+    d.style.cssText = "position:absolute;visibility:hidden;" + style;
+    document.body.appendChild(d);
+    var h = d.offsetHeight;
+    document.body.removeChild(d);
+    return h;
+  }
+
+  chk("@layer 块作用于规则(动态注入+读实算色)", function () {
+    var s = document.createElement("style");
+    s.textContent = "@layer p{p{color:rgb(1,2,3)}}";
+    document.head.appendChild(s);
+    var d = document.createElement("p"); d.className = "p";
+    document.body.appendChild(d);
+    var c = getComputedStyle(d).color;
+    document.body.removeChild(d);
+    return c === "rgb(1, 2, 3)";
+  });
+  chk("@property 经 @supports 生效", function () {
+    var s = document.createElement("style");
+    s.textContent = "@property --tp{syntax:'<color>';inherits:false;initial-value:rgb(9,8,7)}"
+      + "@supports(-webkit-hyphens:none){*{--tp:initial}}.tp{color:var(--tp)}";
+    document.head.appendChild(s);
+    var d = document.createElement("div"); d.className = "tp";
+    document.body.appendChild(d);
+    var c = getComputedStyle(d).color;
+    document.body.removeChild(d);
+    return c === "rgb(9, 8, 7)";
+  });
+  chk("dvh 有效", function () { return sup("height", "100dvh") && px("height:100dvh") > 0; });
+  chk(":has() 生效(动态注入+读实算色)", function () {
+    var s = document.createElement("style");
+    s.textContent = ".hx:has(.hy){color:rgb(4,5,6)}";
+    document.head.appendChild(s);
+    var a = document.createElement("div"); a.className = "hx";
+    var b = document.createElement("span"); b.className = "hy";
+    a.appendChild(b); document.body.appendChild(a);
+    var c = getComputedStyle(a).color;
+    document.body.removeChild(a);
+    return c === "rgb(4, 5, 6)";
+  });
+  chk("@container 生效", function () { return sup("container-type", "inline-size"); });
+  chk("aspect-ratio 生效", function () { return sup("aspect-ratio", "1/1"); });
+  chk("color-mix()", function () { return sup("color", "color-mix(in srgb, red, blue)"); });
+  chk("backdrop-filter", function () { return sup("backdrop-filter", "blur(2px)"); });
+  chk("position:sticky", function () { return sup("position", "sticky"); });
+  chk("IntersectionObserver", function () { return "IntersectionObserver" in window; });
+  chk("ResizeObserver", function () { return "ResizeObserver" in window; });
+  chk("AbortController", function () { return "AbortController" in window; });
+  chk("ReadableStream", function () { return "ReadableStream" in window; });
+
+  var ua = navigator.userAgent || "";
+  var m = /(Chrome|Chromium|CriOS)\/(\d+)/.exec(ua);
+  var major = m ? m[2] : "未知";
+  var vh = window.innerHeight || 0;
+  var dvhPx = px("height:100dvh");
+  var i, lines = [];
+  lines.push("=== 环境 ===");
+  lines.push("引擎大版本: " + major);
+  lines.push("视口 100vh 实测 = " + vh + " px   |   100dvh 实测 = " + dvhPx + " px");
+  lines.push("screen: " + screen.width + "x" + screen.height + "  dpr=" + (window.devicePixelRatio || 1));
+  lines.push("UA: " + ua);
+  lines.push("");
+  lines.push("=== 语法级特性 ===");
+  var s2 = window.__syn || [];
+  for (i = 0; i < s2.length; i++) { lines.push(s2[i]); }
+  lines.push("");
+  lines.push("=== 行为特性 ===");
+  for (i = 0; i < t.length; i++) { lines.push(t[i]); }
+  lines.push("");
+  lines.push("=== 结论 ===");
+  var mm = parseFloat(major);
+  if (mm >= 111) { lines.push("引擎 >=111：换浏览器即可"); }
+  else if (mm >= 99) { lines.push("引擎 >=99：@layer 可用，按上面 MISS 项逐个修"); }
+  else { lines.push("引擎 <99（当前 " + major + "）：Tailwind 4 的 @layer 不支持，设计体系不可依赖"); }
+
+  var text = lines.join("\n");
+  document.getElementById("out").innerHTML =
+    "<pre style='margin:0;white-space:pre-wrap;word-break:break-all'>" +
+    text.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</pre>";
+  document.getElementById("copy").value = text;
+  var btn = document.getElementById("cp");
+  btn.onclick = function () {
+    var ta = document.getElementById("copy");
+    ta.style.position = "static"; ta.style.width = "100%"; ta.style.height = "200px"; ta.style.opacity = "1";
+    btn.innerHTML = "长按下方文本框全选复制";
+  };
+  stage("完成");
+} catch (e) { showError("第2段异常: " + (e && e.message ? e.message : e)); }
+</script>
+</body>
+</html>

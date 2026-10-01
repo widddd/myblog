@@ -45,8 +45,15 @@ fi
 
 mkdir -p data
 if [[ ! -f .env ]]; then
-  cp .env.example .env
-  log "已从 .env.example 复制 .env（pnpm setup 会写入密钥与管理员）"
+  if [[ -f .env.example ]]; then
+    cp .env.example .env
+    log "已从 .env.example 复制 .env（pnpm setup 会写入密钥与管理员）"
+  else
+    # Never hard-depend on a file from the package: an older/partial tar.gz may
+    # not carry the template. pnpm setup fills in the secrets (see P-113).
+    printf 'DATABASE_URL="file:../data/blog.db"\n' > .env
+    log "包内没有 .env.example，已写入最小 .env（pnpm setup 会补密钥与管理员）"
+  fi
 fi
 
 export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=768"

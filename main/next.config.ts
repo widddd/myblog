@@ -8,6 +8,11 @@ const editorEntry = path.join(rootDir, "src/editor/index.ts");
 
 const nextConfig: NextConfig = {
   agentRules: false,
+  // 局域网真机调试：Next 16 默认拦截跨源访问 /_next 与 /__nextjs 内部资源（403）。
+  // 只匹配 Origin 的 hostname（不含协议与端口），* 恰好替换一段标签：192.168.2.* 可覆盖 .36 且抗 DHCP 漂移。
+  // 仅 dev 生效，不影响生产构建；不用真机时删掉此块即可。
+  // 10.0.2.2 是 Android 模拟器约定的宿主机回环地址（真机壳/模拟器都要能连 HMR）。
+  allowedDevOrigins: ["192.168.2.*", "*.ts.net", "10.0.2.2"],
   images: {
     loader: "custom",
     loaderFile: "./src/lib/media/image-loader.ts",

@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils/cn";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
+/** 编辑器页：桌面档无顶栏、内容铺满（P-033）。 */
 function isEditorPath(pathname: string) {
   return (
     pathname === "/admin/posts/new" ||
@@ -31,15 +32,33 @@ function isEditorPath(pathname: string) {
   );
 }
 
+/**
+ * 编辑器页里**自己没有返回入口**的那几页（首页画布、模块编辑）。
+ *
+ * 竖屏下后台顶栏 + 底栏是唯一的全局导航：别的页面都有，这几页没有就没法离开当前页。
+ * 写文章不在其中——它自带头部与「返回文章列表」（`.post-workspace__back`）。
+ * 桌面档不受影响：这几页照样无顶栏、画布铺满（P-033）。
+ */
+function needsMobileChrome(pathname: string) {
+  return (
+    pathname === "/admin/home" ||
+    pathname === "/admin/modules/new" ||
+    /^\/admin\/modules\/\d+$/.test(pathname)
+  );
+}
+
 function pageHeading(pathname: string): { title: string; lead: string } {
   if (pathname === "/admin") {
     return { title: "仪表盘", lead: "看看站点现在的情况" };
+  }
+  if (pathname === "/admin/home") {
+    return { title: "首页管理", lead: "拖动模块，摆好首页版面" };
   }
   if (pathname.startsWith("/admin/posts")) {
     return { title: "文章", lead: "管理已发布、草稿和定时文章" };
   }
   if (pathname.startsWith("/admin/moments")) {
-    return { title: "瞬间", lead: "写短内容，配几张图" };
+    return { title: "瞬间", lead: "记录此刻的想法与图片" };
   }
   if (pathname.startsWith("/admin/comments")) {
     return { title: "评论", lead: "审核、回复或删除" };
@@ -83,6 +102,8 @@ export function AdminWorkspace({
   const router = useRouter();
   const searchParams = useSearchParams();
   const editor = !credentialsOnly && isEditorPath(pathname);
+  // 竖屏下要保留后台上下导航的编辑器页（自己没提供返回入口的那几页）
+  const editorMobileChrome = editor && needsMobileChrome(pathname);
   const heading = credentialsOnly
     ? { title: "改账号", lead: "先改成你自己的用户名和密码" }
     : pageHeading(pathname);
@@ -114,6 +135,7 @@ export function AdminWorkspace({
         className={cn(
           "admin-workspace",
           editor && "admin-workspace--editor",
+          editorMobileChrome && "admin-workspace--editor-chrome",
           credentialsOnly && "admin-workspace--credentials",
           !navOpen && "admin-workspace--nav-collapsed",
         )}
@@ -156,7 +178,7 @@ export function AdminWorkspace({
         )}
       </aside>
       <div className="admin-main">
-        {editor ? null : (
+        {editor && !editorMobileChrome ? null : (
           <header className="admin-topbar">
             <Link className="admin-btn admin-btn--icon admin-topbar__back" href="/" title="返回前台">
               <ArrowLeftIcon />

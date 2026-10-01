@@ -56,6 +56,8 @@ export const momentWriteSchema = z.object({
     )
     .max(9)
     .optional(),
+  // 可见范围组：null/缺省 = 跟随全局可见期；正整数 = 用该组的天数（见 lib/moments/visibility.ts）
+  visibilityGroupId: z.number().int().positive().optional().nullable(),
 });
 
 export const momentPatchSchema = momentWriteSchema.partial();

@@ -36,7 +36,7 @@ proxy_set_header X-Forwarded-Proto $scheme;
 ```powershell
 cd main
 pnpm pack:update
-pnpm pack:update --git v0.1.1
+pnpm pack:update --git v0.1.2
 ```
 
 把打出来的 `data/updates/myblog-update-*.tar.gz` 拷到能访问后台的电脑，或 scp 到服务器。然后：

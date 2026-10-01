@@ -12,8 +12,9 @@ export const DASHBOARD_CARD_KEYS = [
   "kpiComments",
   "kpiViews",
   "kpiMedia",
-  "rankViews",
+  "composeMoment",
   "systemStatus",
+  "rankViews",
   "recentPosts",
 ] as const;
 
@@ -21,8 +22,12 @@ export type DashboardCardKey = (typeof DASHBOARD_CARD_KEYS)[number];
 
 export type DashboardCards = Record<DashboardCardKey, boolean>;
 
-/** 卡片所属分区 —— 决定它落在哪个网格里，进而决定隐藏后的重排行为。 */
-export type DashboardCardZone = "kpi" | "wide" | "full";
+/**
+ * 卡片所属分区 —— 决定它落在哪个网格里，进而决定隐藏后的重排行为。
+ * - `kpi`：顶部四张小统计卡（窄屏两列）
+ * - `wide`：**半宽行**，固定两列；奇数张时最后一张占满整行（见 admin.css 的 .admin-dash__wide）
+ */
+export type DashboardCardZone = "kpi" | "wide";
 
 export type DashboardCardMeta = {
   key: DashboardCardKey;
@@ -37,19 +42,25 @@ export const DEFAULT_DASHBOARD_CARDS: DashboardCards = {
   kpiComments: true,
   kpiViews: true,
   kpiMedia: true,
-  rankViews: true,
+  composeMoment: true,
   systemStatus: true,
+  rankViews: true,
   recentPosts: true,
 };
 
+/**
+ * 顺序即版面顺序（同一分区内按本数组先后渲染）：
+ * 四张 KPI → 半宽行（快速发瞬间 · 系统状态 / 阅读量最高 · 最近文章）。
+ */
 export const DASHBOARD_CARD_META: readonly DashboardCardMeta[] = [
   { key: "kpiPosts", label: "文章", zone: "kpi" },
   { key: "kpiComments", label: "评论", zone: "kpi" },
   { key: "kpiViews", label: "累计阅读", zone: "kpi" },
   { key: "kpiMedia", label: "媒体文件", zone: "kpi" },
-  { key: "rankViews", label: "阅读量最高", zone: "wide" },
+  { key: "composeMoment", label: "快速发瞬间", zone: "wide" },
   { key: "systemStatus", label: "系统状态", zone: "wide" },
-  { key: "recentPosts", label: "最近文章", zone: "full" },
+  { key: "rankViews", label: "阅读量最高", zone: "wide" },
+  { key: "recentPosts", label: "最近文章", zone: "wide" },
 ];
 
 export function isDashboardCardKey(value: unknown): value is DashboardCardKey {
@@ -83,4 +94,23 @@ export function resolveDashboardCards(value: unknown): DashboardCards {
 /** 是否至少有一张可见卡片。全关时概览页要出空态 + 「恢复默认」，不是白屏。 */
 export function hasVisibleDashboardCard(cards: DashboardCards): boolean {
   return DASHBOARD_CARD_KEYS.some((key) => cards[key]);
+}
+
+/** 被隐藏的卡片数（概览页用它决定要不要给「全部显示」的回头路）。 */
+export function countHiddenDashboardCards(cards: DashboardCards): number {
+  return DASHBOARD_CARD_KEYS.filter((key) => !cards[key]).length;
+}
+
+/**
+ * 全部显示 —— 把叉掉的都放出来。
+ *
+ * **不要用 `DEFAULT_DASHBOARD_CARDS` 顶替**：那个的语义是「回到出厂默认」，默认值
+ * 将来未必是全开，两者混用会让「全部显示」说一套做一套。外观面板与概览页都用这一个。
+ */
+export function showAllDashboardCards(): DashboardCards {
+  const result = { ...DEFAULT_DASHBOARD_CARDS };
+  for (const key of DASHBOARD_CARD_KEYS) {
+    result[key] = true;
+  }
+  return result;
 }

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「和自己对话」：一个实心气泡 + 它的回声（半透明）+ 指回自己的尾巴。
+     108 画布；图形全部落在中心 66 安全圆内，圆形/方形/水滴遮罩都不会切到。
+     设计说明见 docs/android/icon.svg。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 回声气泡：另一个「我」 -->
+    <path
+        android:fillAlpha="0.42"
+        android:fillColor="#FFFFFF"
+        android:pathData="M37.8,28.8 H49.3 A7.9,7.9 0 0 1 57.2,36.7 V43 A7.9,7.9 0 0 1 49.3,50.9 H37.8 A7.9,7.9 0 0 1 29.9,43 V36.7 A7.9,7.9 0 0 1 37.8,28.8 Z" />
+
+    <!-- 主气泡：你 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54.6,45.6 H68.2 A10,10 0 0 1 78.2,55.6 V62.9 A10,10 0 0 1 68.2,72.9 H54.6 A10,10 0 0 1 44.6,62.9 V55.6 A10,10 0 0 1 54.6,45.6 Z" />
+
+    <!-- 尾巴：话从嘴里出来，又指回自己 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M53,70.8 L44.6,82.4 L63.5,72.9 Z" />
+</vector>

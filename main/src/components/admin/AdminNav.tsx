@@ -12,6 +12,7 @@ import {
   ImageIcon,
   LightningBoltIcon,
   Pencil2Icon,
+  ReaderIcon,
   ReloadIcon,
 } from "@radix-ui/react-icons";
 import Link from "next/link";
@@ -58,6 +59,7 @@ const RAIL_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/home", label: "首页管理", icon: HomeIcon },
       { href: "/admin/modules", label: "模块管理", icon: BoxIcon },
+      { href: "/admin/pages", label: "静态页面", icon: ReaderIcon },
       { href: "/admin/uploads", label: "媒体库", icon: ImageIcon },
     ],
   },
@@ -81,6 +83,7 @@ const TABS: NavItem[] = [
 const MORE: NavItem[] = [
   { href: "/admin/home", label: "首页管理", icon: HomeIcon },
   { href: "/admin/modules", label: "模块管理", icon: BoxIcon },
+  { href: "/admin/pages", label: "静态页面", icon: ReaderIcon },
   { href: "/admin/uploads", label: "媒体库", icon: ImageIcon },
   { href: "/admin/backups", label: "备份", icon: ArchiveIcon },
   { href: "/admin/updates", label: "更新", icon: ReloadIcon },

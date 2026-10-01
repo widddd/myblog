@@ -259,7 +259,7 @@
 
 ### P-055 版本角标与备份版本只走 release.ts
 - ❌ 在页脚/后台随手写死「v0.1」或各写一套文案；备份列表不标版本
-- ✅ 规则：频道与展示文案只出自 `lib/release.ts`（当前 `APP_CHANNEL=alpha`、`APP_VERSION=0.1.1`、标签「0.1.1」）。前台页脚左下角 `ReleaseMark`，后台侧栏左下角同一文案。备份包 `meta.json` 写入 channel/version，列表展示 `backupReleaseLabel()`。改版本号只改这一处。
+- ✅ 规则：频道与展示文案只出自 `lib/release.ts`（当前 `APP_CHANNEL=alpha`、`APP_VERSION=0.1.2`、标签「0.1.2」）。前台页脚左下角 `ReleaseMark`，后台侧栏左下角同一文案。备份包 `meta.json` 写入 channel/version，列表展示 `backupReleaseLabel()`。改版本号只改这一处。**但发版时还有三处必须同步**：`main/package.json` 的 `version`、`release.test.ts` 与 `backup/inspect.test.ts` 里断言具体版本号的用例（不同步 = `pnpm test` 直接红）；`AGENTS.md` §6 的状态摘要也必须带上新版本号，否则 `pnpm doc:check` 报「发行号无单源」。
 - 📎 案例：备份加密开关与 Alpha 角标（2026-09-04）
 
 ### P-056 上传分两步，超 10MB 图片先压再当原图
@@ -574,6 +574,132 @@
 - 📎 同日第二次（按 P-092 规矩重做，零事故）：撤下 `demo/`（6 文件 / 609 KB，后台 UI 参照稿）——先做**仓库外明文备份**（`D:\code_projects\myblog-demo-backup`）并记录 6 个文件的 SHA256 → `filter-branch` **只指定 `refs/heads/main` 与两个 tag**（不写 `--all`）→ 从旧提交捞回后 **6/6 哈希一致** → 强推 `main`/`--tags` → 远端 `contents/demo` → 404 → **最后才**清 `refs/original` + reflog + `gc --prune=now`。`demo/`、`reference/` 的**文件仍在本机**，只是不再进任何 commit（远端与本地都查不到）。
 - 📎 同日第三次：撤下 `changelog/`（3 文件 / 31 KB，内部施工笔记）——仓库外备份（`D:\code_projects\myblog-changelog-backup`）+ 记录 SHA256 → 只指定 `refs/heads/main` 与两个 tag 重写 → 捞回后 **3/3 哈希一致** → 入 `.gitignore` → 清残留对象。**这次的关键差别：远端即将被整体删除，没有任何远端可当救命绳，仓库外备份是唯一的后悔药。**
 
+### P-093 让手机连上 dev server：拦路虎是 `allowedDevOrigins`，不是 `-H`
+- ❌ 错误（三个连着的）：
+  1. 以为要给 `next dev` 加 `-H 0.0.0.0` 才能局域网访问——Next 16 官方 `--help` 写着 `-H` **默认就是 `0.0.0.0`**，本项目 `boot.cjs` 的 `extraAfterMode()` 也已原样透传参数，实测启动即 `监听 0.0.0.0:3000`。
+  2. 只测「整页打得开」就当成连通成功。Next 16 默认拦跨源访问 dev 资源，但拦截器 `block-cross-site-dev.js` 第一句就是 `if (!isInternalEndpoint(req)) return false;`——**只拦 `/_next` 与 `/__nextjs`**，页面本身是 200。表现为：能看首页、但 **HMR 热更新和开发浮层全 403**，改代码不刷新、报错看不到原因。
+  3. 用**猜的** `/_next` 路径做验证（如 `/_next/static/chunks/main-app.js`）→ 得到 404 就当作"没被拦"。**404 会把 403 掩盖掉**（P-077 同类：被截断/失真的探针输出不足以当结论）。
+- ✅ 规则：
+  1. 在 `main/next.config.ts` 配 `allowedDevOrigins`（**只写 hostname，不带协议、不带端口**）。它按 `.` 分段匹配：`*` 恰好替换**一段**标签，`**` 匹配一段以上且只能放开头（官方文档 Compatibility 段）。`192.168.2.*` 可覆盖 `.36` 且**抗 DHCP 漂移**；Tailscale 出口再加 `*.ts.net`。
+  2. 改完**必须完全重启 dev server**（next.config 在启动时加载，日志有 `✓ Running next.config.ts took Nms`）。
+  3. **Windows 本机验证快路径**（无需第二台设备）：先从首页 HTML 里正则抽出**真实存在**的 `/_next/...js` 路径，再带 `Origin: http://<本机局域网IP>:3000` 请求它：
+     - 真实路径 + 无 `Origin` → 200（证明路径有效）
+     - 真实路径 + 该 `Origin` → 改前 403 / 改后 **200**
+     - 真实路径 + `Origin: http://evil.example` → 必须**仍 403**（反证：确认不是把拦截整体关掉）
+  4. 多网卡（本项目机上有 WiFi / Tailscale / Radmin VPN / Meta Tunnel）时 **Next 打印的 `- Network:` 可能是假地址**（实测打印 `198.18.0.1`，那是 Meta Tunnel）；以 `192.168.*` 那个为准。
+  5. 防火墙**先别急着加规则**：实测本机 `DefaultInboundAction = NotConfigured`（= Windows 默认 AllowInbound），从本机连自己的 LAN 地址返回 200。Node 规则是**按程序路径**匹配（`app=C:\program files\nodejs\node.exe`），只要 dev 就是用这个 exe 起的就命中；换 exe 路径才需要另加。
+- 📎 案例 2026-02（本机）：改前 403 Unauthorized 且 `err.log` 有 `Blocked cross-origin request ... from "192.168.2.36"`；改后同请求 200，反证 `evil.example` 仍 403。配置见 `main/next.config.ts` 第 11–14 行。
+
+### P-094 公开查询的 where 里不要给外键加「兜底支」：`ON DELETE SET NULL` 已经兜住了，多写一支会让 Prisma 把整条 OR 算错
+- ❌ 错误：瞬间可见期的公开过滤要区分「未分组」与「各组」，写成 `OR: [未分组支, 各分组支]` 之后，我又"顺手"加了一支兜底：
+  `{ visibilityGroupId: { notIn: [所有已知组 id] } }` —— 想法是"万一库里存在指向已删组的孤儿 id，也算未分组"。
+  结果**本该隐藏的瞬间被放行**：实测 5 天前那条（全局 3 天生效）出现在公开列表里。
+- ✅ 根因：孤儿 id **在结构上不可能存在** —— 迁移 `20260927160000_moment_visibility_group` 的 `ALTER TABLE "Moment" ADD COLUMN "visibilityGroupId" INTEGER REFERENCES "MomentVisibilityGroup"("id") ON DELETE SET NULL` 已经规定「组被删 → 该列置 NULL」。那一支不是兜底，而是**多给 Prisma 一个 OR 分支**，整条条件的组合结果跟着变（多出来的分支把不该命中的行也命中了）。
+- ✅ 正确写法：只写**实际需要的**分支 —— 未分组支 `{ visibilityGroupId: null, ...全局窗口 }` + 每个组一支 `{ visibilityGroupId: <id>, ...min(全局, 组) 窗口 }`。条件的全集就是这些，见 `main/src/lib/moments/visibility.ts` 的 `buildMomentVisibilityFilter()`。
+- 🔎 回归单测：`src/lib/moments/visibility.test.ts` 的「buildMomentVisibilityFilter：绝不输出 notIn（Prisma OR 组合会算错）」。
+- 📎 案例：2026-09 瞬间可见范围。DB 级脚本 `main/scripts/verify-moment-visibility.ts` 对着 scratch 库跑真实 Prisma 条件，7/7 通过。
+
+### P-095 Prisma 不把 `OR: [{}]` / `OR: []` 当「恒真」：不带条件要返回 `undefined`，别返回空条件对象或空数组
+- ❌ 错误：把「全局永久公开（0 = 不限制）+ 没有任何可见范围组」这种"什么都不用过滤"的情况，写成 `return { OR: [{}] }`（或 `OR: []`），以为等价于不带条件。
+- ✅ 根因（实测）：Prisma 对这两种写法**都不按"恒真"处理，直接返回空集合** —— 表现是**整站瞬间全部被判为不可见**（首页瞬间模块空、瞬间页空、连点赞都 404）。这不是"少过滤一些"，而是把可见性整体判反。
+- ✅ 正确写法：没有需要过滤的条件时**返回 `undefined`**，调用方照 `where: undefined` 写（Prisma 视作不带条件）。
+  - 本项目收口在 `main/src/lib/moments/visibility.ts`：`buildMomentVisibilityFilter()` 在「全局 0 + 无分组」时返回 `undefined`；`lib/moments/query.ts` 的 `visibleWhere()` 统一转成 `Prisma.MomentWhereInput | undefined`，**不要**在调用处改写成 `{}` / `OR: []`。
+- 🔎 回归单测：`visibility.test.ts` 的「buildMomentVisibilityFilter：没有组时只剩全局条件」（断言全局 0 + 无分组 → `undefined`）。
+- 📎 案例：2026-09 瞬间可见范围（默认 `momentVisibleDays = 0` 就是这条路径 —— **默认配置下走的就是"不过滤"分支**，写错会让全新站点一条瞬间都看不见）。
+
+### P-096 分组分支必须同时乘上全局上限：`cutoff = max(全局 cutoff, 组 cutoff)`，少乘一侧长组就绕过天花板
+- ❌ 错误：把「生效天数 = min(全局, 组)」这条规则只实现在**纯函数**里（`resolveMomentVisibilityDays()` 是对的），却在 SQL 侧的分组分支里**只用了组自己的天数**算截止时刻，漏掉全局那一侧。
+- ✅ 根因：天数取 min 换算成时间就是**截止时刻取 max**（更晚的 cutoff = 更严的窗口）。分组分支只写组窗口时，长组会把窗口放得比全局还宽 —— 实测：**全局 7 天 + 一年组，漏出了 40 天前那条**（按全局本应隐藏）。
+- ✅ 正确写法：每个分组分支的 cutoff 都要 `pickStricterCutoff(globalCutoff, groupCutoff)`（任一侧 null = 该侧不限制），见 `main/src/lib/moments/visibility.ts`。**纯函数对不代表 SQL 条件对**：规则有两处实现（判定文案 + 查询条件），改一处必须同时改另一处。
+- 🔎 回归单测：`visibility.test.ts` 的「buildMomentVisibilityFilter：组比全局长时必须乘上全局上限」（全局 7 + 组 365 的天数断言与全局 7 一致）。
+- 📎 案例：2026-09 瞬间可见范围。
+
+### P-097 裸引用 CSS 类名照样"跑得起来"：`.admin-moment-*` 四个类名曾经在 admin.css 里根本不存在（P-077 的现场复现，已补 CSS 关闭）
+- ❌ 错误：写瞬间后台列表（`src/components/admin/MomentAdminList.tsx`）时用了 `.admin-moment-content`、`.admin-moment-meta`、`.admin-moment-time`、`.admin-moment-badge` 四个类名，但**从没往 `src/app/admin/admin.css` 里写过对应规则**。页面不报错、构建不报错，只是这几处静默丢掉样式（P-077 说的正是这种"裸引用不报错"）。
+- ✅ 实测证据（2026-09 发现当时，逐名比对）：`admin.css` 4988 行里 `.admin-moment` 前缀**只有 1 处命中** —— `.admin-moment-list`（与 `.admin-media-grid` 合成一条 `display: grid; gap: 16px`）。`admin-moment-content` / `-meta` / `-time` / `-badge` 命中数 **0**。也就是说这几处**完全没有规则**：`<li>` 只带 `.admin-stagger`，内容块与元信息块按 `div` 默认 `display: block` 纵向堆叠，元信息里的图标 + 时间 + 张数 + 可见期文案则按 `span` 默认行内流排——**不是**类名暗示的「元信息横向排布成一行徽章」，也不会走 `.admin-badge` 的徽章样式（那两个 `-badge` 是纯文字）。
+- ✅ 规则：**类名写完必须回查 CSS**（`Select-String -SimpleMatch ".类名"`；命中 0 就是没样式）。两种收尾都要做一次判断，别放着：
+  1. 想要那些布局 → 在 `admin.css` 里补上规则（立刻补，别留成"以后再说"）；
+  2. 不想要 → **把类名从 JSX 里删掉**，别留一串听起来有意义的假类名骗下一个人（它们看起来像"已经实现过样式"，最容易让后续 AI 以为只需微调）。
+- ⚠️ 发现当时的状态（2026-09 文档同步，未改代码）：这 4 个类名保留在 JSX 中、无对应 CSS；随后按下面的"补 CSS"收尾关闭。
+- ✅ 收尾结果（后续，选的是"补 CSS"这条路）：在 `admin.css` 补齐真实样式 —— `.admin-field__label`、`.moment-form`（含 `> .admin-field` / `> .admin-field-row`）、`.moment-form__textarea`、`.moment-form__file-input`、`.admin-moment-content p`、`.admin-moment-meta`（flex + wrap + `--admin-ink-3`）、`.admin-moment-time` / `.admin-moment-badge`（inline-flex + svg `flex: 0 0 auto`）与徽章描边（`--admin-line` / `--admin-surface-2` / 999px 圆角），全部沿用既有 `--admin-*` token，未新造颜色。
+- 🔎 回归自查脚本：`main/scripts/check-admin-classes.mjs`（跑法 `node scripts/check-admin-classes.mjs`）—— 把瞬间这几个组件引用的 `admin-*` / `moment-*` 类名与 `admin.css` 逐个比对，**缺失即非零退出**；实测「引用类名 40 个，缺失 0 个」。⚠️ 它**没有挂进 `pnpm test`**（`pnpm test` 只跑 `tsx --test`），要手动跑；新增同类组件时把文件加进脚本的 `FILES` 列表即可复用。
+- 📎 案例：2026-09 瞬间可见范围。文档同步时按 P-077 复核标识符发现（交叉验证两次：Select-String 计数 + 全量列出 `admin-moment` 出现位置，结果一致），随后按"补 CSS + 自查脚本"关闭。
+
+### P-098 服务端组件不能把函数当 prop 传给客户端组件：报错在渲染期，`tsc` 与 `next build` 都拦不住
+- ❌ 错误：后台瞬间页要让「全局可见期」面板实时预览"此刻起算最早可见发布时间"，又不想让客户端调 `Date.now()`（React 纯度规则 `react-hooks/purity` 禁止），于是把**函数**当 prop 传下去：`<MomentVisibilityPanel computeLabels={(days) => ({...})} initialDays={...} />`。打开 `/admin/moments` 直接运行时报错：`Functions cannot be passed directly to Client Components unless you explicitly expose it by marking it with "use server".`
+- ✅ 规则：跨 RSC 边界（Server Component → `"use client"` 组件）的 props 必须是**可序列化数据**：字符串/数字/布尔/null/数组/纯对象（含 `Date`）。需要"服务端算好的东西随选择变化"时，**在服务端一次性预计算成数据再传**（本次做法：把各档位天数的预览文案算成 `previewLabels: Record<string, string>` 传下去，客户端只查表）。
+  其他同样会炸的形态：传回调、传类实例（如 Prisma 结果以外的自定义类）、传 `Map`/`Set`、传 `function` 包在对象里（`{ fn: () => {} }`）。
+- ✅ 自查成本很低：`tsc --noEmit` 与 `next build` **都不会**报这个（类型上函数是合法 prop），只有**真的渲染那个页面**才会炸。所以**改了后台/前台页面的 props 后必须实际打开一次对应路由**（本次就是靠 `GET /admin/moments` 才发现的）。
+- ✅ 顺带一条同源经验：**时间只在服务端取一次**，通过 prop 下发（`now` / `nowMs`），客户端不要各自 `Date.now()`——既避免水合不一致，也避免触发纯度 lint。客户端要"过一会儿刷新剩余时间"时，放在 `setTimeout`/`setInterval` 回调里更新 state（不在 effect 体里同步 setState）。
+- 📎 案例：2026-09 瞬间可见范围后台面板。修复后实测 `GET /admin/moments` → 200 且含面板文案，无错误标记。
+
+### P-099 让区块"默认折叠"之前，先查桌面档是否把 `summary` 的点击禁掉了：`.admin-section > summary{pointer-events:none}` 会让折叠区变成打不开的死格子
+- ❌ 错误：把瞬间页「可见范围」做成默认折叠（`AdminSection defaultOpen={false}`）后，桌面端**点标题没反应、也看不到展开箭头**，等于设置没有入口。原因不在新代码，而在 `admin.css` 里 0.1.1 后台重写时加的一段：
+  ```
+  @media (min-width: 769px) {
+    .admin-section > summary { pointer-events: none; cursor: default; }
+    .admin-section > summary::after { display: none; }
+  }
+  ```
+  当时所有 `AdminSection` 都是恒展开的（`useState(true)`），桌面看起来就是"纯标题、不响应点击"，没问题；一旦有区块默认折叠，这条规则直接把它锁死。
+- ✅ 规则：桌面"不可点 + 隐藏箭头"只应作用于**已展开**的区块 → 选择器收窄为 `.admin-section[open] > summary`（箭头同理 `.admin-section[open] > summary::after`），并显式给 `.admin-section:not([open]) > summary` 恢复 `pointer-events: auto; cursor: pointer;`。这样既有页面观感不变，折叠区可点、且有箭头提示。
+- ✅ 自查：改折叠/展开行为后，在浏览器里量 `getComputedStyle(summary, '::after')` 的 `display`/`transform` 与 `details[open]`，并**真的点一次 `summary`** 看是否展开（本次实测：折叠态箭头 `transform: matrix(0.707…)`=45°、展开态 `none`+隐藏；点击后 `detailsOpen: true`）。
+- ⚠️ 同一轮踩到的环境坑（别误判成页面坏了）：headless 浏览器里 `motion` 的入场动画（`AdminWorkspace` 的 `.admin-page-swap`，`initial opacity:0`）会停在起始帧，整页内容区看起来是空白——**`/admin/settings` 这种未改动的页面也一样**。判断方法：对比一个未改动页面，或直接查 `getComputedStyle(el).opacity`；要出可用截图就先把该层 `style.opacity='1'` 再截。
+- 📎 案例：2026-09 瞬间可见范围。截图核对时发现折叠区无箭头，回查 CSS 定位到上述桌面规则。
+
+### P-100 自动化的"点击没反应"先看 dev 服务器有没有 403：Next 16 dev 把 `127.0.0.1` 当**跨源**，被拦掉的 JS chunk 会让整页不水合
+- ❌ 现象：脚本化打开 `/admin/moments`，DOM 结构完全正常（输入框、按钮、文案都在），但**点任何按钮都没反应**——`element.click()` 与 CDP 真实鼠标事件都试过，按钮上的原生 `click` 监听器计数 +1，而 React 的 `onClick` 从不执行、state 不变化、`motion` 入场动画也停在 `opacity:0`（整页看起来空白）。控制台早期是安静的，容易误判成"React 坏了"。
+- ✅ 定位方法（一次分清"代码问题"还是"环境问题"）：
+  1. 查 React 是否挂上：`Object.keys(el).filter(k => k.startsWith('__react'))`——**全页 0 个**就说明从未水合，不是组件逻辑问题；
+  2. 导航**之前**就开 `Runtime.enable` + `Log.enable` + `Network.enable` 并挂监听，再看日志：本次抓到
+     ```
+     [log.error] Failed to load resource: 403 (Forbidden)
+     [loadingFailed] net::ERR_ABORTED Script
+     ```
+     对应 dev server 日志里的 `⚠ Blocked cross-origin request to Next.js dev resource /_next/static/chunks/... from "127.0.0.1"`。
+- ✅ 规则：**本地自动化一律用 `http://localhost:3000`，不要用 `http://127.0.0.1:3000`**。Next 16 dev 只信任 `localhost`（这是 P-093 `allowedDevOrigins` 的另一面），`127.0.0.1` 会被判定为跨源并 403 掉部分 chunk；本机 HTTP 之外**不要**为了绕过它去加 `allowedDevOrigins`。截图脚本同理（`pnpm shot` 默认就是 `127.0.0.1`，遇到整页空白先换 `localhost` 复测）。
+- ✅ 顺带结论：**空白截图 ≠ 页面坏了**。本次两张"内容区全白"的截图与折叠箭头、按钮无反应是同一个根因（未水合），换 `localhost` 后一切正常且交互全通过。
+- 📎 案例：2026-09 瞬间发布区改版（朋友圈式）验收时，为了验证 popover/抽屉交互才发现；此前两轮"headless 动画不跑"的猜测是错的方向。
+
+### P-102 图片拖动排序：别用 HTML5 `draggable`，也别把数组下标编进 key
+- ❌ 错误 1（**手机端拖不动**）：`SortableImageGrid` 原来用 `draggable` + `onDragStart/onDragOver/onDrop`。HTML5 拖放**在触屏上根本不触发**，手机上永远拖不动；而且没有 `touch-action` 声明，手指移动会被浏览器当成页面滚动吞掉。
+- ❌ 错误 2（**拖动时图片重新加载**）：发布区把 key 写成 `${image.key}-${index}`——**下标进了 key**。重排后每张 key 都变，React 认为元素不同 → `<img>` 全部卸载重挂 → 浏览器重新请求图片。
+- ✅ 修法：
+  1. 用 **Pointer Events** 自己实现拖动（`onPointerDown/Move/Up` + `setPointerCapture`，用 `document.elementFromPoint` 命中 `[data-sort-index]` 判断落点），桌面与触屏同一套代码。
+  2. 手柄加 `touch-action: none`（`.admin-sort-grid__handle`），否则手机上收不到 pointermove。
+  3. key 用**稳定 id**（本项目按对象身份分配一次：Symbol 挂载 + 自增序号），**永远不要把下标编进 key**。
+  4. 拖动过程中只改内部 `dropIndex` 做落点提示，**指针抬起时才 onChange 一次**，避免拖动途中反复搬动 DOM。
+  5. 体验两件：跟随指针的缩略图 `.admin-sort-ghost`、落点高亮 `.is-drop-target`。
+- ✅ 实测口径（隔离库 + 真实上传 2 张图）：拖动顺序改变、图片集合未变、拖动中出现跟手缩略图与落点提示、**拖动期间新增图片请求数 = 0**。
+- 📎 案例：2026-09 瞬间发布区改版（用户反馈"手机端没法拖动 + 拖动时图片会重新加载"）。
+
+### P-101 弹层别默认往上展开：`bottom: 100%` 会顶到页面标题行，用户看到的是"卡片被上面挡住了"
+- ❌ 错误：发布区操作条在页面内容区靠上位置，可见范围小卡片原本写成 `position: absolute; bottom: calc(100% + 8px)`（向上展开）。卡片高约 300px，展开后顶部正好顶进 `.admin-page-head` 的 `h1`（页面标题）所在区域——用户的原话是「卡片被挡住了」，看起来像被标题压住。
+- ✅ 定位方法：在浏览器里对弹层自身取 `getBoundingClientRect()`，然后对它的 `center` / `top` / `bottom` / `left` / `right` **五个采样点**跑 `document.elementFromPoint(x, y)` 并判断 `pop.contains(hit)`。本次 `top` 点命中的是 **`H1.`**、`inside: false`，其余四点都在卡片内 → 一眼锁定"上方被标题覆盖"。
+- ✅ 规则：**靠页面顶部的操作条，弹层一律向下展开**（`top: calc(100% + 8px); bottom: auto; left: 0`）；同时给宽度上限 `width: min(300px, calc(100vw - 96px))`，避免窄屏向右溢出。向上展开只适合"弹层在屏幕下半部"的场景。
+- ✅ 复测口径（两档都量）：桌面 1400 与手机 430 各测一次，确认 `offscreenLeft/offscreenRight = false`、`outsideCard = false`，且五采样点 `inside` 全为 `true`。
+- 📎 案例：2026-09 瞬间发布区改版。修复后桌面/手机两档五点全中，截图确认卡片完整显示在按钮下方。
+
+### P-103 「清空数据」是一份手写的表清单：后加的表不会被清（可见范围组、笔名都活了下来）
+- ❌ 错误：`lib/admin/data-clear.ts` 的 `clearDatabase()` 是一串手写 `deleteMany`。数据清理功能（2026-09-06）之后新增的 `PenName`（2026-09-25）与 `MomentVisibilityGroup`（2026-09-27）**没有人回头补进清单**，于是「清除所有数据」跑完，可见范围组还在（用户在后台现场发现）。
+- ✅ 根因不是漏了一行代码，而是**没有覆盖守卫**：清理清单和 `schema.prisma` 之间没有任何东西在比对，加表时不会报错，表就静默活下来。
+- ✅ 修法：
+  1. `lib/data-clear/coverage.ts` 显式登记三档：删除（`DATA_CLEAR_DELETE_ORDER`，顺序 = 依赖顺序，`Comment` 先删回复）/ 保留（`Setting`、`HomeModule`、`HomePlacement`）/ 按条件删（`AdminUser`）。
+  2. `lib/data-clear/coverage.test.ts` 三方比对：schema 全表 ↔ 覆盖清单 ↔ `data-clear.ts` 里真实的 `tx.X.deleteMany(` 调用。漏登记、登记了没删、删了没登记、顺序不对，`pnpm test` 都会失败。
+  3. 扫描 `data-clear.ts` 时**必须先去掉注释**：注释掉的 `deleteMany` 也会被正则当成"删了"（负向验证真踩到——注释掉 `penName.deleteMany()` 后用例仍然全绿，补了 `stripComments()` 才拦住）。
+- ✅ 验证口径（本次实做）：把 `PenName` 从清单里删掉 → 用例失败；注释掉 `penName.deleteMany()` → 用例失败；恢复 → 全绿。DB 级用 `scripts/verify-data-clear.ts` 在 scratch 库铺齐全表数据后调 `clearDatabase()`，7/7 通过（可见范围组 1 → 0、笔名 1 → 0，`Setting`/`HomeModule`/`HomePlacement` 含新写入的行原样保留）。
+- 📎 案例：2026-10 用户「为什么清除所有数据后可见范围组还在？检查一下其它的会不会也有这种情况」。**同类风险**：任何"手写枚举全表"的地方（备份清单、导出、统计）都要配一个对着 schema 的守卫，别指望下次记得。
+
+### P-104 概览页半宽行别用 `auto-fit`；服务端造的插槽元素塞进动态子元素数组必须给 key
+- ❌ 错误 1（**版面跑偏**）：`.admin-dash__wide` 原来用 `repeat(auto-fit, minmax(320px, 1fr))`。卡片从 2 张加到 4 张后，1200px 宽的舞台能塞下 3 列 → 排成 **3+1**，右下角空一块，「两两成行」直接没了。`auto-fit` 的列数跟**容器宽度**走，不跟卡片数走。
+- ✅ 修法：`repeat(2, minmax(0, 1fr))` 固定两列 + `> .admin-dash__slot:last-child:nth-child(odd) { grid-column: 1 / -1 }`（奇数张时最后一张占满整行），这样「隐藏卡片 = 不渲染」的约定仍然不留空洞；≤768px 单列。
+- ❌ 错误 2（**dev 报错，构建不报**）：卡片槽位写成 `<div className="admin-dash__slot">{content}<button/></div>`，`content` 是服务端组件造的元素 → React dev 报
+  `Each child in a list should have a unique "key" prop … Check the render method of DashboardView. It was passed a child from AdminDashboardPage.`
+  **`tsc`、`next build`、截图都看不出来**，只有 dev 控制台与左下角「1 Issue」角标。定位靠 A/B：用 `PUT /api/admin/settings` 逐张关卡片再复看控制台，才排除掉新加的那张卡、锁定是 `{content}` 这个动态子元素数组。
+- ✅ 修法：**带 key 的 Fragment** 包住服务端元素——`<Fragment key="card">{content}</Fragment>`，静态兄弟节点也补 `key="hide"`。Fragment 不产生 DOM 节点，`> .admin-card` / `> :not(.admin-dash__hide)` 这些直接子选择器不受影响（改完量了 8 张卡的盒子：位置尺寸与改前一致）。
+- ✅ 规则：凡是「服务端造好内容、client 组件只负责摆位」的插槽式渲染，都要当成数组子元素对待，逐个给 key；改完 dev 页面的角标应为 0 issue。
+- 📎 案例：2026-10 概览页加「快速发瞬间」卡（占原阅读量最高位置、阅读量最高下移、最近文章改半宽）。
+
 ## 追加模板
 
 ```markdown
@@ -582,3 +708,233 @@
 - ✅ 规则：（正确做法，含文件路径）
 - 📎 案例：（关联里程碑/日期）
 ```
+
+### P-105 Prisma 迁移里的 `DROP TABLE` 重建会顺着 `ON DELETE CASCADE` 吃掉关联表；dev server 占库时 `migrate` 一定失败
+- ❌ 错误：给「静态页面」加迁移时直接用了 `prisma migrate dev` 生成的 SQL。它除了建 `StaticPage`，还**顺带重建了 `Post` 表**（`CREATE TABLE new_Post` → `INSERT SELECT` → `DROP TABLE "Post"` → `RENAME`）——那是一段与本次功能无关的「列顺序规范化」churn。`DROP TABLE` 触发了 `PostTag.postId` 上的 `ON DELETE CASCADE`，**实测 `PostTag` 17 行 → 0 行**（Post↔标签的关联被静默删光）。
+  - 同一次还踩了两个连带的坑：① `prisma migrate dev` / `deploy` 在 **Next dev server 常驻占库时必然 `database is locked`** —— Prisma schema engine 的 `busy_timeout` 为 0，不会等锁，而 better-sqlite3 可以等；② 我用「拷回主库文件」的方式回滚，**没清 `-wal`/`-shm`**，旧 WAL 在下次打开时被重放（且文件被 dev server 持有、`rm` 直接 EPERM），于是回滚看起来"生效了"其实没有。
+- ✅ 规则：
+  1. **生成迁移后逐行读 SQL**。出现 `DROP TABLE` / `CREATE TABLE "new_*"` 时先问：这段是本次功能必需的吗？不是就删掉，只留必需 DDL。`Post` 那次重建纯属列顺序差异（schema 定义顺序 vs 迁移历史的追加顺序），不影响功能。
+  2. 真要重建表，先在**副本**上按 Prisma 的执行方式验证数据存活：`PRAGMA foreign_keys=OFF` **必须在事务外**执行——在事务里它是**静默 no-op**，`DROP TABLE` 会带着级联删干净（我第一次验证脚本就是这么把自己骗过去的）。
+  3. dev server 在跑时不要跟它抢库：要么停掉它再用 `migrate deploy`，要么用 `better-sqlite3` + `busy_timeout` 直接应用 DDL（写完按 Prisma 口径补 `_prisma_migrations` 记录：checksum = `migration.sql` 的 sha256；`prisma migrate status` 应报 `Database schema is up to date!`）。
+  4. 回滚**不能只拷主库文件**：`-wal`/`-shm` 必须一起处理，否则旧帧会被重放。清不掉（EPERM = 有进程持句柄）就别硬来，改用 SQL 级修复。
+  5. 动库前先做**可验证的快照**（记录 `Post`/`PostTag`/`Upload`… 的行数），改完逐项比对——这次正是靠它发现 `PostTag` 归零。
+- 📎 案例：2026-10 静态页面功能。最终迁移只保留 `CREATE TABLE "StaticPage"` + 唯一索引（见 `prisma/migrations/20261001061500_static_page/migration.sql` 的注释）。
+
+### P-106 别拿「部分命令输出」当事实：一次误读差点凭空造出一个假 bug 并改库
+- ❌ 错误：诊断 `Post.recommend` 是否存在时，我先跑了一个临时脚本，输出里 `Post` 的列清单**其实含 `recommend`**，我在汇总时漏看了它，据此判定「迁移标了 applied 但列没建上 = schema 漂移」。接着**基于这个假前提写了一支 reconcile 迁移**（`ALTER TABLE "Post" ADD COLUMN "recommend"`），差一步就改名应用；应用时 SQLite 直接报 `duplicate column name: recommend` 才暴露真相。
+- ✅ 规则：
+  1. **结论要落到"逐项比对"，不要落到"我扫了一眼"**：判断某个字段/列/类名存不存在，用 `includes()` / `filter` 出**缺失清单**，让结果自己说话，而不是肉眼看一长串输出。这次用 `required.filter((name) => !postCols.includes(name))` 一眼就否掉了假前提。
+  2. **矛盾信号必须当红灯**：迁移记录显示 applied、schema 文件也写着该字段，但"你判定列不存在"——这时候两个来源已经打架了，正确动作是**先停下来核对**，而不是顺着其中一个来源往下修（我当时顺着"列缺失"写迁移了）。
+  3. 造出新的迁移/SQL/回滚脚本后，先用**只读探针**验证前提（`pragma_table_info`、`sqlite_master`），再执行写操作。
+  4. 与 P-077 同源：**工具输出本身也要交叉验证**，包括"我读工具输出"这一环。
+- 📎 案例：2026-10 静态页面功能（与 P-105 同一次事故链）。
+
+### P-107 静态页面的目录冲突：`notFound()` 让位要在应用层显式做，且 `notFound()` 不是硬 404
+- ❌ 错误：给静态页面做「自定义目录」时，只在前端做了目录名格式校验。风险是目录取成 `posts` / `admin` / `api` 这类已被框架路由占用的段——**`src/app/[dir]/[slug]` 在 Next 里优先级最低**，这些地址永远轮不到静态页处理，用户会以为"建成了却打不开"。
+- ✅ 规则（三闸缺一不可）：
+  1. **写入闸**：保留清单 `lib/pages/directories.ts` 的 `RESERVED_SEGMENTS` 同时管目录与 slug，分 `block`（硬拒）/ `warn`（提示但放行）两档。判定**顺序**是先保留清单再字符形态——反过来的话 `robots.txt` / `rss.xml` 会先撞"只允许小写字母数字-_"的规则，用户拿到的提示是"格式不对"，而真因是它占了 robots / RSS 地址。
+  2. **运行期让位**：`src/app/(static)/[dir]/[slug]/page.tsx` 在目录命中保留段时直接 `notFound()`，把地址交给框架路由，**不自作处理**。
+  3. **回归守卫**：`lib/pages/directories.test.ts` 读真实的 `src/app/` 顶层条目，与保留清单比对——将来新加一个顶层栏目（例如 `/notes`）而忘了登记，`pnpm test` 直接失败并提示"同名目录下的静态页面会被框架路由顶掉"。**这是"框架路由完全优先"唯一可自动验证的一环。**
+- ⚠️ **`notFound()` 不等于硬 404（本应用实测）**：页面组件里调 `notFound()` 返回的是 **200 + 应用的 404 页**；只有完全没匹配到路由才真给 404。既有的 `/categories/[slug]` 同样如此（`/categories/no-such-category` → 200；`/definitely-not-a-route-xyz` → 404）。所以写这类验收时**断言"是否渲染了 404 页 / 是否泄漏了页面内容"，别死盯 status code**——否则会把既有行为误判成自己新写的 bug。
+- 📎 案例：2026-10 静态页面功能（用户要求「目录完全自定义，但创建和运行都要检查冲突，Next 路由完全优先，冲突时要能随时停掉」）。
+
+### P-108 静态页面是独立文档：`RootLayout` 的页头页脚**卸载不掉**，只能用作用域 CSS 盖
+- ❌ 错误：以为给静态页单独挂一个嵌套 `layout.tsx` 就能不套站点页头页脚。**Next 里父布局无法被子布局卸载**——`src/app/layout.tsx` 已经在最外层渲染了 `SiteHeader` / `Footer`，嵌套 layout 只是多包一层，页头页脚照样在。
+- ✅ 规则：静态页路由组 `src/app/(static)/layout.tsx` 里注入一段**带作用域前缀**的样式把这三块藏掉（`.site-navbar` / `.mobile-drawer` / `.site-footer`），并复位 `body` 的顶部留白：
+  ```css
+  body:has(.static-page-shell) .site-navbar,
+  body:has(.static-page-shell) .mobile-drawer,
+  body:has(.static-page-shell) .site-footer { display: none !important; }
+  ```
+  `:has()` 的作用域就是「静态页这一棵子树」，其它页面 DOM 里没有 `.static-page-shell`，不受影响。**要动 `RootLayout` 才能解决的话，代价是把全站每个路由的文件位置都搬进路由组**，收益与风险不成比例。
+- ✅ 另一个应用层别自作聪明：静态页 JS 运行时**不要去 patch `setTimeout` / `EventTarget.prototype.addEventListener`** 做"全局副作用回收"——那会连 React 与全站的监听一起劫持。定时器/全局监听残留属于管理员代码自负其责的部分，**写进编辑器提示里说清楚**，而不是假装框架能兜住。
+- 📎 案例：2026-10 静态页面功能（每页 HTML/CSS/JS 三栏，复用首页自建模块那套直接注入的决策）。
+
+### P-109 `prisma generate` 之后不重启 dev server，新模型在**已经跑着的那个进程里永远是 `undefined`**
+- ❌ 错误：静态页面交付后，用户打开 `/admin/pages` 报 `Cannot read properties of undefined (reading 'findMany')`（`prisma.staticPage.findMany`）。这个报错**很容易被误判**成「迁移没应用 / 表不存在 / 代码写错了」——实际逐项核对：库里 `StaticPage` 表在（0 行）、迁移记录 `finished_at` 正常、生成的客户端里 `prisma.staticPage` 也在。**唯一不对的是那个进程**：dev server 比 `prisma generate` 早起了 7 分钟。
+- ✅ 规则：
+  1. **先分状态再动手**：`prisma.<model>` 是 `undefined` ⇒ 进程里的客户端不认识模型（**修法是重启进程**）；报 `P2021 / no such table` ⇒ 库里缺表（**修法是跑迁移**）。两者完全不同的修法，别互相顶替，也别拿其中一个的现象去改另一个。
+  2. dev 下 `PrismaClient` 挂在 `globalThis`（`lib/db.ts` 的 `globalForPrisma`），HMR 只会**复用旧实例**——**热更新救不了，必须重启进程**；`prisma generate` 只改磁盘文件，改不了已经加载进模块图的类。
+  3. **分进程定位**：同一个函数「在这个终端 500、在一个新进程里正常」时，不要再翻代码和数据库了，根因就是进程年龄。新进程跑一次真实函数（`tsx` 直接调 `listStaticPages()`）比读十分钟代码都快。
+  4. 新模型一律经 `lib/db-schema.ts` 的 `requirePrismaModel()` 取委托，缺失时抛 `SchemaNotReadyError`（`SCHEMA_MISSING`，由 `handleAdminError()` 转成 JSON），提示直接写「重启 `pnpm dev`」——把这条坑的**排查成本从"翻代码"降到"照做"**。
+- 🔎 **同一个进程里通常不止一处坏**：这类"进程早于 generate"是**全局**状态，凡是读新模型的入口都会一起坏。本次顺带发现用户的 `/sitemap.xml` **也是 500**（它也读 `StaticPage`），只是没人打开过。排查时要把该模型的所有读入口都数一遍，别只修用户报的那一个。
+- 📎 案例：2026-10-01 静态页面功能交付后。时间线——dev server 12:11 启动 → 迁移 13:15 应用 → 客户端 13:18 生成 → 13:21 构建 → 用户 13:37 打开后台即报错。同一份代码在新进程里 `listStaticPages()` 与 `listEnabledStaticPages()` 都正常返回。
+
+### P-111 编辑器页「无顶栏」只在桌面档成立：竖屏下没有上下导航 = 进得去出不来
+- ❌ 错误：`.admin-workspace--editor` 一路做到底——桌面档不要顶栏（画布铺满，P-033）是**对的**，但顺手把手机档的底部 tab bar 也 `display: none` 掉、顶栏又在 JSX 里直接 `{editor ? null : …}` 不渲染。结果竖屏下 `/admin/home` 只剩编辑器自己那条「设置/画布」分段控件，**上方和下方的全局导航全没了**（用户报的原话：「失去了下方和上方的其它都有的导航栏」）。
+- ✅ 规则：
+  1. **桌面排版决策不要顺手带到手机档**。「桌面不要顶栏」的理由是画布要铺满；手机档的顶栏 + 底栏是**唯一的全局导航**，理由不成立。要按视口分别决定（`@media (min-width: 769px)` 里收顶栏，手机档保留）。
+  2. **判据是「这一页自己有没有返回入口」**，不是「它是不是编辑器」。写文章自带头部与「返回文章列表」（`.post-workspace__back`），可以不保留；首页画布、模块编辑什么都没有，必须保留。新增编辑器页时先问这一句。
+  3. 保留底栏的同时**必须给底栏让出高度**（`.admin-workspace--editor-chrome` 的 `padding-bottom: calc(var(--admin-tabbar-h) + env(safe-area-inset-bottom))`）——编辑器页是 `height:100dvh; overflow:hidden`，不让高度会被底栏压住画布底部。同权重选择器**靠源码顺序覆盖**，这条必须写在 `.admin-workspace--editor` 之后。
+  4. 验证别靠眼睛：在真页面里量「编辑区底边 vs 底栏顶边」。自检用 `pnpm shot` 对着**真 `admin.css`** 的 DOM 复刻页量（见下方案例），结论要写成 `overlap=0px` 这种数字。
+- ⚠️ **复刻页做 CSS 验收时，别忘了 `globals.css` 的全局复位**：`*{box-sizing:border-box}` 与 `body{margin:0}` 缺任何一个都会算错——少了 `body{margin:0}` 会凭空多出 8px，把「没被底栏压住」误判成压住（实测 `overlap=8px`，补上复位后是 `0px`）。`admin.css` 是独立文件、不复位这些。
+- 📎 案例：2026-10 竖屏首页管理导航缺失。修后手机档（504×805）实测 `tabbar=shown topbar=shown padB=56px overlap=0px`（`edB=749 / barT=749`，编辑区底边正好落在底栏顶边），桌面档（1370×805）仍是 `tabbar=hidden topbar=hidden padB=0px`，即 P-033 的桌面排版未动。
+
+### P-112 删掉一个入口之后，指向它的文案就变成假话了：单卡「叉掉」必须自带回头路
+- ❌ 错误：概览页每张卡片右上角有个 ✕（`admin-dash__hide`，点一下把该卡写进 Setting `dashboardCards` 并隐藏）。用户叉掉一张卡后卡就没了，**只能去前台导航栏的「外观」图标里勾回来**；而空态文案写的是「用顶栏「外观」重新勾选」——**后台标题行早就按用户要求把「外观」按钮删掉了**（`admin.css` 里明写着"曾短暂放过…两个都按用户要求删掉了"）。于是用户被告知去点一个不存在的控件，只能来问「叉掉怎么恢复」。
+- ✅ 规则：
+  1. **删入口时要连文案一起改**。入口搬走后，任何"用顶部/那个按钮"的说法都必须重写成**真实存在**的路径（本例：前台导航栏的「外观」图标 → `/admin?appearance=1` → 「概览卡片」）。规范层的事实源在 [admin-ui-rewrite-spec.md](admin-ui-rewrite-spec.md) 的「入口演进（三次）」一节——**改入口先改那里，再全局搜一遍旧说法**。
+  2. **破坏性/隐藏性操作要在原地给回头路**。✕ 在卡片上，恢复入口在别的页面，这个不对称就是坑。做法：只要隐藏数 > 0 就在网格里出现一行 `已隐藏 N 张卡片 · 全部显示`（空态另给「恢复默认」）。判据是"误触之后能不能一眼找到回来的路"，不是"功能上有没有办法恢复"。
+  3. **这行提示要放在子元素列表的最后**：`.admin-dash > *:nth-child()` 用它做入场延迟，插在前面会让所有卡片的延迟整体错位。
+  4. 两个语义别混：**全部显示**（把叉掉的都放出来）≠ **恢复默认**（回到出厂默认）。入口文案与实现都要分开，否则将来默认值改成"只开一部分"时，「全部显示」会变成假按钮。
+- 📎 案例：2026-10 用户提问「仪表盘卡片上的叉是什么鬼？叉掉怎么恢复」。（同类历史：P-077 的静默丢样式、P-091 的浮层被盖住——都是"看起来没坏、实际用户找不到"。）
+
+### P-110 「按钮点了没反应 / 图不显示」可能根本不是客户端的 bug：宿主地址不在 `allowedDevOrigins` 时，Next dev 客户端会降级到**不 hydrate**
+- ❌ 现象（Android 客户端 / GeckoView 壳，加载 `http://10.0.2.2:3000`）：首页**背景图不显示**，其余元素（导航、卡片、标签、页脚）全部正常；登录页输入账号密码后**点「登录」毫无反应**——页面看着像没收到点击。
+- 🔍 **决定性取证**（logcat）：`handleMessage GeckoView:LocationChange uri=http://10.0.2.2:3000/admin/login?username=admin&password=admin123456`。
+  这是**原生 GET 表单提交**（账号密码出现在 query 里）。而 `components/admin/LoginForm.tsx` 的 `handleSubmit` **第一句就是 `event.preventDefault()`** —— 只要那个 handler 被绑定过，原生提交就绝不可能发生。**结论：React 从未 attach 事件 = 页面没 hydrate**，不是"点击无效"，更不是 App 的触摸/视图问题。同一根因也解释了背景图：`.home-backdrop__img{opacity:0}`，只有 `HomeBanner` 的 `onLoad` 给元素加上 `.is-ready` 才显形（`components/home/HomeBanner.tsx:118` + `app/globals.css:708-719`）——JS 不跑，图永远透明。**两个症状，一个根因。**
+- ❌ 排查中走过的两条死路（留档省时间）：
+  1. 怀疑 `/_next/static/*` 被 Next 的跨源拦截 403。实测**确实 17/17 全 403（连 CSS 都是）**——但那只针对**带 `Origin` 的请求**（`next/dist/server/lib/router-utils/block-cross-site-dev.js:107` 只在 `Origin` 存在且不在白名单时拦）。页面的 `<script src>` / `<link rel=stylesheet>` 是同源加载、**不带 `Origin`** → 全部 200。
+     **判据：页面样式完整渲染 ⇒ CSS 拿到了 ⇒ 静态资源通路是好的，别再往这条查。**
+  2. 怀疑远端背景图挂了。主机侧 `curl` 那张 Bing 图是 `200 image/jpeg 337076` 字节，**图是好的**。
+- ✅ 根因：`main/next.config.ts` 的 `allowedDevOrigins` 当时只写了 `["192.168.2.*", "*.ts.net"]`，**没有 `10.0.2.2`**。HMR 的 `ws://…/_next/hmr` 握手**带 `Origin`**，命中拦截 → 403 → Gecko 报
+  `The connection was refused when attempting to contact ws://10.0.2.2:3000/_next/hmr`，每 2 秒重试一次，并伴一条 `uncaught exception: undefined`。dev 客户端在这个状态下**降级到不 hydrate**。
+- ✅ 修法：`allowedDevOrigins` 加上宿主地址（`"10.0.2.2"`，`*` 恰好替换一段标签，也可写 `"10.0.2.*"`），**然后完全重启 dev server**（配置在启动时读取，日志里出现 `✓ Running next.config.ts took Nms` 才算生效）。
+- ✅ 验收判据（三条同时成立才算修好，别只看"能点了"）：
+  1. logcat 出现 `[HMR] connected` **且** 出现 `Download the React DevTools for a better development experience`（后者是 React 真的启动了的标志）；
+  2. `_next/hmr` 报错数 = 0、`JavaScript Error` 数 = 0；
+  3. 点登录**不再**产生 `?username=…&password=…` 的 LocationChange，且能进 `/admin`。
+- ⚠️ **这是 dev-only 的降级路径**：生产构建没有 HMR 客户端，不存在这条失效链。所以「真机上按钮也点不动」时要先问清：它连的是 dev server 还是生产构建。
+- 💡 一条能加速定位的可用性事实：**Next dev 客户端会劫持页面 `console.*` 并排队等 HMR socket 转发**（`_forwardlogs.logQueue.onSocketReady`，见 `next/dist/client` 的 `0gsm_next_dist_client_*.js`）。socket 不通时页面 console **一条都不会落 logcat** —— 这本身就是「dev 客户端没起来」的信号，**别误读成「JS 没跑」**（真没跑的话连 HMR 报错都不会有）。
+- 📎 案例：2026-10-01 Android 客户端（GeckoView 壳）联调。用户同时报「模拟器里背景图加载不出来，其它元素没啥问题」与「登录界面点击登录没反应」，两者同一根因。
+- 🔎 **同类风险**：凡是「换了宿主/域名，但 `allowedDevOrigins` 没跟上」的场景都会复现同一组症状——换网段、换模拟器、走 Tailscale、真机连 LAN、改用云主机域名。**新宿主地址要同时进 `allowedDevOrigins` 与 Android 的 `START_URL`**，只改一侧就是给下一次留同一个坑。见 [docs/android/debug.md](android/debug.md)。
+
+### P-113 打包拒绝名单把 `.env.example` 一起拒了：空机首装 `install.sh` 当场中断
+- ❌ 现象（2026-10-01 首次 Linux 上机）：照 [INSTALL.md](../main/INSTALL.md) 在空机解压 `pnpm pack:update` 的 tar.gz，跑 `bash scripts/install.sh`，**连依赖都没开始装就退出**：
+  ```
+  cp: cannot stat '.env.example': No such file or directory
+  ```
+  解压后的根目录里确实没有这个文件（只有 `package.json` / `src/` / `scripts/` / `INSTALL.md` …）。
+- ✅ 根因：`main/src/lib/update/paths.ts` 的拒绝名单写的是「`.env` 与一切 `.env.*`」，模板文件 `.env.example` 命中 `posix.startsWith(".env.")` 被排除；而 `main/scripts/install.sh` 在 `set -euo pipefail` 下直接 `cp .env.example .env`——源文件不存在 → `cp` 返回 1 → **整脚本退出**。打包侧 `collectPackFiles` 与覆盖侧用的是同一条 `hasDeniedPrefix`，所以每一份历史包都缺这个文件。`pnpm setup` 反而有兜底（`init-production.ts` 的 `readEnvFile` 读不到模板时写最小 `.env`），**只有 `install.sh` 是硬依赖**。
+- ✅ 规则：
+  1. **模板随包，密钥不随包**。拒绝名单只该拦真会装密钥的文件（`.env`、`.env.local`、`.env.production` …），`.env.example` 必须白名单放行——它是首装链路的一环，不是秘密。
+  2. **首装脚本不许硬依赖「包里有某个文件」**。模板缺失要自己兜底（现在会写最小 `.env`），否则一条打包规则的小改动就能让空机部署彻底走不下去。判据：**把包砍到只剩 `package.json` + `src/` + `scripts/`，`install.sh` 仍要能跑完**。
+  3. **改拒绝名单必须补断言钉住**：`update.test.ts` 里 `.env.example` 可打包，`.env` / `.env.local` / `.env.production` 不可打包。
+- 🩹 已踩坑的机器上绕过（在解压目录执行，再跑安装脚本）：
+  ```
+  printf 'DATABASE_URL="file:../data/blog.db"\n' > .env
+  bash scripts/install.sh
+  ```
+  `SESSION_SECRET` 由随后的 `pnpm setup` 生成写回（`init-production.ts` 见长度不足或占位符就重新生成），所以这里只补 `DATABASE_URL` 就够。
+- 📎 案例：2026-10-01 首次上机部署（Debian，程序装在 `/root` 而非 `/opt/myblog`；tar 已解压、swap 已加）。绕过后继续安装。
+
+### P-114 脚本（`tsx scripts/*.ts`）里别调应用层的写库函数：`revalidatePath` / `unstable_cache` 都要 Next 请求上下文
+- ❌ 现象（2026-10-01 写 Halo 导入脚本 `scripts/import-halo.ts`）：想「复用后台的发文/发瞬间逻辑」，第一版直接调 `createAdminPost()` / `createAdminMoment()`，`npx tsx` 一跑就抛
+  ```
+  Invariant: static generation store missing in revalidatePath /
+  ```
+  换成「只读也复用」的 `listPublishedPosts()` 验收，同样炸：
+  ```
+  Error: Invariant: incrementalCache missing in unstable_cache async()=>{…}
+  ```
+  两处都不是数据问题：**报错来自 `next/cache`**，而不是 Prisma。
+- ✅ 根因：`lib/admin/revalidate.ts` 的 `revalidatePublicContent()`（`revalidateTag` / `revalidatePath`）与 `lib/cache/public.ts` 的 `cachedPublic()`（`unstable_cache`）都是 **Next 请求级 API**，靠请求上下文里的 store 工作。CLI 进程没有那个 store；而且第一个是**先写库再抛**（记录已进库、调用方却收到异常），拿它包 try/catch 还会把成功误报成失败。
+- ✅ 规则：
+  1. **脚本里出现 `next/cache` 的导入就是雷**。写库要么直接 `prisma.*`，要么把那层包装成「可注入的 revalidate 回调」，让 CLI 传一个 no-op。
+  2. **能复用的复用，别因为这一条就整段重写**：`normalizePostContent()`、`allocatePublicId()`、`originalMediaKey()`、`finalizeUpload()`、`loadHaloBundle()` 这些纯函数/存储层在 CLI 里都正常，只有碰 `next/cache` 的那几层不行。
+  3. **导入完必须重启应用**才是「立刻可见」：公开页缓存 `revalidate=60` 且 tag 在**进程内存**里，`pm2 restart myblog` 最省事（不重启就等最多 60 秒）。
+  4. 脚本自己读 `.env`：`process.loadEnvFile()`（Node ≥22 内置）要在 import `lib/db` **之前**执行，否则 `DATABASE_PATH` 已经算完了——所以应用层模块用动态 `await import()`。
+- 📎 案例：2026-10-01 Halo 备份导入（见 [halo-import-spec.md](halo-import-spec.md)）。同类风险：任何「一次性数据修复/批量导入/报表」脚本只要写库并想立刻看到前台效果，都会踩同一条。
+
+### P-115 程序装在 `$HOME`（`/root`）里：pm2 的 `.pm2/rpc.sock` 落进项目根 → `next build` 直接被 Turbopack 读 socket 打崩，更新从此永远失败，而且会**每小时 1 次的重启死循环**
+- ❌ 现象（2026-10-01 首次上机，程序解压在 `/root`）：后台导入更新包 → 应用看起来在跑、但过一会儿就重启一次；`ss -ltnp` 查不到 3000 端口，`curl 127.0.0.1:3000` 连接不上；`pm2 logs` 里是这段循环：
+  ```
+  [myblog] 开始应用程序更新 {"name":"myblog-update-import-…","mode":"start"}
+  [myblog] 依赖有变化，开始 pnpm install
+  [myblog] 预约更新返回 1，仍尝试启动应用
+  … FATAL: An unexpected Turbopack error occurred …
+  Caused by: - reading file "/root/.pm2/rpc.sock" - No such device or address (os error 6)
+  ```
+- ✅ 根因链（三段，缺一段都不会这么表现）：
+  1. **项目根 = `/root`**，而 pm2 的运行时目录 `/root/.pm2`（里面有 Unix socket `rpc.sock`）就在项目根里。`next build` 的文件扫描读到 socket 直接 panic → **这台机器上任何一次构建都会失败**（首次装机时 `.pm2` 还不存在，所以 `install.sh` 那次 `pnpm build` 是成功的——坑要等第一次发版才炸）。
+  2. `lib/update/apply.ts` 的顺序是 **先 overlay 覆盖程序文件 → pnpm install → prisma migrate deploy → next build**。构建失败时 `.next` 会从 `.next.bak` 回滚，但**`src/` 已经是新代码了** → 机上一度是「新源码 + 旧构建」。
+  3. 失败路径**不执行** `cancelPendingUpdate()`（它只在成功后调用），`data/update-pending.json` 里 `restartAt` 仍是过去时间 → `lib/scheduler/index.ts` 的 `checkDueUpdateRestart()` 每 60 秒判定「已到期」→ `scheduleAppRestart()` → 进程退出 → pm2 拉起 → boot 再尝试更新（再失败）→ **永久循环**，站点的在线窗口只够撑到下一次重启。
+- ✅ 规则：
+  1. **程序目录永远不要用 `$HOME`**：标准布局是 `/opt/myblog`（pm2 家目录 `~/.pm2` 与项目互不包含）。已经装在 `/root` 的，把 pm2 家目录挪出去也行：`pm2 kill && rm -rf /root/.pm2 && mkdir -p /var/lib/pm2`，之后所有 pm2 命令带 `PM2_HOME=/var/lib/pm2`（写进 `/root/.bashrc`，并 `pm2 startup` 刷新一次开机自启，否则重开机又回到 `/root/.pm2`）。
+  2. **循环的开关是 `data/update-pending.json`**，不是 pm2：`rm -f data/update-pending.json data/update-state.json` 等价于后台的「取消更新」。先修好构建能过的前提，再清这个文件，最后 `pm2 start/restart`。
+  3. **构建必须先手动验一次**：`NODE_OPTIONS="--max-old-space-size=768" pnpm build` 在停服状态下跑通，再去碰 pm2——否则你分不清是「更新流程坏了」还是「构建本来就不可能成功」。
+  4. 排查顺序：`pm2 list`（看 ↺ 与 uptime）→ `ss -ltnp | grep 3000`（没监听 = 多半在循环里）→ `pm2 logs --lines 40 --nostream`（找 `FATAL` 与 `预约更新返回`）→ 看它打印的 `/tmp/next-panic-*.log`。
+- 📎 案例：2026-10-01 腾讯云轻量（Debian，安装到 `/root`）。P-113 的案例备注里那句「程序装在 `/root` 而非 `/opt/myblog`」就是同一个隐患的前半段。
+
+### P-116 生产模式 cookie 带 `Secure` + 站点跑明文 HTTP = 后台永远登不进去（表现是「CSRF 校验失败」）
+- ❌ 现象（2026-10-01 同一台机器）：后台登录页正常显示，点「登录」后红字 **`CSRF 校验失败，请刷新后重试`**；账号密码确认无误。服务器上 `curl` 直连却是 200：
+  ```
+  set-cookie: myblog.session=…; Secure; HttpOnly; SameSite=lax
+  set-cookie: myblog.csrf=…;     Secure; SameSite=lax
+  ```
+- ✅ 根因：`lib/auth/session.ts` 与 `lib/auth/csrf.ts` 都按 `process.env.NODE_ENV === "production"` 给 cookie 打 `Secure`（pm2 的 `ecosystem.config.cjs` 设了 `NODE_ENV=production`），而 `ss -ltnp` 显示 nginx **只有 :80、没有 :443**。浏览器在 `http://` 下**直接丢弃 `Secure` cookie** → 每次请求都是全新会话 → 登录 POST 缺 `myblog.csrf` → `proxy.ts` 返回 403 `CSRF_INVALID`。`curl` 不理会 `Secure`，所以命令行怎么试都是好的——这正是最容易把人带偏的地方。
+- ✅ 规则：
+  1. **生产部署必须 HTTPS**（README / 站长手册都以 https 为前提）。判别三连：`ss -ltnp | grep -E ':(80|443)\s'`、`curl -sS -D - -o /dev/null http://127.0.0.1:3000/api/auth/csrf | grep -i set-cookie`（有 `Secure` 就是它）、浏览器开发者工具里看 `myblog.session` 是否真的落盘。
+  2. **没 TLS 时的临时解法（零代码、可回滚，但必须知道代价）**：在 nginx 的代理 location 里摘掉这两个 cookie 的 `Secure` 属性（nginx ≥1.19.3 自带），上 HTTPS 后删掉：
+     ```nginx
+     proxy_cookie_flags myblog.session nosecure;
+     proxy_cookie_flags myblog.csrf    nosecure;
+     ```
+     代价：会话 cookie 会在明文 HTTP 上传输（等于把会话安全等级降到与整站明文一致）。
+  3. **不要用 `NODE_ENV=development` 绕过**：`next start` 要求生产构建，dev 模式还会带来不水合、缓存失效等一堆别的问题（见 P-110）。
+- 📎 案例：2026-10-01 首次上机（nginx 1.22.1 只有 :80），登录页截图里的红字就是这个 403。
+
+### P-117 改 nginx 站点配置时的「同目录备份」会被一起加载：`include sites-enabled/*` **不看扩展名**
+- ❌ 现象（2026-10-01 同一台机器）：按「先备份再改」的习惯执行 `cp /etc/nginx/sites-enabled/myblog /etc/nginx/sites-enabled/myblog.bak-20261001`，改完 reload 后 `nginx -t` 刷出十几条
+  ```
+  [warn] conflicting server name "bruccese.com" on 0.0.0.0:80, ignored
+  [warn] conflicting server name "www.bruccese.com" on [::]:80, ignored
+  ```
+  网站本身能开（先加载的那个块生效），但**你改的那份可能根本不是生效的那份**——"改了没效果"的经典来源。
+- ✅ 根因：Debian/Ubuntu 默认 nginx.conf 里写的是 `include /etc/nginx/sites-enabled/*;`——**通配符不看扩展名**，`.bak` / `.bak2-1903` / `myblog.old` 全部照样被加载成正式配置；里面若还有 `listen 80` + 同样的 `server_name`，就与正式文件撞名。带 `.conf` 的 `conf.d/*.conf` 同理（只认 `.conf`，但 `.conf.bak` 也会被 `*.conf` 漏进来？——不会，`*.conf` 才匹配，但 `conf.d/` 下别放同名副本）。
+- ✅ 规则：
+  1. **备份放到被 include 的目录之外**：`mkdir -p /root/nginx-backup && cp <file> /root/nginx-backup/<name>.$(date +%F.%H%M)`；改完验证通过再删。
+  2. **判别"哪份在生效"**：`nginx -T | grep -nE 'configuration file|listen |server_name '` —— `nginx -T` 会把每个来源文件与最终配置一起打印。
+  3. 清完以后 `nginx -t` 应当**一条 warn 都没有**；还有 warn 就继续找同名 `server_name`。
+  4. 一次只留一份 `sites-enabled/<站点>`：改之前宁愿先 `ls -la /etc/nginx/sites-enabled/` 看清里面到底有几个文件。
+- 📎 案例：2026-10-01 给站点加 443 证书时，`sites-enabled/` 里同时躺着 `myblog`、`myblog.bak-20261001`、`myblog.bak2-1903` 三份，全部被加载。修法：`mv /etc/nginx/sites-enabled/*.bak* /root/nginx-backup/ && nginx -t && systemctl reload nginx`。
+
+### P-118 正文图和封面图不是一条路：正文按 hash 改写，封面**原样使用**——外部导入时封面必须写缩略图/COS 地址
+- ❌ 现象（2026-10-01 Halo 导入后迁移到 COS）：媒体都上云了，页面**还是慢**；首页四张文章封面加起来十几 MB，`curl` 页面看到封面 src 还是 `/api/uploads/images/original/<hash>.jpg`（3–5 MB 原图），而正文里的图已经是 COS 域名。
+- ✅ 根因（两条链路，容易以为是同一条）：
+  1. **正文图**：`lib/markdown/mdx.tsx` 的 `loadMediaUrls()` 从正文里抽 64 位 hash → 查 `Upload` → `displaySrc` 用缩略图、`data-lightbox-src` 用原图，**配了 COS 就自动换 COS 直链**。所以正文里存 `/api/uploads/images/original/…` 没问题。
+  2. **封面图**：`components/common/CoverMedia.tsx` 把 `Post.cover` 这个**字符串原样**交给 `next/image`，**没有任何 hash 改写**。谁写进去什么地址，浏览器就打什么地址；写成本机原图路径 → 每次都由应用读盘流式返回（`/api/uploads/<canonical key>` 不会 302 到 COS，只有 `media/…` 与 `images/<hash>-original.*` 别名会跳），服务器带宽和用户加载时间一起遭殃。
+  3. 编辑器自己的口径是对的：`editorImageUrl(result)` = `result.thumb?.url ?? result.original.url`，即"缩略图 URL，配了 COS 就是 COS 直链"——外部导入脚本必须**照着这个口径写封面**（`publicMediaUrl(thumbMediaKey(hash))`），否则就复现本坑。
+- ✅ 规则：
+  1. **改封面类的字段前先看它会不会被改写**：搜 `firstMediaHash(` / `resolvePublicImageUrl(` 有没有覆盖这条路；`CoverMedia` / `PostCard` / `PostHero` 这条是"原样使用"。
+  2. **缩略图别只当预览**：它是列表/封面/正文显示层的标准素材（`thumbMaxPx` 默认 480，webp），原图只留给灯箱。
+  3. 已经写错的封面，用后台「文章 → 封面 → 从媒体库重选」重写一遍即可（媒体库选出来的是 `thumb.url`，配了 COS 就是 COS 直链）；批量修就走导入脚本的 `--update-posts`（只覆盖正文/封面/摘要/分类，不动状态与时间）。
+- 📎 案例：2026-10-01 `scripts/import-halo.ts` 第一版把封面写成了 `resolveImage(ref)`（原图地址），迁移 COS 后仍然慢；已改成 `publicMediaUrl(thumbMediaKey(hash))`，见 [halo-import-spec.md](halo-import-spec.md) §3/§4。
+
+### P-119 灯箱原图别默认走 `?proxy=1`：原图动辄几 MB，站点中转会把轻量机出网带宽当瓶颈（实测 8 倍差）
+- ❌ 现象（2026-10-01 迁 COS 后）：首页已经很快（TTFB 0.24s、16 张全是 COS 缩略图 7–26 KB），但**点开一张原图要等好几秒**。同一张 4.82 MB 原图，客户端实测：
+  ```
+  proxy  .../api/uploads/images/original/9d/9d45827….jpg?proxy=1   200  5049788B  4.895s  1031559 B/s
+  cos    https://<bucket>.cos.ap-shanghai.myqcloud.com/images/original/9d/9d45827….jpg  200  5049788B  0.623s  8103387 B/s
+  ```
+- ✅ 根因：`components/common/Lightbox.tsx` 取原图时是 `image.key ? proxyUrl(image.key) : image.src`——**只要图带存储 key 就优先 `?proxy=1`**（`/api/uploads/<key>?proxy=1` 明确不 302 到 COS，由 Node 读盘/读桶再流给浏览器）。当初这么写是为了同源 + XHR 能报进度 + blob 缓存；但**这与 [cos-storage-spec.md](cos-storage-spec.md) §4 写的「灯箱原图使用 COS URL」不一致**，等价于把每张 3–5 MB 的原图都塞进站点服务器（腾讯云轻量常见 3–6 Mbps 峰值），COS 的带宽完全没用上。
+- ✅ 规则：
+  1. **大对象（原图/视频/音频）一律直连对象存储**，只有"站内路径"才用同源代理；判断依据是 URL 形态（`/api/uploads/` 前缀）而不是"有没有 key"。
+  2. **直连要能优雅降级**：跨域 XHR 失败（桶上没配 CORS 最常见）→ 先退回 `?proxy=1`，再失败就 `<img>` 直载 src（没有进度环但图能出来）。三步都不做就等于"要么慢、要么坏"。
+  3. **要进度环，就在桶上加 CORS**：`Origin: https://<站点域名>`、`Methods: GET, HEAD`、**必须 `Expose-Headers: Content-Length`**（否则 `event.lengthComputable` 恒为 false）。改完用 `curl.exe -sS -I -H "Origin: https://<域名>" <COS URL> | findstr /i access-control` 验一下有没有回 `Access-Control-Allow-Origin`。
+  4. **排查口诀**：页面本身快、只有"点开大图/播放视频"慢 → 先量"经站点"与"直连"两条路的 `speed_download`，差一个数量级就说明有代理兜在中间。
+- 📎 案例：2026-10-01 `src/lib/client/lightbox-src.ts`（新增）+ `Lightbox.tsx` 改为「优先直连、失败回退代理」，配 `lightbox-src.test.ts` 5 项单测。
+
+### P-120 打包走的是「文件系统遍历」，`.gitignore` 拦不住本机验证产物：35 张截图曾占掉整包 3.01MB 里的 2.51MB
+- ❌ 现象（2026-10-01 发 0.1.2 时实打包发现）：`pnpm pack:update` 打出的包 584 个文件 3.01 MB，其中 **`.ui-shots/` 33 个 + `.promo-shots/` 2 个 = 35 个截图/JSON，未压缩合计 2.51 MB**——**包体积的八成是本机 UI 截图**，而且应用更新会把它们覆盖进服务器的项目目录。
+- ✅ 根因：`packCurrentApp()` 是**文件系统遍历**，过滤只认 `lib/update/paths.ts` 里的拒绝名单（`data/`、`node_modules/`、`.next/`、`.git/`、`coverage/`），**不看 `.gitignore`**。而 `main/.gitignore` 里写着 `/.ui-shots/`、`/.promo-shots/`——于是"本机只管忽略、打包照收"。`packAppFromGitRef()`（`--git`）走 git 树，天然没有这些文件，所以**只有默认的 `pnpm pack:update` 会中招**，两条路径结果不一致也掩盖了问题。
+- ✅ 规则：
+  1. **新增任何"落在项目目录里的本机产物"（截图/抓板/临时导出），同时进两处**：项目 `.gitignore`（不提交）**和** `lib/update/paths.ts` 的 `DENIED_ROOTS` / `DENIED_PREFIXES`（不打包）。少写第二处 = 它会被发到服务器。
+  2. **发版前扫一眼包内清单**：`tar -tzf main/data/updates/myblog-update-*.tar.gz | Measure-Object -Line` 看条目数，或 `tar -tzvf …` 按大小排序看有没有陌生的胖目录。3 MB 的包对程序文件来说已经算大（`src/` 501 个文件其实很小）。
+  3. **带点号的目录名别指望被默认拒掉**：`.env*` 是**显式**特判的（P-113），拒绝名单不是"以点开头的都拒"。
+- 📎 案例：`lib/update/paths.ts` 补 `.ui-shots/`、`.promo-shots/` 两个根 + `update.test.ts` 补 4 条路径断言与 2 条 `shouldTraversePackDir` 断言；改后重打包为 **549 个文件**（少 35 个截图），`.env.example` 与 `meta.json`（version 0.1.2）仍在包内。
+
+### P-121 测试夹具里写了真实的桶名与 APPID：它们会随仓库公开发布
+- ❌ 现象（2026-10-01 发 0.1.2 前排查）：`main/src/lib/storage/cos-config.test.ts` 与 `main/src/lib/client/lightbox-src.test.ts` 的夹具直接用了**生产桶名 + 腾讯云 APPID**（形如 `<桶名>-<10 位 APPID>.cos.ap-shanghai.myqcloud.com`）。测试文件**不进更新包**（`isSkippedPackName()` 会跳过 `*.test.ts`），但**会进公开仓库**——克隆或翻历史的人一眼就能读到你的对象存储账号标识。
+- ✅ 规则：
+  1. **测试夹具、示例、文档、占位符一律用占位值**：桶名写 `example-1300000000`（`SettingsForm` 的 placeholder 就是这个，全仓统一）或 `bucket`；区域写 `ap-shanghai` 无所谓；域名写 `cdn.example.com` / `blog.example.com`。
+  2. **IP 用 RFC 5737 文档段**：`192.0.2.0/24`、`198.51.100.0/24`、`203.0.113.0/24`（仓库现有 `fingerprint.test.ts` 就是这么写的，照抄它）。
+  3. **发版前扫一遍公开面**（一条命令，靠 `git grep` 而不是 PowerShell 管道——`$files | Select-String` 搜的是**文件名字符串**不是文件内容，会静默给出空结果）：
+     ```powershell
+     git grep -n -I -E "myqcloud\.com|<你的桶名>|13[0-9]{8}|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.(com|cn|net)" -- .
+     git grep -h -I -o -E 'https?://[A-Za-z0-9._-]+\.[A-Za-z]{2,}' -- . | Sort-Object -Unique
+     ```
+     第二条会把仓库里出现过的**所有域名**列出来，人眼扫一遍最快能发现漏网的。
+  4. **改完当前树 ≠ 改完历史**：字符串只要进过一次公开提交，就在历史里了（`git log -S '<串>' --all` 可查是哪些提交带进来的）。真要抹掉得走 P-092 那套「仓外备份 → 改历史 → 验证 → 才 gc」+ 强推，属于单独一次需要用户拍板的操作，不要顺手做。
+- 📎 案例：2026-10-01 把两处夹具改成 `example-1300000000`（`pnpm test` 194/194）。**该串已随更早的提交在远端公开过**，本次只保证「当前树与今后的提交」干净。
+

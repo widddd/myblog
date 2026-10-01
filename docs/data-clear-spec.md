@@ -3,6 +3,7 @@
 - 日期：2026-09-06
 - 提案人：AI
 - 状态：用户已要求直接实施
+- 修订：2026-10-01 补齐 `MomentVisibilityGroup`（09-27 新增）与 `PenName`（09-25 新增）——原清单一发布就落后于 schema，见 §2.2 / §6 与 P-103
 - 相关红线：面板优先、SQLite 单写者、StorageDriver、严格确认、Windows 优先
 
 ## 1. 目标
@@ -24,10 +25,14 @@
 - `data/update.log`、`data/relaunch.log` 等运维日志。
 - 程序源码、依赖和 `.env`。
 
+保留边界不是靠"记得别删"维持的：`lib/data-clear/coverage.ts` 把每张表显式登记成删除/保留/按条件删三档，`lib/data-clear/coverage.test.ts` 拿 `prisma/schema.prisma` 的全表去比对——**schema 里出现没登记的表，`pnpm test` 直接失败**（P-103）。
+
 ### 2.2 删除数据范围
 
 - `Post`、`Category`、`Tag`、`PostTag`；
+- `PenName`（笔名清单）：与分类/标签同级的内容词表，清空内容后留着没有意义。管理员账号上的**默认笔名** `AdminUser.penName` 属于账号，跟着「删除管理员账号」走，不在这一档；
 - `Moment`、`MomentLike`；
+- `MomentVisibilityGroup`（瞬间可见范围组）：与瞬间同属一批内容数据，一起清。注意外键 `SetNull` 只在**后台手动删组**时起作用；数据清理是先删瞬间再删组，不会留下引用；
 - 全部 `Comment`（包括留言板、待审和管理员回复）；
 - `Upload` 记录，以及 StorageDriver 列出的本地 `data/uploads` 文件和 COS 桶中的应用对象；同时按记录里的历史 key 再清一次，覆盖旧目录布局；
 - 本地 `data/backups` 中的备份包、临时明文包、`backup-manifests.json`、`BackupSecret` 哈希；COS `backups/` 对象；
@@ -64,4 +69,16 @@
 - 提前 PUT 返回 409，DELETE 后 PUT 不能执行；令牌只能由创建它的管理员使用。
 - 15 秒后 PUT 才能执行，重复 PUT 不会二次清理。
 - 隔离数据库中验证所有内容表和媒体/备份/更新文件清理；`Setting`、首页模块、主机半钥仍在；只选管理员时其它数据不变。
+- **覆盖守卫**（2026-10-01 增）：`pnpm test` 里的 `lib/data-clear/coverage.test.ts` 三方比对 schema 全表 / 覆盖清单 / `clearDatabase()` 里真实的 `deleteMany`。负向验证已做：清单里去掉 `PenName` → 失败；注释掉 `penName.deleteMany()` → 失败；恢复 → 3/3 通过。
+- **隔离库 DB 级验证**：`scripts/verify-data-clear.ts` 在 scratch 库铺齐全表数据后调 `clearDatabase()`，7/7 通过（可见范围组 1 → 0、笔名 1 → 0；`Setting`/`HomeModule`/`HomePlacement` 含新写入的行原样保留；只删管理员时内容不动）。
 - 运行 `pnpm test`、`pnpm lint`、`pnpm build`，并在 Windows 开发环境做 smoke test；不对真实生产数据执行清理。
+
+## 6. 维护约束（新增表必看）
+
+清理是**手写**的，新表不会自动被清——这正是 2026-10 那次「清空数据后可见范围组还在」的原因。新增 Prisma 模型后：
+
+1. 在 `lib/data-clear/coverage.ts` 登记为「删除 / 保留 / 按条件删」，并写清理由；
+2. 判为删除的，在 `lib/admin/data-clear.ts` 的 `clearDatabase()` 里按依赖顺序补 `deleteMany`（子表在前，`Comment` 先删回复，`MomentVisibilityGroup` 跟在 `Moment` 之后）；
+3. 跑 `pnpm test`——漏登记、登记了没删都会失败（守卫用法见 P-103）。
+
+要改「保留边界」，改的是 §2.1/§2.2 与这份清单，不要在代码里另开一条 if。

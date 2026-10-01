@@ -9,6 +9,8 @@ import {
   type DashboardCards,
 } from "@/lib/admin/dashboard-cards";
 import { prisma } from "@/lib/db";
+import { normalizeVisibilityDays } from "@/lib/moments/visibility";
+import { DEFAULT_STATIC_PAGES_DIR } from "@/lib/pages/directories";
 import { logger } from "@/lib/utils/logger";
 
 export const DEFAULT_SETTINGS = {
@@ -19,6 +21,7 @@ export const DEFAULT_SETTINGS = {
   backupPeriodDays: 3,
   backupKeep: 5,
   uploadMaxSizeMB: 10,
+  uploadMaxImagesPerBatch: 9,
   homeModuleOpacity: 32,
   homeBackdropOpacity: 100,
   siteUrl: "",
@@ -32,10 +35,14 @@ export const DEFAULT_SETTINGS = {
   cosPublicBaseUrl: "",
   thumbMaxPx: 480,
   thumb2MaxPx: 320,
+  // 瞬间全局可见期（天）：0 = 永久公开（默认，等于旧行为）；>0 = 超过天数的瞬间对外隐藏（见 lib/moments/visibility.ts）
+  momentVisibleDays: 0,
   backupLocalMaxMB: 512,
   localMediaMaxMB: 512,
   adminAccent: DEFAULT_ADMIN_ACCENT,
   dashboardCards: DEFAULT_DASHBOARD_CARDS,
+  // 静态页面目录（单值）：页面地址 = /{staticPagesDir}/{slug}，见 lib/pages/directories.ts
+  staticPagesDir: DEFAULT_STATIC_PAGES_DIR,
 } as const;
 
 export type SettingKey = keyof typeof DEFAULT_SETTINGS;
@@ -221,8 +228,10 @@ export type AdminSettings = {
   backupLocalMaxMB: number;
   localMediaMaxMB: number;
   uploadMaxSizeMB: number;
+  uploadMaxImagesPerBatch: number;
   thumbMaxPx: number;
   thumb2MaxPx: number;
+  momentVisibleDays: number;
   homeModuleOpacity: number;
   homeBackdropOpacity: number;
   siteUrl: string;
@@ -238,6 +247,7 @@ export type AdminSettings = {
   cosSecretKeySet: boolean;
   adminAccent: AdminAccentKey;
   dashboardCards: DashboardCards;
+  staticPagesDir: string;
 };
 
 function asSettingString(value: unknown, fallback: string) {
@@ -281,8 +291,13 @@ export async function getAdminSettings(): Promise<AdminSettings> {
       values.uploadMaxSizeMB,
       DEFAULT_SETTINGS.uploadMaxSizeMB,
     ),
+    uploadMaxImagesPerBatch: asSettingNumber(
+      values.uploadMaxImagesPerBatch,
+      DEFAULT_SETTINGS.uploadMaxImagesPerBatch,
+    ),
     thumbMaxPx: asSettingNumber(values.thumbMaxPx, DEFAULT_SETTINGS.thumbMaxPx),
     thumb2MaxPx: asSettingNumber(values.thumb2MaxPx, DEFAULT_SETTINGS.thumb2MaxPx),
+    momentVisibleDays: normalizeVisibilityDays(values.momentVisibleDays),
     homeModuleOpacity: asSettingNumber(
       values.homeModuleOpacity,
       DEFAULT_SETTINGS.homeModuleOpacity,
@@ -314,6 +329,10 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     cosSecretKeySet: secretKey.trim().length > 0,
     adminAccent: resolveAdminAccent(values.adminAccent).key,
     dashboardCards: resolveDashboardCards(values.dashboardCards),
+    staticPagesDir: asSettingString(
+      values.staticPagesDir,
+      DEFAULT_SETTINGS.staticPagesDir,
+    ),
   };
 }
 

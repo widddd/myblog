@@ -47,6 +47,8 @@ audio/{ext}/{hh}/{hash}.{ext}           公有读
 - 音频白名单：mp3 / m4a / aac / ogg / opus / wav / weba
 - 文章插入 `<Audio src>`，消毒对齐 Video；瞬间本轮仍只收图
 - 访客 thumb 与灯箱原图、`<video>`/`<audio>` 使用 COS URL；旧 `/api/uploads` 只服务本地缓存
+- **灯箱原图优先直连 COS**（`lib/client/lightbox-src.ts`：`lightboxOriginalUrl()`）：配了 COS 就用 `data-lightbox-src`（对象存储直链），只有站内 `/api/uploads/...` 路径才走 `?proxy=1` 同源流式；直连失败（最常见：桶上没配 CORS）自动退回代理，再失败就让 `<img>` 直接加载。2026-10-01 实测（同一张 4.82 MB 原图，同一台客户端）：**站点中转 1.03 MB/s（4.90s） vs COS 直连 8.10 MB/s（0.62s）**——原图动辄 3–5 MB，走服务器等于把轻量机的出网带宽当瓶颈。见 [P-119](pitfalls.md)
+- **进度环需要桶上配 CORS**：跨域 XHR 要读 `Content-Length` 才能算百分比，所以 COS 桶的跨域访问规则必须 `Origin: https://<站点域名>`、`Methods: GET, HEAD`、**`Expose-Headers: Content-Length`**。没配也不会白屏——代码会退回 `?proxy=1`（图照出，只是慢回站点带宽），最坏走 `<img>` 直载（无进度环）
 
 ## 5. 备份
 

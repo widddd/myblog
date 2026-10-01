@@ -51,12 +51,15 @@ export type DataClearResult = {
     categories: number;
     tags: number;
     postTags: number;
+    penNames: number;
     moments: number;
     momentLikes: number;
+    momentVisibilityGroups: number;
     comments: number;
     uploads: number;
     backupSecrets: number;
     admins: number;
+    staticPages: number;
   };
 };
 
@@ -320,7 +323,14 @@ async function clearFileArtifacts(): Promise<{
   }
 }
 
-async function clearDatabase(
+/**
+ * 只删库内的内容表，不碰媒体文件、备份与更新包；隔离库验证脚本
+ * （`scripts/verify-data-clear.ts`）直接调用它。线上统一走 `executePendingDataClear()`。
+ *
+ * 表清单与删除顺序的事实源：`lib/data-clear/coverage.ts` 的 `DATA_CLEAR_DELETE_ORDER`，
+ * 「有没有漏表」由 `lib/data-clear/coverage.test.ts` 守着（schema 全表 vs 清单 vs 这里的 deleteMany）。
+ */
+export async function clearDatabase(
   deleteData: boolean,
   deleteAdmin: boolean,
 ): Promise<DataClearResult["deleted"]> {
@@ -333,12 +343,15 @@ async function clearDatabase(
           categories: 0,
           tags: 0,
           postTags: 0,
+          penNames: 0,
           moments: 0,
           momentLikes: 0,
+          momentVisibilityGroups: 0,
           comments: 0,
           uploads: 0,
           backupSecrets: 0,
           admins: admins.count,
+          staticPages: 0,
         };
       }
 
@@ -350,8 +363,11 @@ async function clearDatabase(
       const topLevelComments = await tx.comment.deleteMany();
       const posts = await tx.post.deleteMany();
       const moments = await tx.moment.deleteMany();
+      const momentVisibilityGroups = await tx.momentVisibilityGroup.deleteMany();
       const categories = await tx.category.deleteMany();
       const tags = await tx.tag.deleteMany();
+      const penNames = await tx.penName.deleteMany();
+      const staticPages = await tx.staticPage.deleteMany();
       const uploads = await tx.upload.deleteMany();
       const backupSecrets = await tx.backupSecret.deleteMany();
       const admins = deleteAdmin ? await tx.adminUser.deleteMany() : { count: 0 };
@@ -361,12 +377,15 @@ async function clearDatabase(
         categories: categories.count,
         tags: tags.count,
         postTags: postTags.count,
+        penNames: penNames.count,
         moments: moments.count,
         momentLikes: momentLikes.count,
+        momentVisibilityGroups: momentVisibilityGroups.count,
         comments: commentReplies.count + topLevelComments.count,
         uploads: uploads.count,
         backupSecrets: backupSecrets.count,
         admins: admins.count,
+        staticPages: staticPages.count,
       };
     });
   } catch (error) {
@@ -403,7 +422,10 @@ async function executeClear(targets: readonly DataClearTarget[]): Promise<DataCl
     targets: targets.join(","),
     posts: deleted.posts,
     moments: deleted.moments,
+    momentVisibilityGroups: deleted.momentVisibilityGroups,
     comments: deleted.comments,
+    penNames: deleted.penNames,
+    staticPages: deleted.staticPages,
     localObjects: storage.local,
     cosObjects: storage.cos,
     admins: deleted.admins,

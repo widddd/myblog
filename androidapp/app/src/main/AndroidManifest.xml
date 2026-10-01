@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 只要 INTERNET。明文 HTTP 不走全局开关，
+         而是在 MainActivity 里用 NetworkSecurityPolicy 按 URL 判定并弹警告（D3）。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 自有相册视图要读系统相册（遇到 <input type=file accept="image/*"> 时用它代替系统选择器）。
+         Android 13 起拆成了 READ_MEDIA_IMAGES，13 之前是 READ_EXTERNAL_STORAGE。
+         用户拒绝授权也不会卡住：代码自动退回系统选择器（见 MainActivity.onFilePrompt 的分支）。 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- allowBackup=false：App 的数据里有 GeckoView 的 profile（cookies.sqlite 含站点会话 cookie）。
+         开着的话 Android 自动备份会把它传到用户的云备份里，等于把登录态带出设备；
+         代价只是换机时要重新填一次站点地址，可以接受。 -->
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SmartBlog"
+        android:usesCleartextTraffic="true">
+        <!-- usesCleartextTraffic：**App 自己要发 http 请求**（取 /api/upload/limits 定"能选几张"）。
+             GeckoView 是自带内核、走自己的网络栈，本来就不受这个开关影响 —— 也就是说，
+             开它并不会让网页侧变得"更不安全"，只是让宿主自己那一个请求能发出去。
+             对用户的明文警告仍然会弹（MainActivity.maybeWarnInsecure，按 URL 协议判定）。 -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

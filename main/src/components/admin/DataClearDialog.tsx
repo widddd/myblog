@@ -332,7 +332,7 @@ export function DataClearDialog({
                           <strong>{DATA_CLEAR_TARGET_LABELS[target]}</strong>
                           <small>
                             {target === "data"
-                              ? "文章、瞬间、评论、媒体、备份和更新暂存"
+                              ? "文章、瞬间与可见范围组、评论、分类标签与笔名、媒体、备份和更新暂存"
                               : "删除全部管理员账号，之后需重新创建"}
                           </small>
                         </span>

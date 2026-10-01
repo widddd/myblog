@@ -1,6 +1,6 @@
 # data-models.md — 数据模型（Prisma）
 
-> schema 变更时同步本文件。源文件：`main/prisma/schema.prisma`。状态：✅ M1 schema 已落地；M2 seed 写入 10 篇演示文章（含密码/定时/草稿各 1）+ 3 分类 + 5 标签 + 2 瞬间，幂等（已有文章则跳过）。M4 使用现有 Comment 表，无迁移。M5 为 Post 增加 `bannerStyle`/`bannerColor`/`bannerColor2`（迁移 `20260829140232_post_banner_style`）。M6 不改 schema：`lastBackupAt` 由备份任务写入既有 Setting KV。M7 打磨为 Post 增加 `recommend`（迁移 `20260829145300_post_recommend`），与 `pinned` 独立，控制首页推荐位。M8 首页模块化新增 `HomeModule` / `HomePlacement`（迁移 `20260830031022_home_modules`），布局不进 Setting KV。备份加密新增 `BackupSecret`，管理员增加 `mustChangeCredentials`（迁移 `20260830040000_backup_secret_admin_must_change`）。文章前台地址新增 `Post.publicId`（迁移 `20260830080000_post_public_id`）。首页双视口几何：`HomePlacement.hPct` 与 `mobileCol/mobileColSpan/mobileRow/mobileHPct`（迁移 `20260830100000_home_dual_viewport`）。文章页「已修改」新增 `Post.revisedAt` 与 `Post.showRevisedAt`（迁移 `20260925161921_post_revised_at`）：`revisedAt` **不是** `updatedAt`（浏览量自增/定时发布/publicId 回填都会刷 `updatedAt`，见 P-087），只由 `updateAdminPost()` 在文章已发布且读者可见字段真的变了时写入。作者功能再新增 `Post.authorName`、`AdminUser.penName` 与 `PenName` 表（迁移 `20260925173000_post_author_pen_name`）：`PenName` 只存 `name`（唯一；没有 slug —— 作者没有独立页面），写文章页的作者下拉读它；`AdminUser.penName` 是默认笔名，文章没单独填作者时前台显示它。
+> schema 变更时同步本文件。源文件：`main/prisma/schema.prisma`。状态：✅ M1 schema 已落地；M2 seed 写入 10 篇演示文章（含密码/定时/草稿各 1）+ 3 分类 + 5 标签 + 2 瞬间，幂等（已有文章则跳过）。M4 使用现有 Comment 表，无迁移。M5 为 Post 增加 `bannerStyle`/`bannerColor`/`bannerColor2`（迁移 `20260829140232_post_banner_style`）。M6 不改 schema：`lastBackupAt` 由备份任务写入既有 Setting KV。M7 打磨为 Post 增加 `recommend`（迁移 `20260829145300_post_recommend`），与 `pinned` 独立，控制首页推荐位。M8 首页模块化新增 `HomeModule` / `HomePlacement`（迁移 `20260830031022_home_modules`），布局不进 Setting KV。备份加密新增 `BackupSecret`，管理员增加 `mustChangeCredentials`（迁移 `20260830040000_backup_secret_admin_must_change`）。文章前台地址新增 `Post.publicId`（迁移 `20260830080000_post_public_id`）。首页双视口几何：`HomePlacement.hPct` 与 `mobileCol/mobileColSpan/mobileRow/mobileHPct`（迁移 `20260830100000_home_dual_viewport`）。文章页「已修改」新增 `Post.revisedAt` 与 `Post.showRevisedAt`（迁移 `20260925161921_post_revised_at`）：`revisedAt` **不是** `updatedAt`（浏览量自增/定时发布/publicId 回填都会刷 `updatedAt`，见 P-087），只由 `updateAdminPost()` 在文章已发布且读者可见字段真的变了时写入。作者功能再新增 `Post.authorName`、`AdminUser.penName` 与 `PenName` 表（迁移 `20260925173000_post_author_pen_name`）：`PenName` 只存 `name`（唯一；没有 slug —— 作者没有独立页面），写文章页的作者下拉读它；`AdminUser.penName` 是默认笔名，文章没单独填作者时前台显示它。瞬间可见范围新增 `Moment.visibilityGroupId` 与 `MomentVisibilityGroup` 表（迁移 `20260927160000_moment_visibility_group`）：最终对外可见天数 = min(Setting `momentVisibleDays`, 所用组的天数)，0 = 不限制；**开发库已于 2026-09-30 应用该迁移**（`_prisma_migrations` 最新一条就是这个目录），上生产时目标机仍需执行一次 `pnpm prisma migrate dev`，否则会复现「表不存在」的 500。数据清理覆盖：`MomentVisibilityGroup` 与 `PenName` 属「删除数据」范围（2026-10-01 补齐，登记在 `lib/data-clear/coverage.ts`，守卫测试见 P-103）。
 
 ## 模型一览
 
@@ -41,12 +41,42 @@ slug 唯一、name；Tag 通过 PostTag 与 Post 多对多。
 只存名字：作者没有独立页面（不像分类/标签那样有 `/categories/{slug}`），所以不做 slug。
 写文章页的「作者」用 `<input list>` + `<datalist>` 读这份清单下拉快捷选，也能直接打字自定义；
 当场新建走 `POST /api/admin/pen-names`。**默认作者不在这里，而在 `AdminUser.penName`**（见下）。
+后台「清空数据」会连这份清单一起删（与分类/标签同级的内容词表）；`AdminUser.penName` 属账号，不在此列。
 
 ### Moment（瞬间）
 content（文本）、images（JSON：`[{key,thumb,width,height}]`）、createdAt。
 
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| visibilityGroupId | Int? → MomentVisibilityGroup | 可见范围组。`null` = 跟随全局可见期（Setting `momentVisibleDays`）。外键 `onDelete: SetNull`：删组时瞬间回落到全局规则，**不删瞬间**。生效天数 = min(全局, 组)，0 视为不限制（`lib/moments/visibility.ts` 是唯一裁决点） |
+
 ### MomentLike（点赞）
-momentId + fingerprint（IP+UA 哈希）联合唯一，防重复点赞；公开 POST 翻转（已赞则删除）。
+momentId + fingerprint（IP+UA 哈希）联合唯一，防重复点赞；公开 POST 翻转（已赞则删除）。过期瞬间点赞走公开侧同一个可见期 where，返回 404。
+
+### MomentVisibilityGroup（瞬间可见范围组）
+| 字段 | 说明 |
+|---|---|
+| name | String @unique，组名。重名返回 409；zod 上限 12 字（`MOMENT_VISIBILITY_GROUP_NAME_MAX`） |
+| days | Int，该组对外可见天数，1–3650（zod 校验；读库时经 `normalizeVisibilityDays()` 归一，脏值回退 0 = 不限制） |
+| createdAt | DateTime |
+| moments | Moment[]，反向关系 |
+
+组的定位是**发瞬间时能直接选的档位**（例：三天可见组 / 7 天可见组 / 1 个月可见组）。全局可见期是天花板，组**只能更短不能放宽**：组天数比全局长时实际仍按全局生效，后台列表会标「受全局 N 天限制」。删组会影响几条瞬间、之后按什么规则显示，由 `describeVisibilityGroupDeletion()` 在读侧算好给二次确认文案用。后台「清空数据」连同这张表一起清（2026-10-01 前漏了，见 P-103）。
+
+### StaticPage（静态页面）
+| 字段 | 说明 |
+|---|---|
+| slug | String @unique，地址**最后一段**。目录是单值（Setting `staticPagesDir`），所以 slug 唯一就等于地址唯一 |
+| title | String，页面标题（也进 `<title>`） |
+| description | String 默认 `''`，meta description，可空 |
+| html / css / js | String 默认 `''`，各上限 32KB。管理员内容面：只有 `requireAdmin` 可写、**不过** sanitize（与首页自建模块同一决策，P-034 / P-105） |
+| enabled | Boolean 默认 true。停用 = 前台 404，页面内容保留 |
+
+前台地址 `/{staticPagesDir}/{slug}`，目录名默认 `pages`，在后台「静态页面」页改（不是设置页）。
+目录是**单值**且可随时改：改名等于把所有页面地址整体搬走，旧地址立即 404，所以后台在保存前会告诉你影响几个页面。
+保留段（`posts`/`admin`/`api`/`robots.txt`… 见 `lib/pages/directories.ts`）既不能做目录也不能做 slug；
+`src/app/[dir]/[slug]` 是 Next 里优先级最低的动态段，框架路由永远优先，将来新增顶层路由静态页自动让位。
+属「清空数据」范围（登记在 `lib/data-clear/coverage.ts`）。
 
 ### Comment（评论）
 | 字段 | 说明 |
@@ -60,8 +90,10 @@ momentId + fingerprint（IP+UA 哈希）联合唯一，防重复点赞；公开 
 | status | `pending` / `approved` |
 | isAdmin | Boolean（管理员回复） |
 
+瞬间目标（`targetType='moment'`）**读与写两侧都过可见期**：`listApprovedComments()` 先用 `findVisibleMomentId()` 判定，不在可见期内返回空列表；提交评论 404。
+
 ### Setting（站点配置 KV）
-key 唯一、value（JSON string）。默认值单一事实源为 `main/src/lib/settings.ts`：`siteName=""`（创建站点时手填，禁止默认 MyBlog）、`announcement=""`、`banner=""`、`pageSize=10`、`backupPeriodDays=3`、`backupKeep=5`、`backupLocalMaxMB=512`、`localMediaMaxMB=512`、`uploadMaxSizeMB=10`、`thumbMaxPx=480`、`thumb2MaxPx=320`、`homeModuleOpacity=32`、`homeBackdropOpacity=100`、`siteUrl=""`、`siteStartedAt=""`、`updateGithubRepo=""`、`adminAccent="graphite"`（6 套预设之一，单一事实源 `main/src/lib/admin/accents.ts`）、`dashboardCards`（7 个卡片键全 true，单一事实源 `main/src/lib/admin/dashboard-cards.ts`）、`lastBackupAt=null`、`cosBucket/cosRegion/cosSecretId/cosSecretKey/cosPublicBaseUrl` 默认空串。COS 五项与密钥**禁止**进入公开设置。`siteStartedAt` 是本地日期时间（可到秒），给首页 `uptime` 模块用，**要进** `getPublicSettings`；空则前台不显示运行时间。`backupEncrypt` **不**进默认表、不进设置表单：用户未在备份页手设时，COS 访问为 HTTPS 则默认关加密，否则默认开加密。`localMediaMaxMB` 只约束本地媒体缓存，与备份上限分开。`siteUrl` 给 sitemap/RSS/OG；空则回退 `SITE_URL` 环境变量，再回退 `http://localhost:3000`。只接受 `https` 或本机 `http://localhost` / `127.0.0.1`。
+key 唯一、value（JSON string）。默认值单一事实源为 `main/src/lib/settings.ts`：`siteName=""`（创建站点时手填，禁止默认 MyBlog）、`announcement=""`、`banner=""`、`pageSize=10`、`backupPeriodDays=3`、`backupKeep=5`、`backupLocalMaxMB=512`、`localMediaMaxMB=512`、`uploadMaxSizeMB=10`、`uploadMaxImagesPerBatch=9`（手机相册/瞬间配图「一次最多选几张」，Android 客户端经 `GET /api/upload/limits` 取同一个值，换算法在 `lib/upload/limits.ts`）、`thumbMaxPx=480`、`thumb2MaxPx=320`、`momentVisibleDays=0`（瞬间全局可见期天数，0 = 永久公开，范围 0–3650；是可见范围组的天花板）、`homeModuleOpacity=32`、`homeBackdropOpacity=100`、`siteUrl=""`、`siteStartedAt=""`、`updateGithubRepo=""`、`adminAccent="graphite"`（6 套预设之一，单一事实源 `main/src/lib/admin/accents.ts`）、`dashboardCards`（7 个卡片键全 true，单一事实源 `main/src/lib/admin/dashboard-cards.ts`）、`lastBackupAt=null`、`cosBucket/cosRegion/cosSecretId/cosSecretKey/cosPublicBaseUrl` 默认空串。COS 五项与密钥**禁止**进入公开设置。`siteStartedAt` 是本地日期时间（可到秒），给首页 `uptime` 模块用，**要进** `getPublicSettings`；空则前台不显示运行时间。`backupEncrypt` **不**进默认表、不进设置表单：用户未在备份页手设时，COS 访问为 HTTPS 则默认关加密，否则默认开加密。`localMediaMaxMB` 只约束本地媒体缓存，与备份上限分开。`siteUrl` 给 sitemap/RSS/OG；空则回退 `SITE_URL` 环境变量，再回退 `http://localhost:3000`。只接受 `https` 或本机 `http://localhost` / `127.0.0.1`。
 
 ### AdminUser（单管理员）
 username 唯一、passwordHash（bcrypt cost 12）、mustChangeCredentials（历史首次登录保护，默认 true）、`penName`（默认笔名，可空）。投产用创建站点页或 `pnpm setup` 手设站点名称、用户名/密码并写 `mustChangeCredentials=false`。无管理员时前台与 `/admin` 引导到 `/admin/setup`，bootstrap 只告警。之后可在「设置 → 登录账号」再改（含笔名；改笔名会立即让所有"没单独填作者"的文章换署名 —— 写入侧显式 `revalidateTag(posts, { expire: 0 })`，见 P-089）。instrumentation 与 Prisma seed 复用同一幂等 bootstrap（不代建管理员）。
@@ -116,3 +148,5 @@ M4 同样不改 schema：游客评论 `pending`，管理员回复 `approved`+`is
 - 删除 HomeModule：`system=true` 一律拒绝（409）；custom 仍在首页启用中也拒绝（409），需先在首页管理里移除
 - 密码文章的 content/excerpt 在一切对外查询投影中排除（pitfalls P-012）
 - Comment.parentId 引用的父评论必须同 targetType+targetId
+- 删除 MomentVisibilityGroup 只把 `Moment.visibilityGroupId` 置 NULL（回落全局可见期），不删瞬间、不删该瞬间的评论与点赞
+- 「清空数据」删哪些表由 `lib/data-clear/coverage.ts` 显式登记，`lib/data-clear/coverage.test.ts` 拿 schema 全表比对，漏登记或登记了没删都会让 `pnpm test` 失败（P-103）

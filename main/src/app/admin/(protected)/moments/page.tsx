@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
-import { CameraIcon, ClockIcon, LightningBoltIcon } from "@radix-ui/react-icons";
+import Link from "next/link";
 
-import { DeleteButton } from "@/components/admin/DeleteButton";
-import { MomentForm } from "@/components/admin/MomentForm";
+import { AdminSection } from "@/components/admin/AdminSection";
+import { MomentAdminList } from "@/components/admin/MomentAdminList";
+import { MomentCompose } from "@/components/admin/MomentCompose";
 import { listAdminMoments } from "@/lib/moments/admin";
+import { buildAdminMomentListItems } from "@/lib/moments/admin-list-view";
+import { loadMomentComposeData } from "@/lib/moments/compose-data";
 import { parsePage } from "@/lib/utils/page";
 
 export const metadata: Metadata = {
   title: "瞬间",
 };
+
+/** 「瞬间管理」每页条数 */
+const MOMENTS_PAGE_SIZE = 10;
 
 type PageProps = {
   searchParams: Promise<{ page?: string }>;
@@ -16,63 +22,54 @@ type PageProps = {
 
 export default async function AdminMomentsPage({ searchParams }: PageProps) {
   const page = parsePage((await searchParams).page);
-  const result = await listAdminMoments(page, 20);
+  // 时间只在服务端取一次：抽屉里的预览、列表的到期时刻与「还剩多久」都以它为准。
+  const now = new Date();
+  const [compose, list] = await Promise.all([
+    loadMomentComposeData(now),
+    listAdminMoments(page, MOMENTS_PAGE_SIZE, now),
+  ]);
+  const items = buildAdminMomentListItems(list.data);
+  const totalPages = Math.max(1, Math.ceil(list.total / list.pageSize));
 
   return (
     <section className="admin-card">
+      {/* 发布区：只有输入框 + 插入图片图标按钮 + 可见范围；其它设置全在右侧抽屉里 */}
       <div className="admin-section">
-        <h2 className="admin-section__title">发布新瞬间</h2>
-        <p className="admin-section__lead">记录此刻心情，分享生活中的美好瞬间</p>
-        <MomentForm />
+        <MomentCompose
+          globalDays={compose.globalDays}
+          groups={compose.groups}
+          maxImages={compose.maxImages}
+          settingsData={compose.settingsData}
+        />
       </div>
-      <div className="admin-section">
-        <h2 className="admin-section__title">我的动态</h2>
-        {result.data.length === 0 ? (
-          <div className="admin-empty">
-            <span className="admin-empty__ico">
-              <LightningBoltIcon width={24} height={24} />
+
+      {/* 管理区：默认折叠，点开才是列表（逐条改可见范围 / 删除）。
+          翻页后（page > 1）自动展开——否则在折叠状态下点「下一页」会看起来没反应。 */}
+      <AdminSection
+        defaultOpen={page > 1}
+        hint={list.total > 0 ? `共 ${list.total} 条` : "还没有瞬间"}
+        title="瞬间管理"
+      >
+        <MomentAdminList
+          globalDays={compose.globalDays}
+          groups={compose.groups}
+          moments={items}
+          nowMs={compose.nowMs}
+        />
+        {list.total > list.pageSize ? (
+          <p className="admin-pager">
+            {page > 1 ? (
+              <Link href={`/admin/moments?page=${page - 1}`}>上一页</Link>
+            ) : null}
+            <span className="is-current">
+              第 {page} 页 / 共 {totalPages} 页
             </span>
-            <p>还没有发布任何瞬间</p>
-            <p className="admin-muted">来发第一条动态，记录生活吧！</p>
-          </div>
-        ) : (
-          <ul className="admin-moment-list">
-            {result.data.map((moment, index) => (
-              <li
-                key={moment.id}
-                className="admin-stagger"
-                style={{ "--i": index } as React.CSSProperties}
-              >
-                <div className="admin-moment-content">
-                  <p>{moment.content}</p>
-                </div>
-                <div className="admin-moment-meta">
-                  <span className="admin-moment-time">
-                    <ClockIcon />{" "}
-                    {new Date(moment.createdAt).toLocaleString("zh-CN", {
-                      year: "numeric",
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                  {moment.images.length > 0 && (
-                    <span className="admin-moment-badge">
-                      <CameraIcon /> {moment.images.length} 张图片
-                    </span>
-                  )}
-                </div>
-                <DeleteButton
-                  confirmText="确定删除这条瞬间？删除后无法恢复。"
-                  label="删除"
-                  url={`/api/admin/moments/${moment.id}`}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+            {page < totalPages ? (
+              <Link href={`/admin/moments?page=${page + 1}`}>下一页</Link>
+            ) : null}
+          </p>
+        ) : null}
+      </AdminSection>
     </section>
   );
 }

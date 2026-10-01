@@ -6,6 +6,10 @@ const DENIED_PREFIXES = [
   ".next/",
   ".git/",
   "coverage/",
+  // 本机验证产物（`pnpm shot` 的截图目录、宣传片抓板目录）：不是程序文件。
+  // 实测它们曾占掉整包 3.01MB 里的 2.51MB，而且会被覆盖进服务器的项目目录（P-120）。
+  ".ui-shots/",
+  ".promo-shots/",
 ] as const;
 
 const DENIED_ROOTS = new Set([
@@ -14,6 +18,8 @@ const DENIED_ROOTS = new Set([
   ".next",
   ".git",
   "coverage",
+  ".ui-shots",
+  ".promo-shots",
 ]);
 
 const SKIP_NAMES = new Set([
@@ -40,10 +46,19 @@ export function toPosixPath(name: string): string | null {
   return posix;
 }
 
+/**
+ * The install template, not a secret: `scripts/install.sh` copies it on a fresh
+ * machine, so it must travel inside the update package (see P-113).
+ */
+const ENV_TEMPLATE = ".env.example";
+
 function hasDeniedPrefix(posix: string): boolean {
   const root = posix.split("/")[0] ?? posix;
   if (DENIED_ROOTS.has(root)) {
     return true;
+  }
+  if (posix === ENV_TEMPLATE) {
+    return false;
   }
   if (posix === ".env" || posix.startsWith(".env.")) {
     return true;

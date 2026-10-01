@@ -13,7 +13,7 @@
  *              （semantic tokens --admin-ok/-warn/-danger/-info(+ -soft)，值取自 demo 的 --ok/--warn/--danger/--info）
  * shell: .admin-workspace .admin-rail .admin-topbar .admin-tabbar .admin-more .admin-stage .admin-page-swap
  * pages: .admin-dash .admin-filter .admin-pager .admin-fab .admin-empty
- * overview: .admin-dash__kpis .admin-dash__wide .admin-dash__full .admin-dash__slot .admin-dash__hide
+ * overview: .admin-dash__kpis .admin-dash__wide .admin-dash__slot .admin-dash__hide
  *           .admin-ranks .admin-rank .admin-rank__name .admin-rank__value .admin-rank__bar
  *           .admin-status-list .admin-status-row .admin-status-row__icon .admin-status-row__title .admin-status-row__meta
  * appearance: .admin-appearance .admin-appearance__panel .admin-appearance__head
@@ -706,6 +706,31 @@
   --admin-list-cols: minmax(0, 1.5fr) 1fr 72px 88px minmax(0, 1fr) 88px auto;
 }
 
+/* 静态页面列表：标题 / 地址 / 状态 / 内容 / 最后改动 / 操作 */
+.admin-list--pages {
+  --admin-list-cols: minmax(0, 1.4fr) minmax(0, 1.2fr) 72px 72px 132px auto;
+}
+
+/* 保留地址清单（后台静态页面页）：一句话一行，不是表格，所以用 flex 而不是 --admin-list-cols。
+   同时把 .admin-list 的 grid 行为覆盖掉，避免每一行被摊成表格列。 */
+.admin-list--plain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-list--plain > li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--admin-line);
+}
+
 .admin-list__cell {
   min-width: 0;
 }
@@ -1308,6 +1333,14 @@ html:has(.admin-workspace) .site-footer {
 
 .admin-workspace--editor .admin-main {
   height: 100%;
+}
+
+/* 手机档才保留上下导航的编辑器页（首页画布 / 模块编辑，见 AdminWorkspace 的
+   needsMobileChrome）：桌面档依旧无顶栏、画布铺满（P-033）。 */
+@media (min-width: 769px) {
+  .admin-workspace--editor-chrome .admin-topbar {
+    display: none;
+  }
 }
 
 .admin-page-swap {
@@ -2214,6 +2247,8 @@ html:has(.admin-workspace) .site-footer {
 .admin-sort-grid {
   display: grid;
   gap: 10px;
+  /* 发布区里图片不要铺满整行（桌面端会显得比输入框大很多）：整体限宽，单张再多限一层 */
+  max-width: 520px;
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
@@ -2221,7 +2256,7 @@ html:has(.admin-workspace) .site-footer {
 
 .admin-sort-grid.is-single {
   grid-template-columns: 1fr;
-  max-width: 320px;
+  max-width: 300px;
 }
 
 .admin-sort-grid.is-quad {
@@ -2238,11 +2273,17 @@ html:has(.admin-workspace) .site-footer {
   border: 1px solid var(--admin-line);
   border-radius: var(--admin-radius-sm);
   background: var(--admin-surface-2);
-  cursor: grab;
 }
 
 .admin-sort-grid__item.is-dragging {
-  opacity: 0.55;
+  opacity: 0.45;
+  border-style: dashed;
+}
+
+/* 拖动过程中的落点提示 */
+.admin-sort-grid__item.is-drop-target {
+  border-color: var(--admin-accent-500);
+  box-shadow: 0 0 0 2px var(--admin-accent-100);
 }
 
 .admin-sort-grid__item img {
@@ -2255,7 +2296,7 @@ html:has(.admin-workspace) .site-footer {
 .admin-sort-grid.is-single img {
   aspect-ratio: auto;
   height: auto;
-  max-height: 360px;
+  max-height: 300px;
   object-fit: contain;
   background: var(--admin-surface-2);
 }
@@ -2276,6 +2317,45 @@ html:has(.admin-workspace) .site-footer {
   background: none;
   color: var(--admin-accent-500);
   cursor: pointer;
+}
+
+/* 拖动手柄：必须 touch-action: none，否则手机上手指移动会被浏览器当成页面滚动，
+   pointermove 收不到几次、拖动等于失效（这是"手机端拖不动"的直接原因）。 */
+.admin-sort-grid__handle {
+  flex: 1 1 auto;
+  min-height: 26px;
+  text-align: left;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.admin-sort-grid__handle:active {
+  cursor: grabbing;
+}
+
+.admin-sort-grid__remove {
+  flex: 0 0 auto;
+}
+
+/* 跟着手指/鼠标的缩略图，避免拖动时只能看原地那个虚影 */
+.admin-sort-ghost {
+  position: fixed;
+  z-index: 999;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px;
+  pointer-events: none;
+  border-radius: var(--admin-radius-sm);
+  overflow: hidden;
+  box-shadow: var(--admin-shadow-3);
+  opacity: 0.9;
+}
+
+.admin-sort-ghost img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .admin-panel {
@@ -2350,13 +2430,21 @@ html:has(.admin-workspace) .site-footer {
 }
 
 @media (min-width: 769px) {
-  .admin-section > summary {
+  /* 桌面档：**已展开**的区块保持"纯标题、不响应点击"的观感（0.1.1 起如此）。
+     但默认折叠的区块（如瞬间页「可见范围」）必须能点开，否则桌面用户没有入口——
+     所以 pointer-events / 箭头隐藏只作用于 [open] 状态。 */
+  .admin-section[open] > summary {
     pointer-events: none;
     cursor: default;
   }
 
-  .admin-section > summary::after {
+  .admin-section[open] > summary::after {
     display: none;
+  }
+
+  .admin-section:not([open]) > summary {
+    pointer-events: auto;
+    cursor: pointer;
   }
 }
 
@@ -2906,6 +2994,447 @@ html:has(.admin-workspace) .site-footer {
   list-style: none;
 }
 
+/* ── 瞬间可见范围（全局可见期 + 可见范围组）：只补布局，颜色/圆角沿用 .admin-chip / .admin-field / .admin-badge ── */
+.admin-section__divider {
+  height: 1px;
+  background: var(--admin-line);
+}
+
+/* 折叠摘要：标题 + 可选补充说明（说明靠右、弱化），展开箭头仍是 summary::after */
+.admin-section > summary > span:first-child {
+  min-width: 0;
+}
+
+.admin-section__hint {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--admin-ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.moment-visibility,
+.moment-admin {
+  display: grid;
+  gap: 12px;
+}
+
+.moment-visibility__custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.moment-visibility__custom input {
+  width: 120px;
+}
+
+.moment-group-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.moment-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+}
+
+.moment-group__name {
+  font-size: var(--admin-body);
+  font-weight: 650;
+}
+
+.moment-group__spacer {
+  flex: 1 1 auto;
+}
+
+.moment-group-create {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.moment-group-create .admin-field {
+  max-width: 220px;
+}
+
+.moment-admin__controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.moment-admin__controls .admin-field {
+  max-width: 360px;
+}
+
+/* ── 瞬间发布区（像朋友圈：一个输入框 + 图标按钮 + 可见范围 + 发布） ── */
+.moment-compose {
+  display: grid;
+  gap: 12px;
+}
+
+.moment-compose__input {
+  width: 100%;
+  min-height: 96px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--admin-ink);
+  font-size: 15px;
+  line-height: 24px;
+  resize: none;
+}
+
+.moment-compose__input:focus {
+  outline: none;
+}
+
+.moment-compose__input::placeholder {
+  color: var(--admin-ink-3);
+}
+
+.moment-compose__grid {
+  padding-top: 4px;
+}
+
+.moment-compose__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.moment-compose__media,
+.moment-compose__scope {
+  position: relative;
+}
+
+.moment-compose__icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  background: var(--admin-surface-2);
+  color: var(--admin-ink-2);
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.moment-compose__icon-btn:hover:not(:disabled) {
+  border-color: var(--admin-accent-500);
+  color: var(--admin-accent-500);
+}
+
+.moment-compose__icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.moment-compose__count {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--admin-accent-500);
+  color: var(--admin-on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.moment-compose__scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  background: var(--admin-surface-2);
+  color: var(--admin-ink-2);
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 600;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.moment-compose__scope-btn:hover:not(:disabled) {
+  border-color: var(--admin-accent-500);
+  color: var(--admin-accent-500);
+}
+
+.moment-compose__scope-label {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moment-compose__submit {
+  margin-left: auto;
+}
+
+/* 弹出的小卡片（图片菜单 / 可见范围）
+   一律**向下展开**：向上展开会顶到页面标题行（`.admin-page-head` 的 h1），实测顶部被盖住。 */
+.moment-compose__pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  bottom: auto;
+  left: 0;
+  display: grid;
+  gap: 2px;
+  width: min(240px, calc(100vw - 96px));
+  max-width: calc(100vw - 96px);
+  padding: 8px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  background: var(--admin-surface);
+  box-shadow: var(--admin-shadow-2);
+}
+
+.moment-compose__pop--scope {
+  /* 与图片菜单同向：从按钮向右下展开（向左会溢出侧栏，向上会顶到标题行） */
+  left: 0;
+  right: auto;
+  width: min(300px, calc(100vw - 96px));
+}
+
+.moment-compose__pop-title {
+  margin: 2px 4px 6px;
+  color: var(--admin-ink-3);
+  font-size: 12px;
+}
+
+.moment-compose__pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--admin-radius-sm);
+  background: transparent;
+  color: var(--admin-ink);
+  cursor: pointer;
+  font-size: 0.86rem;
+  text-align: left;
+}
+
+.moment-compose__pop-item:hover {
+  background: var(--admin-surface-2);
+}
+
+.moment-compose__pop-item--choice input {
+  flex: 0 0 auto;
+  accent-color: var(--admin-accent-500);
+}
+
+.moment-compose__pop-aside {
+  margin-left: auto;
+  color: var(--admin-ink-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.moment-compose__pop-back {
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--admin-ink-3);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.moment-compose__pop-hint {
+  margin: 4px;
+  color: var(--admin-ink-3);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.moment-compose__pop-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.moment-compose__pop-detail {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--admin-radius-sm);
+  background: transparent;
+  color: var(--admin-accent-500);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.moment-compose__pop-detail:hover {
+  background: var(--admin-accent-100);
+}
+
+/* ── 右侧抽屉：可见范围详细设置（全局可见期 + 分组管理） ── */
+.admin-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: var(--admin-z-dialog);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.admin-sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgb(15 23 41 / 32%);
+  cursor: pointer;
+}
+
+.admin-sheet__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 100vw);
+  height: 100%;
+  background: var(--admin-surface);
+  box-shadow: var(--admin-shadow-3);
+}
+
+.admin-sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.admin-sheet__title {
+  margin: 0;
+  font-size: var(--admin-heading);
+  font-weight: 650;
+}
+
+.admin-sheet__body {
+  display: grid;
+  gap: 16px;
+  padding: 16px 18px 24px;
+  overflow-y: auto;
+}
+
+.admin-sheet__block {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-sheet__block-title {
+  margin: 0;
+  color: var(--admin-ink-2);
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+/* 瞬间列表条目的正文 / 元信息 / 时间 / 徽章：原本引用了类名但 admin.css 里一直没定义（P-097），
+   这里补上真实样式，保持它和后台上传/媒体列表同族的观感。 */
+.admin-field__label {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: var(--admin-ink-2);
+}
+
+.moment-form {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+
+.moment-form > .admin-field,
+.moment-form > .admin-field-row {
+  width: 100%;
+}
+
+.moment-form__textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.moment-form__file-input {
+  max-width: 100%;
+  font-size: 0.84rem;
+}
+
+.admin-moment-content p {
+  margin: 0;
+  font-size: var(--admin-body);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.admin-moment-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--admin-ink-3);
+  font-size: 0.82rem;
+}
+
+.admin-moment-time,
+.admin-moment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-moment-time svg,
+.admin-moment-badge svg {
+  flex: 0 0 auto;
+}
+
+.admin-moment-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--admin-line);
+  border-radius: 999px;
+  background: var(--admin-surface-2);
+}
+
 .admin-media-grid {
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
 }
@@ -3055,6 +3584,39 @@ html:has(.admin-workspace) .site-footer {
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* 多选：选中态要明显（边框 + 对勾角标），否则点了一堆不知道选了哪些 */
+.admin-media-picker__item.is-selected {
+  border-radius: var(--admin-radius-sm);
+  box-shadow: 0 0 0 2px var(--admin-accent-500);
+}
+
+.admin-media-picker__item {
+  position: relative;
+}
+
+.admin-media-picker__tick {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--admin-accent-500);
+  color: var(--admin-on-accent);
+}
+
+/* 多选模式的底部确认条 */
+.admin-media-picker__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
 }
 
 .admin-media-picker__item img {
@@ -3882,6 +4444,13 @@ html:has(.admin-workspace) .site-footer {
     padding-bottom: 0;
   }
 
+  /* 自己没有返回入口的编辑器页（首页画布 / 模块编辑）：竖屏下必须留住顶部标题栏与
+     底部标签栏，否则进得去出不来。给底栏让出高度，画布与设置栏都不被压住。
+     必须排在 .admin-workspace--editor 之后——同权重，靠顺序覆盖 padding-bottom。 */
+  .admin-workspace--editor-chrome {
+    padding-bottom: calc(var(--admin-tabbar-h) + env(safe-area-inset-bottom));
+  }
+
   .admin-rail {
     display: none;
   }
@@ -4042,7 +4611,9 @@ html:has(.admin-workspace) .site-footer {
     backdrop-filter: blur(16px);
   }
 
-  .admin-workspace--editor .admin-tabbar,
+  /* 只有「自己带返回入口」的编辑器页（写文章）与强制改密流程收起底栏；
+     首页画布 / 模块编辑走 --editor-chrome，保留底栏。 */
+  .admin-workspace--editor:not(.admin-workspace--editor-chrome) .admin-tabbar,
   .admin-workspace--credentials .admin-tabbar {
     display: none;
   }
@@ -4384,7 +4955,9 @@ html:has(.admin-workspace) .site-footer {
 
 /* ============================================================
    概览页：网格 / 卡片角标 / 阅读量榜 / 系统状态
-   「隐藏卡片」= 不渲染（见 DashboardView），网格按实际卡片数 auto-fit 重算，不留空洞。
+   「隐藏卡片」= 不渲染（见 DashboardView），网格按实际卡片数重算，不留空洞。
+   KPI 区 ≥1180px 四列（4×210 + 间隙刚好放得下），其余宽度两列——**别让它自己降成三列**：
+   auto-fit 在 3 列时四张卡会排成 3+1，最后一张孤零零占半行。
    角标在桌面 hover/focus-within 显现，触屏常驻（见文件末 hover:none 块）。
    ============================================================ */
 .admin-dash__kpis {
@@ -4393,16 +4966,24 @@ html:has(.admin-workspace) .site-footer {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 
+/* 中等宽度（含 1024 这类常见笔记本窗口）与手机档统一两列，避免 3+1 的空洞 */
+@media (max-width: 1179px) {
+  .admin-dash__kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 半宽行：**固定两列**（auto-fit 会随卡片数变成 1/2/3/4 列，四张卡时会挤成 3+1，不工整）。
+   奇数张时最后一张占满整行，避免隐藏卡片后留下空洞（与「隐藏 = 不渲染」的约定配套）。 */
 .admin-dash__wide {
   display: grid;
   gap: var(--admin-space-3);
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
 }
 
-.admin-dash__full {
-  display: grid;
-  gap: var(--admin-space-3);
-  grid-template-columns: minmax(0, 1fr);
+.admin-dash__wide > .admin-dash__slot:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
 /* 卡片包裹层：既是同一行等高的载体，也是角标的定位上下文 */
@@ -4489,6 +5070,19 @@ html:has(.admin-workspace) .site-footer {
   margin: 0;
   font-size: var(--admin-heading);
   font-weight: 600;
+}
+
+/* 「已隐藏 N 张卡片 · 全部显示」——叉掉任意一张卡才出现的那行回头路。
+   刻意排在 .admin-dash 子元素列表的最后：挪到前面会让下面卡片的
+   `.admin-dash > *:nth-child()` 入场延迟整体错位。 */
+.admin-dash__restore {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0;
+  color: var(--admin-ink-3);
+  font-size: var(--admin-body);
 }
 
 /* —— 阅读量榜（对照 demo 的 .ranks / .rank；条宽由 tsx 内联百分比给出）—— */
@@ -4826,6 +5420,12 @@ html:has(.admin-workspace) .site-footer {
   .admin-dash__kpis {
     gap: 10px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 半宽行在窄屏一律单列（含横屏的小平板），否则两列会各自挤到 300px 以下 */
+  .admin-dash__wide {
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .admin-stat-card {

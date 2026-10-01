@@ -21,6 +21,7 @@ import {
   assertRequiredUpdateFiles,
   classifyUpdateEntry,
   isAllowedUpdatePath,
+  shouldTraversePackDir,
 } from "./paths";
 import { parseGithubRepo } from "./github";
 import { isPendingUpdateDue, type PendingUpdate } from "./pending";
@@ -50,6 +51,7 @@ test("classifyUpdateEntry uses a deny list so new roots and files are packed", (
     "data/blog.db",
     ".env",
     ".env.local",
+    ".env.production",
     "node_modules/next/index.js",
     "../src/app.ts",
     "src\\evil.ts",
@@ -57,12 +59,25 @@ test("classifyUpdateEntry uses a deny list so new roots and files are packed", (
     ".next/server.js",
     "src/lib/foo.test.ts",
     "src/lib/foo.test.tsx",
+    // 本机验证产物不进包（P-120）：实测曾占整包 3.01MB 里的 2.51MB。
+    // 拒绝名单按**根段**判定——这两个目录只会出现在应用根（ui-shot.mjs 固定写到 <main>/.ui-shots）
+    ".ui-shots/admin-dash-desktop.png",
+    ".ui-shots/-dashcheck-html.json",
+    ".promo-shots/home-desktop.png",
   ]) {
     assert.equal(classifyUpdateEntry(name), null);
   }
   assert.equal(isAllowedUpdatePath("data/blog.db"), false);
   assert.equal(isAllowedUpdatePath(".env"), false);
   assert.equal(isAllowedUpdatePath("foo.config.ts"), true);
+  // 目录本身也不遍历，否则整棵截图树会被 walk 进包
+  assert.equal(shouldTraversePackDir(".ui-shots"), false);
+  assert.equal(shouldTraversePackDir(".promo-shots"), false);
+  assert.equal(shouldTraversePackDir("src"), true);
+  // The install template must ship with the package: install.sh copies it on a
+  // fresh machine (P-113).
+  assert.equal(classifyUpdateEntry(".env.example"), ".env.example");
+  assert.equal(isAllowedUpdatePath(".env.example"), true);
 });
 
 test("assertRequiredUpdateFiles needs package.json and src", () => {
