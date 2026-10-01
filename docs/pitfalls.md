@@ -1013,5 +1013,17 @@
 - ✅ 规则：
   1. **发版时只要动过 `schema.prisma`，上机步骤里就得加一条 `pnpm prisma generate`**，然后重启进程。代码里已经兜了半层：`lib/db-schema.ts` 的 `requirePrismaModel()` 会把「客户端不认识模型」变成一句能照做的中文提示，而不是 `Cannot read properties of undefined` —— 但那只是提示，不是修复。
   2. **别拿 `migrate dev` 顶替**：它是开发命令，而且会重建表（P-105 实测把 `PostTag` 从 17 行清成 0）。
-  3. 想做到「导一次包就完事」，得让 `apply.ts` 在 `migrate deploy` 之后补一步 `generate` —— 那是改更新链路，要单独改 + 验证；**0.1.2 的包仍是老流程**，所以这一版上机必须手工补 `generate`。
+  3. 想做到「导一次包就完事」，得让 `apply.ts` 在 `migrate deploy` 之后补一步 `generate` —— 那是改更新链路，要单独改 + 验证；**0.1.2 的包仍是老流程**。
 - 📎 案例：2026-10-01 回答「怎么提交到服务器」时逐行核出来的。顺带把 6 处把 `pnpm prisma migrate dev` 写成生产操作的地方（AGENTS §1/§6、README、`docs/user-manual.md` ×2、`docs/data-models.md`、`docs/moment-visibility-spec.md`）一起改成 `migrate deploy` + `generate` 的正确口径。
+- 🔎 **同日后记（自己的判断要复核）**：当天我让用户「这一版上机必须手工补 `generate`」，实际去生产机核过之后**并没有踩到**——他们首装的包是当天从工作区打的，schema 里已经含 `StaticPage` / `MomentVisibilityGroup`，客户端 17:46 生成时就认识这两个模型（`index.d.ts` 里各 410 / 460 处命中），两张表也在。**但从 0.1.1 的 release 包首装的机器就会踩**。教训：断言"你必须做 X"之前，先去机器上核一下当前状态。
+
+### P-125 备份列表把每个包整读两遍：两个 59MB 的包让后台「备份」页卡 27 秒
+- ❌ 现象（2026-10-01 生产）：后台「备份」页点开一直转，看着像死住；`next-server` 持续 44% CPU、`load average 2.5`，整台机器跟着发涩。
+- ✅ 定位（**在真机上分段计时量的，不是猜的**）：在生产机跑一遍备份页的五个取数，`listBackupRecords()` = **26 750ms**，其余四个（`getSetting` / `readPendingRestore` / `listBackupKeyHashes` / `resolveBackupEncrypt`）都是 **0–61ms**。再切细：`listCosBackupNames` 0ms，而 `inspectBackupPackage()` **每个 59MB 的包 13.5 秒**（两个 ≈ 27s）。备份页 SSR 跑一遍、面板挂载后 `/api/admin/backup/list` 再跑一遍 —— 一轮五十多秒，还顺带把 CPU 打满。
+- ✅ 根因：`listBackupRecords()` 对每个**本地**包都调 `inspectBackupPackage()` 真去开包读版本号，而它内部是 `listTarGzEntryNames()`（全文件扫一遍）+ `extractNamedFiles()`（再扫一遍）—— **同一个包读两遍**，59MB 在轻量机上就是十几秒。可**答案本来就在本地**：`data/backup-manifests.json` 存着每个包的 `encrypted/format/channel/version`，由「创建备份 / 从 COS 拉回 / 导入 / 恢复」四条路径写好、删除时清掉。代码却把它当成「开包失败时的兜底」。
+- ✅ 规则：
+  1. **列表类页面不许做 O(包体积) 的活**：有元数据就用元数据。`data/backup-manifests.json` 是权威缓存 → **先读它**；只有清单里没有这个包（例如手工塞进去的）才开包，而且**开完立刻回写**（自愈，下次不再慢）。
+  2. **别把兜底路径当主路径**：这次就是兜底写得好好的（`manifestFromStored`），却只挂在 `catch` 里。
+  3. **性能问题先在真机上分段计时**：本地开发库没有大包，这个坑在开发机上**永远复现不出来**（本次就是拿用户的生产机逐段量出来的）。
+- 📎 案例：`lib/backup/backup.ts` 的 `listBackupRecords()` 改成「先读清单 → 缺失才开包并回写」。**同一台机器、同一批数据**实测：**26 750ms → 44ms**（两个包都走了清单）。`docs/ai/module.md` 的备份行同步。
+- 📌 遗留（不在本轮）：清单缺失时的兜底仍要开包两遍（约 13s/包）。手工导入的包第一次进列表会慢一次，之后靠回写变快；真要治，得让 `inspectBackupPackage` 只扫一遍、拿到 `meta.json` 就早退。

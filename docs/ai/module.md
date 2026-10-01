@@ -75,7 +75,7 @@
 | `src/lib/backup/restore.ts` | `restoreFromBackup()`、`requestPendingRestore()`、`updatePendingRestart()`、`isPendingRestoreDue()`、`applyPendingRestore()`、`clearRestoreArtifacts()` | 加密包合成 DEK；预约后可设重启时间；未到点启动不覆盖；数据清理时取消预约并删除恢复快照 | ✅ |
 | `src/lib/backup/relaunch.ts` | `isExternallySupervised()`、`bootScriptPath()`、`resolveRelaunchCommand()`、`spawnDetachedProcess()` | 优先拉 `scripts/boot.cjs`；Windows 用 wscript 隐藏启动，不弹 cmd | ✅ |
 | `src/lib/backup/restart.ts` | `queueAppRestart()`、`queueRestoreRestart()`（别名）、`scheduleAppRestart()` | 恢复与更新共用；仅在立刻重启或预约时间到点后才退出进程 | ✅ |
-| `src/lib/backup/backup.ts` | `runBackup()`、`listBackupRecords()`、`pullBackupFromCos()`、`deleteBackup()`、`replicateBackupToCos()` | 按加密开关打加密或明文包，均可上传 COS `backups/`；列表带时间/大小/版本/是否加密 | ✅ |
+| `src/lib/backup/backup.ts` | `runBackup()`、`listBackupRecords()`、`pullBackupFromCos()`、`deleteBackup()`、`replicateBackupToCos()` | 按加密开关打加密或明文包，均可上传 COS `backups/`；列表带时间/大小/版本/是否加密。**列表先读 `data/backup-manifests.json` 的清单，只有清单缺失才开包读、读完回写**——开一次包要把 tar.gz 整读两遍（59MB 实测 13.5s），别让列表页去付这个代价（P-125） | ✅ |
 | `src/lib/update/errors.ts` | `UpdateError` | 更新错误（CLI 与 API 共用，不依赖 Next） | ✅ |
 | `src/lib/update/filename.ts` | `isManagedUpdateFileName()`、`updateFileName()`、`importUpdateFileName()` | 本机打包 `myblog-update-…` / 导入 `myblog-update-import-…` 文件名白名单 | ✅ |
 | `src/lib/update/paths.ts` | `isAllowedUpdatePath()`、`classifyUpdateEntry()`、`assertRequiredUpdateFiles()`、`overlayRootsFromFiles()` | 拒绝名单：`data/` `.env` `node_modules/` `.next/` 与测试文件；其余 `main/` 文件可进包 | ✅ |

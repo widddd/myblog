@@ -162,16 +162,24 @@ export async function listBackupRecords(): Promise<BackupRecord[]> {
       const encryptedFallback = hashes.has(name);
       let manifest: BackupManifestView;
       if (local) {
-        try {
-          manifest = await inspectBackupPackage(
-            resolveBackupPath(name),
-            path.join(peekDir, name.replace(/[^\w.-]+/g, "_")),
-          );
-        } catch {
-          manifest = manifestFromStored(
-            await readBackupManifest(name),
-            encryptedFallback,
-          );
+        // 先信本地清单（data/backup-manifests.json）：它由创建 / 从 COS 拉回 / 导入 /
+        // 恢复四条路径写好，字段和开包读出来的一样。**不要每次都去开包** ——
+        // inspectBackupPackage 会把整个 tar.gz 读两遍，59MB 的包实测 13.5 秒，
+        // 两个包就让备份页与 /api/admin/backup/list 各卡近 30 秒（见 P-125）。
+        const stored = await readBackupManifest(name);
+        if (stored) {
+          manifest = manifestFromStored(stored, encryptedFallback);
+        } else {
+          try {
+            manifest = await inspectBackupPackage(
+              resolveBackupPath(name),
+              path.join(peekDir, name.replace(/[^\w.-]+/g, "_")),
+            );
+            // 顺手回写：这次慢一次，以后就都走清单了。
+            await upsertBackupManifest(name, manifest);
+          } catch {
+            manifest = manifestFromStored(null, encryptedFallback);
+          }
         }
       } else {
         manifest = manifestFromStored(
