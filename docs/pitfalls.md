@@ -984,6 +984,7 @@
   1. 客户端 `components/admin/BackupPanel.tsx`：`JSON.stringify({ passphrase: passphrase || undefined })`——`undefined` 会被 `JSON.stringify` **把整个键丢掉**，空口令时实际发出去的是 `{}`
   2. 路由 `api/admin/backup/run/route.ts`：注释明写「Empty body is valid for non-encrypted backups」，`body` 初值也是 `{}`
   3. 但 `lib/validation/backup.ts` 的 `backupRunPostSchema` 写的是**必填** `z.string().min(8)` → `{}` 直接校验失败，而路由把 `parsed.error.issues[0].message` 原样当用户提示返回，于是 Zod 的开发者向错误直接糊到用户脸上
+  4. **回归点很明确**：0.1.0 里这两个 schema **根本没有口令字段**（口令是「设一次存在后台」的 `backupPassphrasePostSchema`）；**0.1.1（`84f77b3`）把口令模型改成「每次输入、不落盘」时**，删掉旧 schema、给 `restorePostSchema` 与新的 `backupRunPostSchema` 都加上了**必填** `passphrase`——**却没动客户端那行 `passphrase || undefined`**。于是从 0.1.1 起，**非加密备份与非加密恢复双双 400**，一直没人发现（默认装法没配 COS 时加密就是关的，正好踩中）
 - ✅ 规则：
   1. **客户端用 `x || undefined` 省字段，服务端 schema 就必须 `.optional()`**；空串 / 纯空白要按「没给」处理（`z.preprocess` 归一成 `undefined`），否则 `.min(8)` 会把空串报成长度错误，提示更离谱
   2. **别把 `issues[0].message` 直接当用户提示**：Zod 默认消息是给开发者看的。要么每条校验都写中文 `message`，要么在路由层兜一个业务口径的说法
@@ -1001,4 +1002,4 @@
   1. **删功能要留痕**：至少进 changelog 批次与发行说明，并把 README / module.md / 设置页 / 概览页这几处「承诺」一起改掉。只把实现删掉、把 UI 与文档留在原地，等于给用户一句假话（同类：P-015 改代码未同步文档、P-112 删入口后文案变假）
   2. **改行为前后用一句话说清「现在是什么」**，别只留 `logger.debug`：日志是给排查用的，不是给下一个人理解设计用的
   3. **顺带记住那条被删掉的逻辑本来也不完整**：旧实现调 `runBackup()` 不带口令，而 `runBackup` 在「加密开启且无口令」时直接抛「加密备份必须输入口令」——**加密状态下的周期备份从来就没成功过**。要恢复这个功能，得先想清楚加密时口令从哪来（当前设计是「口令不保存、每次输入」，见 `api/admin/backup/passphrase/route.ts` 的 410）
-- 📎 案例：2026-10-01 用户提问时发现；本轮先修了 P-122（手动备份可用），周期备份的取舍待用户决定。
+- 📎 案例：2026-10-01 用户提问时发现。**处置（用户选定「恢复自动备份」）**：按上面规则 3 把实现重写回来——`lib/scheduler/backup.ts` 恢复 `checkBackupDue()`，到期判定抽成纯函数 `isBackupDue()` / `resolvePeriodDays()`（`DEFAULT_BACKUP_PERIOD_DAYS = 3`；非法/缺失回落 3 天，空值与坏日期都算「从没备份过」→ 到期），配 `scheduler/backup.test.ts` 4 条并挂进 `pnpm test`。**加密时不再假装能跑**：明确跳过 + 记 `info` 日志，并把这些话说进两个「承诺处」——设置页「自动备份」一节加了说明，概览页状态行在加密开启时改说「加密备份要手动输入口令，不会自动执行 · 保留 N 份」；`docs/user-manual.md` §备份与恢复 同步。

@@ -11,6 +11,7 @@ import {
 
 import { DashboardView } from "@/components/admin/DashboardView";
 import { MomentCompose } from "@/components/admin/MomentCompose";
+import { resolveBackupEncrypt } from "@/lib/backup/encrypt-policy";
 import { prisma } from "@/lib/db";
 import { loadMomentComposeData } from "@/lib/moments/compose-data";
 import { APP_RELEASE_LABEL } from "@/lib/release";
@@ -79,6 +80,7 @@ export default async function AdminDashboardPage() {
     cosBucket,
     cosRegion,
     composeData,
+    backupEncrypt,
   ] = await Promise.all([
     prisma.post.count(),
     prisma.post.count({ where: { status: "published" } }),
@@ -114,7 +116,10 @@ export default async function AdminDashboardPage() {
     getSetting<string>("cosBucket"),
     getSetting<string>("cosRegion"),
     // 「快速发瞬间」卡片：与 /admin/moments 用同一份取数（lib/moments/compose-data.ts）
+    // 「快速发瞬间」卡片：与 /admin/moments 用同一份取数（lib/moments/compose-data.ts）
     loadMomentComposeData(),
+    // 加密开启后周期备份不会自动跑（口令不落盘，定时任务拿不到），卡片文案要跟着变
+    resolveBackupEncrypt(),
   ]);
 
   const totalViews = viewAgg._sum.views ?? 0;
@@ -264,7 +269,9 @@ export default async function AdminDashboardPage() {
                 </span>
               </p>
               <p className="admin-status-row__meta">
-                每 {backupPeriodDays} 天一次 · 保留 {backupKeep} 份 · {backupLabel}
+                {backupEncrypt.enabled
+                  ? `加密备份要手动输入口令，不会自动执行 · 保留 ${backupKeep} 份 · ${backupLabel}`
+                  : `每 ${backupPeriodDays} 天一次 · 保留 ${backupKeep} 份 · ${backupLabel}`}
               </p>
             </div>
           </div>

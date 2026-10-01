@@ -468,6 +468,11 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
         </p>
       </AdminSection>
       <AdminSection title="自动备份">
+        <p className="admin-muted">
+          按下面的天数自动备份数据库与本地图片。开启加密后
+          <strong>不会自动执行</strong>
+          ——加密备份需要你每次到「备份」页手动输入口令（口令不落盘，定时任务拿不到）。
+        </p>
         <label className="admin-field">
           每隔几天自动备份
           <input
