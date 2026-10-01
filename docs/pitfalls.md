@@ -978,3 +978,27 @@
 - **空结果不算证据，除非同时扫到已知存在的串**。本次对照 `buildCosPublicBaseUrl` / `example-1300000000` 都有命中（12/12），目标串 0，才算通过。用 `$files | Select-String` 那套搜文件名得到的"0 命中"是假阴性（见正文规则 3）。
 - 另外 `git diff main` 会因仓库里有 `main/` 目录而报「ambiguous argument」——用 `git diff <sha> refs/heads/main`（P-092 已记，本次又中一次）。
 
+### P-122 可选字段写成必填：非加密备份必然 400，而且把 Zod 的默认错误漏给了用户
+- ❌ 现象（2026-10-01 用户实测）：后台「备份」页点「立即备份」永远失败，页面显示 **`Invalid input: expected string, received undefined`**。而加密默认是关的，这本该是最常见的那条路——等于**手动备份这条路整个不可用**。
+- ✅ 根因：同一个约定三处各说各话。
+  1. 客户端 `components/admin/BackupPanel.tsx`：`JSON.stringify({ passphrase: passphrase || undefined })`——`undefined` 会被 `JSON.stringify` **把整个键丢掉**，空口令时实际发出去的是 `{}`
+  2. 路由 `api/admin/backup/run/route.ts`：注释明写「Empty body is valid for non-encrypted backups」，`body` 初值也是 `{}`
+  3. 但 `lib/validation/backup.ts` 的 `backupRunPostSchema` 写的是**必填** `z.string().min(8)` → `{}` 直接校验失败，而路由把 `parsed.error.issues[0].message` 原样当用户提示返回，于是 Zod 的开发者向错误直接糊到用户脸上
+- ✅ 规则：
+  1. **客户端用 `x || undefined` 省字段，服务端 schema 就必须 `.optional()`**；空串 / 纯空白要按「没给」处理（`z.preprocess` 归一成 `undefined`），否则 `.min(8)` 会把空串报成长度错误，提示更离谱
+  2. **别把 `issues[0].message` 直接当用户提示**：Zod 默认消息是给开发者看的。要么每条校验都写中文 `message`，要么在路由层兜一个业务口径的说法
+  3. **同一形状的入口要一起改**：`restorePostSchema` 是同一个坑（非加密恢复也会 400）；而 `initialSetupSchema` 早前已经修过一次（`validation/setup.test.ts` 里就有一条「initial setup does not require a backup passphrase」）——**修了一处没修同类**，才会在这里又炸一遍
+- 📎 案例：`lib/validation/backup.ts` 抽出 `optionalPassphrase`（`z.preprocess` + `.optional()`），新增 `lib/validation/backup.test.ts` 6 条（空 body / 空串 / 纯空白 / 太短 / 合规 / 恢复不带口令）并挂进 `pnpm test`。**修复前该测试 3 条失败（原样复现用户那个 400），修复后 200/200**。
+
+### P-123 后台「备份周期」是个死设置：周期备份在 0.1.1 被删掉且没有任何记录，UI 与文档还在承诺它
+- ❌ 现象（2026-10-01 用户提问「怎么设置自动备份？？」）：设置页有「备份周期（天）」，概览页还写着「**每 N 天一次 · 保留 N 份**」——但**根本不会自动备份**。
+- ✅ 根因：0.1.1（`84f77b3`，2026-09-25）把 `lib/scheduler/backup.ts` 的整段实现删成了空操作（只剩 `logger.debug("跳过周期备份：备份改为管理员手动执行")`），而**0.1.1 的发行说明里一个字都没提**，changelog 也没有对应批次。于是：
+  - `scheduler/index.ts` 照旧在 boot 与定时器里调 `checkBackupDue`（调用了，但它什么都不做）
+  - `backupPeriodDays` 仍是 Setting，仍能读写（`validation/settings.ts` 还在校验它）
+  - `SettingsForm` 仍在渲染这个输入框，`admin/(protected)/page.tsx` 仍在渲染「每 N 天一次」
+  - `docs/ai/module.md` 仍写着旧行为（「`lastBackupAt + backupPeriodDays` 到期则 `runBackup()`」）
+- ✅ 规则：
+  1. **删功能要留痕**：至少进 changelog 批次与发行说明，并把 README / module.md / 设置页 / 概览页这几处「承诺」一起改掉。只把实现删掉、把 UI 与文档留在原地，等于给用户一句假话（同类：P-015 改代码未同步文档、P-112 删入口后文案变假）
+  2. **改行为前后用一句话说清「现在是什么」**，别只留 `logger.debug`：日志是给排查用的，不是给下一个人理解设计用的
+  3. **顺带记住那条被删掉的逻辑本来也不完整**：旧实现调 `runBackup()` 不带口令，而 `runBackup` 在「加密开启且无口令」时直接抛「加密备份必须输入口令」——**加密状态下的周期备份从来就没成功过**。要恢复这个功能，得先想清楚加密时口令从哪来（当前设计是「口令不保存、每次输入」，见 `api/admin/backup/passphrase/route.ts` 的 410）
+- 📎 案例：2026-10-01 用户提问时发现；本轮先修了 P-122（手动备份可用），周期备份的取舍待用户决定。
