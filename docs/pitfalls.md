@@ -1003,3 +1003,15 @@
   2. **改行为前后用一句话说清「现在是什么」**，别只留 `logger.debug`：日志是给排查用的，不是给下一个人理解设计用的
   3. **顺带记住那条被删掉的逻辑本来也不完整**：旧实现调 `runBackup()` 不带口令，而 `runBackup` 在「加密开启且无口令」时直接抛「加密备份必须输入口令」——**加密状态下的周期备份从来就没成功过**。要恢复这个功能，得先想清楚加密时口令从哪来（当前设计是「口令不保存、每次输入」，见 `api/admin/backup/passphrase/route.ts` 的 410）
 - 📎 案例：2026-10-01 用户提问时发现。**处置（用户选定「恢复自动备份」）**：按上面规则 3 把实现重写回来——`lib/scheduler/backup.ts` 恢复 `checkBackupDue()`，到期判定抽成纯函数 `isBackupDue()` / `resolvePeriodDays()`（`DEFAULT_BACKUP_PERIOD_DAYS = 3`；非法/缺失回落 3 天，空值与坏日期都算「从没备份过」→ 到期），配 `scheduler/backup.test.ts` 4 条并挂进 `pnpm test`。**加密时不再假装能跑**：明确跳过 + 记 `info` 日志，并把这些话说进两个「承诺处」——设置页「自动备份」一节加了说明，概览页状态行在加密开启时改说「加密备份要手动输入口令，不会自动执行 · 保留 N 份」；`docs/user-manual.md` §备份与恢复 同步。
+
+### P-124 更新包不重建 Prisma 客户端：加了模型的版本上机后，表建好了、功能仍报「模型不存在」
+- ❌ 现象（2026-10-01 核部署流程时发现）：更新流程只跑 `prisma migrate deploy`，而它**不重建 Prisma 客户端**。于是服务器上表建出来了，但 `node_modules` 里的客户端还是**首装那次**生成的，不认识本次新增的 `StaticPage`、`MomentVisibilityGroup`、`Moment.visibilityGroupId` —— 迁移成功、新功能照旧报错。
+- ✅ 证据链：
+  - `src/lib/update/apply.ts` 只调 `prisma migrate deploy`，**全仓没有任何地方跑 `prisma generate`**（`git grep 'prisma generate'` 只命中一句错误提示文案）
+  - 生成器是默认 `prisma-client-js`（没写 `output`）→ 产物落在 `node_modules/.pnpm/@prisma+client@…/node_modules/.prisma/client`；而更新包**排除 `node_modules`**（`lib/update/paths.ts` 的 `DENIED_ROOTS`）→ 客户端永远停在首装那一代
+  - 实测：跑一次 `migrate deploy` 之后，`index.d.ts` 的写入时间与长度都没变
+- ✅ 规则：
+  1. **发版时只要动过 `schema.prisma`，上机步骤里就得加一条 `pnpm prisma generate`**，然后重启进程。代码里已经兜了半层：`lib/db-schema.ts` 的 `requirePrismaModel()` 会把「客户端不认识模型」变成一句能照做的中文提示，而不是 `Cannot read properties of undefined` —— 但那只是提示，不是修复。
+  2. **别拿 `migrate dev` 顶替**：它是开发命令，而且会重建表（P-105 实测把 `PostTag` 从 17 行清成 0）。
+  3. 想做到「导一次包就完事」，得让 `apply.ts` 在 `migrate deploy` 之后补一步 `generate` —— 那是改更新链路，要单独改 + 验证；**0.1.2 的包仍是老流程**，所以这一版上机必须手工补 `generate`。
+- 📎 案例：2026-10-01 回答「怎么提交到服务器」时逐行核出来的。顺带把 6 处把 `pnpm prisma migrate dev` 写成生产操作的地方（AGENTS §1/§6、README、`docs/user-manual.md` ×2、`docs/data-models.md`、`docs/moment-visibility-spec.md`）一起改成 `migrate deploy` + `generate` 的正确口径。

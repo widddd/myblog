@@ -57,14 +57,12 @@ pnpm dev
 
 后台入口 `/admin`。高级注意见 [docs/user-manual.md](docs/user-manual.md)。
 
-**瞬间可见范围要跑一次迁移**（迁移属于高成本操作，请自己执行）：
+**迁移**（属于高成本操作，请自己执行）：瞬间可见范围与静态页面各带一次迁移，建 `MomentVisibilityGroup`（+ `Moment.visibilityGroupId`）与 `StaticPage`。
 
-```powershell
-cd main
-pnpm prisma migrate dev
-```
+- **开发机**：`cd main` → `pnpm prisma migrate dev`（顺带重建 Prisma 客户端）
+- **服务器**：走后台「更新」导入新版本就行——`scripts/boot.cjs` 在拉起 Next 之前会自动跑 `prisma migrate deploy`；手工补跑用 `pnpm prisma migrate deploy`，**不要用 `migrate dev`**（它会重建表，本项目被它把 `PostTag` 从 17 行清成 0 行，见 [P-105](docs/pitfalls.md)）
 
-它应用 `20260927160000_moment_visibility_group`（建 `MomentVisibilityGroup` 表 + 给 `Moment` 加 `visibilityGroupId` 列与索引）。**跑之前先备份 `main/data/blog.db`**；迁移完成后重启 dev / 生产进程一次。不跑迁移，表结构就是旧的，可见范围相关页面与接口会因为缺列而报错（其余功能不受影响）。
+两者都**跑之前先备份 `main/data/blog.db`**，跑完重启一次进程。另外：**带新模型的版本上机后还要跑一次 `pnpm prisma generate`** 再启动——`migrate deploy` 不会重建 Prisma 客户端，旧客户端不认识新模型（见 [P-124](docs/pitfalls.md)）。
 
 改样式时想看效果：`pnpm dev` 那个终端别关，另开一个跑 `pnpm shot /posts`（可选 `--measure .post-card --json`）——桌面 + 窄屏各出一张图到 `main/.ui-shots/`，约 2 秒，不碰数据库、不启服务。详见 [docs/pitfalls.md](docs/pitfalls.md) P-086。
 

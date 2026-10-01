@@ -177,4 +177,4 @@ CSS 只加在 `src/app/admin/admin.css`：`.admin-section__divider`、`.moment-v
 - [x] **开发库迁移已应用**（2026-09-30）：在 `main/` 下 `pnpm prisma migrate deploy` 应用 `20260927160000_moment_visibility_group`。应用前按 AGENTS §5 先做了文件级备份（校验通过后即删，不留垃圾：`data/backups/` 的轮转只认 `myblog-*.tar.gz`）。
       结果实测：`Moment` 列为 `id/content/images/createdAt/visibilityGroupId`；外键 `visibilityGroupId → MomentVisibilityGroup(id) ON DELETE SET NULL`；`PRAGMA integrity_check = ok`；本站 2 条瞬间完好；`prisma migrate status` 报「Database schema is up to date」。
       复现过的故障：迁移未应用时打开首页直接 500（`PrismaClientKnownRequestError: The table main.MomentVisibilityGroup does not exist`，调用链 `app/page.tsx → lib/home/data.ts → listHomeMoments → loadMomentVisibilityContext`）。应用后 `/`、`/moments`、`/posts`、`/api/moments` 全部 200。
-- [ ] **生产目标机首次部署前仍需执行一次迁移**：`pnpm prisma migrate dev`（或部署流程里的 `migrate deploy`），否则会复现上面同一个「表不存在」报错。
+- [ ] **生产目标机的迁移由部署流程自动执行**：更新并重启时 `scripts/boot.cjs` 会先跑 `prisma migrate deploy`；要手工补跑也用 `migrate deploy`（**别用 `migrate dev`**，见 P-105），跑完补一次 `pnpm prisma generate`（P-124），否则会复现上面同一个「表不存在」报错。
