@@ -938,3 +938,43 @@
   4. **改完当前树 ≠ 改完历史**：字符串只要进过一次公开提交，就在历史里了（`git log -S '<串>' --all` 可查是哪些提交带进来的）。真要抹掉得走 P-092 那套「仓外备份 → 改历史 → 验证 → 才 gc」+ 强推，属于单独一次需要用户拍板的操作，不要顺手做。
 - 📎 案例：2026-10-01 把两处夹具改成 `example-1300000000`（`pnpm test` 194/194）。**该串已随更早的提交在远端公开过**，本次只保证「当前树与今后的提交」干净。
 
+#### P-121 附：2026-10-01 真的清了一次历史（完整记录与四个坑）
+
+用户要求连历史一起抹掉，走了 P-092 那套。**先说结论**：可达 ref 全干净，但**强推不等于立刻消失**——GitHub 上旧提交对象仍可访问（详见坑 4）。
+
+**做了些什么**
+
+1. 仓外备份：`git bundle create $env:USERPROFILE\myblog-history-backup\myblog-full-<时间戳>.bundle --all`（1.23 MB，`git bundle list-heads` 验证过）。**必须放在仓库之外**——放仓库里会被 `--all` 一起重写（P-092）。
+2. 删掉本机临时退回分支：`git filter-branch --all` 会连它一起改写。
+3. 改写：`git filter-branch -f --tree-filter '<sed>' --tag-name-filter cat -- main`
+   - filter：`test -f main/src/lib/storage/cos-config.test.ts && sed -i s/<桶名>-<APPID>/example-1300000000/g main/src/lib/storage/cos-config.test.ts || true`
+     （**注意本文件也不写真实桶名**——写这份记录时我第一版就把真实串抄了进去，等于自己把刚清掉的东西又提交了一遍，只能再 amend 一次。占位写 `<桶名>-<APPID>`。）
+   - 结果：`main` c9b577b→146c9b6；`v0.1.0` 87638fa→c4f99c9；`v0.1.1` 5ac1f1b→84f77b3；内容只差那两行。
+4. `git update-ref -d refs/original/refs/heads/main` → `git reflog expire --expire=now --expire-unreachable=now --all` → `git gc --prune=now`
+5. 强推：`git push --force origin main` + `git push --force origin v0.1.0 v0.1.1 v0.1.2`；再 `git fetch --prune --prune-tags`，然后再 expire + gc 一次。
+
+**四个坑（都实际踩到了）**
+
+1. **filter 字符串别直接传给 PowerShell**：含引号/分号时会被拆开，git 报 `fatal: bad revision 's/<APPID>/1300000000/g …'`（本次第一次尝试就中）。改法：filter 写成**不含任何引号**的形式，并用数组 splat 保证它整体是一个参数：
+   ```powershell
+   $filter = 'test -f path && sed -i s/old/new/g path || true'
+   $argv = @('filter-branch','-f','--tree-filter',$filter,'--tag-name-filter','cat','--','main')
+   & git @argv
+   ```
+   （Git for Windows 自带 `sh.exe` 与 `sed.exe`，不用另装。）
+2. **`filter-branch` 不会重挂「不在本次 rev 范围内」的标签**：本次 `v0.1.0`/`v0.1.1` 被自动 remap，但 `v0.1.2` 当时指在另一个提交上、**没被 remap**，仍指着含串的旧提交。改写后必须 `git for-each-ref refs/tags` 逐个核对，该手动 `git tag -f` 就手动。
+3. **`refs/remotes/origin/*` 会把旧提交锚住**，导致 `gc --prune=now` 剪不掉（本次第一次 gc 后对象库里仍有 3 处命中）。正确顺序：**先强推 → 再 `git fetch --prune` 让跟踪引用追上 → 再 expire + gc**。
+4. **强推 ≠ 立刻消失**。实测改写并强推之后：
+   ```
+   https://raw.githubusercontent.com/<owner>/<repo>/<旧SHA>/main/src/lib/storage/cos-config.test.ts
+   -> HTTP 200，文件里仍然有桶名（87638fa / 5ac1f1b 都是）
+   ```
+   GitHub 会保留不可达对象（其中较晚被替换掉的 c9b577b 反而先变成 422）。**彻底清除的唯一正规途径**是按 GitHub 官方「Removing sensitive data from a repository」**找 Support 提 GC 请求**（或删库重建，代价是丢 star/issue/release）。所以：**别把"改写历史"当成能兜底的补救手段——第一次就别写进去。**
+
+**验证方法（重点：必须带阳性对照）**
+
+- 逐提交：`foreach ($rev in (git rev-list --all)) { git grep -c -I -E '<串>' $rev -- }`
+- 全对象库：`git cat-file --batch-all-objects --batch` 抓成文本再正则计数
+- **空结果不算证据，除非同时扫到已知存在的串**。本次对照 `buildCosPublicBaseUrl` / `example-1300000000` 都有命中（12/12），目标串 0，才算通过。用 `$files | Select-String` 那套搜文件名得到的"0 命中"是假阴性（见正文规则 3）。
+- 另外 `git diff main` 会因仓库里有 `main/` 目录而报「ambiguous argument」——用 `git diff <sha> refs/heads/main`（P-092 已记，本次又中一次）。
+

@@ -167,6 +167,7 @@
 - **P-118 封面与正文图不是一条路**：正文图渲染时按 hash 改写（配了 COS 自动走 COS 直链），封面 `Post.cover` 被 `CoverMedia` **原样**使用 → 封面必须写缩略图/COS 地址，写原图就是每个列表页拉 3–5MB；外部导入脚本照 `editorImageUrl()` 的口径写
 - **P-119 灯箱原图别默认走 `?proxy=1`**：原图 3–5MB，站点中转实测 1.03 MB/s vs COS 直连 8.10 MB/s；大对象一律直连对象存储、只有站内路径才代理，并给「直连→代理→`<img>` 直载」三级降级；要进度环就在桶上加 CORS（必须 `Expose-Headers: Content-Length`）
 - **P-120 打包不认 `.gitignore`**：`packCurrentApp()` 是文件系统遍历，过滤只认 `lib/update/paths.ts` 的拒绝名单 → 新增任何「落在项目目录里的本机产物」（截图/抓板/临时导出）必须**同时进 `.gitignore` 和 `DENIED_ROOTS`**，否则会被发到服务器（实测 `.ui-shots/` + `.promo-shots/` 35 个文件 = 整包 3.01MB 里的 2.51MB；改后 0.62MB）
+- **P-121 夹具别写真实桶名/APPID**：仓库是公开的，`*.test.ts` 虽不进更新包但**会进仓库**。占位统一 `example-1300000000` / `bucket.cos.<region>.myqcloud.com` / `example.com`，IP 用 RFC 5737 文档段；发版前用 `git grep` 扫（**别用 `$files | Select-String`，那搜的是文件名，会静默假阴性**）。⚠️ **改写历史不是兜底手段**：强推后旧 SHA 在 GitHub 上仍能 raw 取到内容，彻底清要提 GitHub Support，所以第一次就别写进去——完整记录见 pitfalls P-121 附
 
 ## 5. 工作流底线
 
@@ -202,6 +203,12 @@
 - [ ] 新配置字段已同步全部读写路径
 - [ ] Windows 上 `pnpm dev` 实际跑过、功能验证过
 - [ ] 未私自执行高成本操作
+
+**公开面**（**这个仓库是公开的**。提交/发版前必查——漏了就得改写历史 + 强推，代价见 P-121）
+- [ ] 代码、测试夹具、示例、文档里**没有真实的桶名 / APPID / 域名 / 服务器路径 / 邮箱**；占位统一写 `example-1300000000`、`bucket.cos.<region>.myqcloud.com`、`example.com`，IP 用 RFC 5737 的 `192.0.2.x` / `198.51.100.x` / `203.0.113.x`
+- [ ] 只留本机的目录（`reference/`、`demo/`、`changelog/`、`promo/`）没有被误跟踪
+- [ ] 更新包与 GitHub Release 正文里也没有这些串（注意：`isSkippedPackName()` 会跳过 `*.test.ts`，所以夹具不进包，但**仍在公开仓库里**）
+- [ ] 扫描命令用 `git grep`（**别用 `$files | Select-String`——那搜的是文件名字符串，会静默给空结果**），两条命令见 P-121
 
 **文档同步**（对照 `docs/agents-maintenance.md` 触发表）
 - [ ] 已更新本任务触发的全部 docs
