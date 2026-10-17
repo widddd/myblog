@@ -79,6 +79,10 @@ test("classifyUpdateEntry uses a deny list so new roots and files are packed", (
   assert.equal(shouldTraversePackDir(".ui-shots"), false);
   assert.equal(shouldTraversePackDir(".promo-shots"), false);
   assert.equal(shouldTraversePackDir("src"), true);
+  // 打包产物（npm/pnpm pack 落在应用根的整份源码副本，内含 data/blog.db）不进包
+  assert.equal(isAllowedUpdatePath("main-0.2.0.tgz"), false);
+  assert.equal(isAllowedUpdatePath("backup.tar.gz"), false);
+  assert.equal(classifyUpdateEntry("main-0.2.0.tgz"), null);
   // The install template must ship with the package: install.sh copies it on a
   // fresh machine (P-113).
   assert.equal(classifyUpdateEntry(".env.example"), ".env.example");

@@ -76,6 +76,12 @@ export function isSkippedPackName(posix: string): boolean {
   if (base.endsWith(".tsbuildinfo") || base.endsWith(".log")) {
     return true;
   }
+  // 打包产物不是程序文件：`npm pack` / `pnpm pack` 落在应用根的是**整份源码副本**
+  // （实测一份 51.7 MB 的 `main-<版本>.tgz`，里面还带着 `data/blog.db`）。
+  // 它不该进仓库，更不该被塞进更新包发到服务器（P-120）。
+  if (base.endsWith(".tgz") || base.endsWith(".tar.gz")) {
+    return true;
+  }
   return base.endsWith(".test.ts") || base.endsWith(".test.tsx");
 }
 

@@ -53,3 +53,8 @@ next-env.d.ts
 
 # 宣传片截图产物（与 .ui-shots 同类，字节级制品不进仓）
 /.promo-shots/
+
+# 打包产物：npm/pnpm pack 会把整份源码（含 data/blog.db）落在应用根，实测一份 51.7 MB。
+# 不进仓也不进更新包 —— 拒绝名单同步登记在 src/lib/update/paths.ts（P-120）。
+*.tgz
+*.tar.gz
