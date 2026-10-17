@@ -200,7 +200,7 @@ cd D:\code_projects\myblog\androidapp
 
 | 产物 | 大小 |
 |---|---|
-| `app-release.apk`（arm64-v8a，给真机） | **186.4 MB**（解包 195.6 MB，157 个文件） |
+| `app-release.apk`（arm64-v8a，给真机） | **206.6 MB**（175 个文件；2026-10 起含 ffmpeg / x264，带之前是 186.4 MB） |
 | `app-debug.apk`（x86_64，给模拟器） | **206.4 MB**（x86_64 的 libxul 比 arm64 还大：157.8 MB；debug 的 dex 也更多） |
 
 **里面装的是什么**（release 实测，数字为压缩后体积）：
@@ -209,8 +209,9 @@ cd D:\code_projects\myblog\androidapp
 |---|---|---|
 | `lib/arm64-v8a/libxul.so` | **145.4 MB** | **整个 Gecko 内核**：HTML/CSS 排版、SpiderMonkey JS/WASM JIT、WebRender 渲染、网络栈…… |
 | `assets/omni.ja` | 13.8 MB（解包 44.9 MB） | 内核的 JS 模块 / 浏览器 chrome / 本地化，4069 个条目：`chrome`(1942) `localization`(1383) `modules`(443) `moz-src`(157) `actors`(47) `hyphenation`(46)… 踩过的 `modules/FilePickerDelegate.sys.mjs` 就在里面 |
-| `classes*.dex`（2 个） | 5.2 MB | App 自己的 Kotlin + androidx + GeckoView 的 Java API |
-| 其余 11 个 `.so` | ≈ 21 MB | NSS 加密（libnss3 / libfreebl3 / libsoftokn3）、媒体解码（libgkcodecs / libmozavcodec / libmozavutil）、崩溃上报（libcrashtools / libcrashhelper）、libmozglue… |
+| `classes*.dex`（2 个） | 5.4 MB | App 自己的 Kotlin + androidx + GeckoView 的 Java API |
+| ffmpeg 那 9 支 `.so` | ≈ 18 MB | `libavcodec` 11.3 / `libavfilter` 3.0 / `libavformat` 2.1 / `libavutil` `libswscale` 各 0.5 / 其余小支（`-PgvAbi=armeabi-v7a` 时整组不存在，见 §3b） |
+| 其余 13 支 `.so` | ≈ 23 MB | NSS 加密（libnss3 2.7 / libfreebl3 0.8 / libsoftokn3 0.3）、媒体解码（libgkcodecs 4.9 / libmozavcodec 2.0 / libmozavutil 0.4）、崩溃上报（libcrashtools 5.7 / libcrashhelper 3.2）、libmozglue 1.2、libc++_shared 1.7… |
 | `res/` + `resources.arsc` | 0.2 MB | 图标、开屏 logo、字符串、主题 |
 | `META-INF/` | ≈ 0 | 37 个签名/清单条目 |
 
@@ -220,7 +221,7 @@ cd D:\code_projects\myblog\androidapp
 
 **想瘦身**：内核不可约（`libxul.so` 是编译产物）。能做的只有：**只打一个 ABI**（已做，见 §3；双 ABI 等于翻倍）、开 R8 + 资源压缩（`isMinifyEnabled` 目前是 `false`，能省的是 dex 那几 MB，对内核无效）。
 
-装机前确认设备**可用空间 ≥ 400 MB**（安装包 + 解包后的 `.so`）。
+装机前确认设备**可用空间 ≥ 450 MB**（安装包 + dex 优化；`.so` 按页对齐存放、安装时不解包，见上）。
 
 ## 7. HTTP 与 cookie 的两条前提
 
