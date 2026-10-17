@@ -10,12 +10,15 @@ import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
 
 import { Audio } from "@/components/post/Audio";
+import { ImageGroupView } from "@/components/post/ImageGroupView";
 import { Video } from "@/components/post/Video";
+import { albumHref } from "@/lib/albums/path";
 import { prisma } from "@/lib/db";
 import { loadCosSettings, localUploadUrl, publicMediaUrl } from "@/lib/storage";
 import { parseVariants } from "@/lib/upload/handle";
 import { collectMediaHashes } from "@/lib/uploads/hashes";
 
+import { rehypeImageGroups } from "./image-group";
 import { rehypeAllowVideo, sanitizeSchema } from "./sanitize";
 import { createTocCollector, type TocItem } from "./toc";
 
@@ -50,6 +53,7 @@ function createMdxImage(
   originals: Map<string, string>,
   thumbs: Map<string, string>,
   keys: Map<string, string>,
+  albums: Map<string, { href: string; title: string }>,
 ) {
   return function MdxImage({
     src,
@@ -67,10 +71,16 @@ function createMdxImage(
     const displaySrc = (hash && thumbs.get(hash)) || safeSrc;
     const originalSrc = (hash && originals.get(hash)) || displaySrc;
     const storageKey = hash ? keys.get(hash) : undefined;
+    // 图属于某个**启用中**的相册时，灯箱右下角会出现「查看相册」；没有相册就没有这个按钮。
+    // 数据来自服务端这一次 Upload 查询（零额外请求），且只由本组件在 sanitize 之后注入 ——
+    // 正文源码里手写的同名属性会被 sanitize 剥掉。
+    const album = hash ? albums.get(hash) : undefined;
 
     return (
       <img
         alt={typeof alt === "string" ? alt : ""}
+        data-lightbox-album={album?.href}
+        data-lightbox-album-title={album?.title}
         data-lightbox-key={storageKey}
         data-lightbox-src={originalSrc}
         data-lightbox-thumb={displaySrc}
@@ -91,22 +101,38 @@ async function loadMediaUrls(source: string): Promise<{
   originals: Map<string, string>;
   thumbs: Map<string, string>;
   keys: Map<string, string>;
+  albums: Map<string, { href: string; title: string }>;
 }> {
   const unique = collectMediaHashes(source);
   const originals = new Map<string, string>();
   const thumbs = new Map<string, string>();
   const keys = new Map<string, string>();
+  const albums = new Map<string, { href: string; title: string }>();
   if (unique.length === 0) {
-    return { originals, thumbs, keys };
+    return { originals, thumbs, keys, albums };
   }
 
   await loadCosSettings();
   const rows = await prisma.upload.findMany({
     where: { hash: { in: unique } },
-    select: { hash: true, key: true, variants: true, driver: true, mime: true },
+    select: {
+      hash: true,
+      key: true,
+      variants: true,
+      driver: true,
+      mime: true,
+      // 相册归属顺带带出来（灯箱的「查看相册」用它，见 docs/albums-spec.md §3.8）
+      album: { select: { slug: true, title: true, enabled: true } },
+    },
   });
   for (const row of rows) {
     keys.set(row.hash, row.key);
+    if (row.album?.enabled) {
+      albums.set(row.hash, {
+        href: albumHref(row.album.slug),
+        title: row.album.title,
+      });
+    }
     const variants = parseVariants(row.variants);
     const pending = row.mime.startsWith("image/")
       ? !variants.thumb
@@ -133,18 +159,23 @@ async function loadMediaUrls(source: string): Promise<{
       }
     }
   }
-  return { originals, thumbs, keys };
+  return { originals, thumbs, keys, albums };
 }
 
 async function compilePostMdx(source: string) {
   const toc: TocItem[] = [];
-  const { originals, thumbs, keys } = await loadMediaUrls(source);
+  const { originals, thumbs, keys, albums } = await loadMediaUrls(source);
   const { content } = await compileMDX({
     source,
     components: {
-      img: createMdxImage(originals, thumbs, keys),
+      img: createMdxImage(originals, thumbs, keys, albums),
       video: Video,
       audio: Audio,
+      // 折叠组：`rehypeImageGroups` 转出来的元素（**大写标签名**才走组件分支，
+      // 小写标签会被 MDX 当成"显式 JSX 的 HTML 标签"跳过映射，见 image-group.ts 文件头）。
+      // `details` 是兜底：万一有人手写 <details class="post-image-group">，也交给同一个组件。
+      ImageGroup: ImageGroupView,
+      details: ImageGroupView,
     },
     options: {
       blockJS: true,
@@ -152,6 +183,9 @@ async function compilePostMdx(source: string) {
       mdxOptions: {
         remarkPlugins: [remarkGfm],
         rehypePlugins: [
+          // 折叠组必须在 sanitize **之前**把 <ImageGroup> 变成真元素：
+          // 认不出的节点类型会被 rehype-sanitize 整棵丢掉（正文里静默消失，无报错）。
+          rehypeImageGroups,
           rehypeAllowVideo,
           [rehypeSanitize, sanitizeSchema],
           rehypeSlug,

@@ -58,13 +58,14 @@ function pageHeading(pathname: string): { title: string; lead: string } {
     return { title: "文章", lead: "管理已发布、草稿和定时文章" };
   }
   if (pathname.startsWith("/admin/moments")) {
-    return { title: "瞬间", lead: "记录此刻的想法与图片" };
+    return { title: "瞬间", lead: "记录此刻的想法、图片、视频与语音" };
   }
   if (pathname.startsWith("/admin/comments")) {
     return { title: "评论", lead: "审核、回复或删除" };
   }
   if (pathname.startsWith("/admin/uploads")) {
-    return { title: "媒体库", lead: "文章和瞬间用过的图片" };
+    // 媒体库现在收图片 / 视频 / 语音三类（语音单独分区，见 docs/moment-audio-spec.md）
+    return { title: "媒体库", lead: "文章和瞬间用过的图片、视频与语音" };
   }
   if (pathname.startsWith("/admin/backups")) {
     return { title: "备份", lead: "加密可随时开关，非加密也能上云和恢复" };

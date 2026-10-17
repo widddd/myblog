@@ -24,7 +24,12 @@ import {
   shouldTraversePackDir,
 } from "./paths";
 import { parseGithubRepo } from "./github";
-import { isPendingUpdateDue, type PendingUpdate } from "./pending";
+import {
+  MAX_PENDING_UPDATE_RESTARTS,
+  decidePendingUpdateRestart,
+  isPendingUpdateDue,
+  type PendingUpdate,
+} from "./pending";
 
 test("update file names follow the whitelist", () => {
   const name = updateFileName(new Date(2026, 8, 4, 21, 40, 5));
@@ -113,6 +118,51 @@ test("pending update is due only after restartAt", () => {
       Date.parse("2026-09-04T13:00:00.000Z"),
     ),
     true,
+  );
+});
+
+test("预约更新的「到点该怎么办」：额度用尽必须停手，不许无限重启", () => {
+  const due: PendingUpdate = {
+    name: "myblog-update-20260904-214005.tar.gz",
+    requestedAt: "2026-09-04T12:00:00.000Z",
+    restartAt: "2026-09-04T13:00:00.000Z",
+  };
+  const now = Date.parse("2026-09-04T14:00:00.000Z");
+
+  // 没预约 / 没到点：什么都不做
+  assert.equal(decidePendingUpdateRestart(null, now), "idle");
+  assert.equal(
+    decidePendingUpdateRestart({ ...due, restartAt: null }, now),
+    "idle",
+  );
+  assert.equal(
+    decidePendingUpdateRestart({ ...due, restartAt: "2026-09-04T15:00:00.000Z" }, now),
+    "idle",
+  );
+
+  // 到点且还有额度：排重启；次数接近上限时最后一格仍要试
+  assert.equal(decidePendingUpdateRestart(due, now), "restart");
+  assert.equal(decidePendingUpdateRestart({ ...due, restartAttempts: 1 }, now), "restart");
+  assert.equal(
+    decidePendingUpdateRestart(
+      { ...due, restartAttempts: MAX_PENDING_UPDATE_RESTARTS - 1 },
+      now,
+    ),
+    "restart",
+  );
+
+  // 额度用尽：停手。**这条是 2026-10-03 生产事故的正解**——没人应用更新时，
+  // 「到点」这个条件永远成立，不设上限就是每 60 秒重启一次，长请求全被腰斩。
+  assert.equal(
+    decidePendingUpdateRestart(
+      { ...due, restartAttempts: MAX_PENDING_UPDATE_RESTARTS },
+      now,
+    ),
+    "abandon",
+  );
+  assert.equal(
+    decidePendingUpdateRestart({ ...due, restartAttempts: 99 }, now),
+    "abandon",
   );
 });
 

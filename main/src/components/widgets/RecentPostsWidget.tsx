@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { CoverMedia } from "@/components/common/CoverMedia";
+import { PostCover } from "@/components/common/PostCover";
 import { postHref } from "@/lib/posts/path";
 import type { PostCardModel } from "@/lib/posts/types";
 import { formatPostDate } from "@/lib/utils/date";
@@ -25,7 +25,7 @@ export function RecentPostsWidget({
               href={postHref(post)}
               key={post.publicId}
             >
-              <CoverMedia alt={post.title} src={post.cover} title={post.title} />
+              <PostCover alt={post.title} post={post} />
               <div>
                 <div className="recent-item__title">{post.title}</div>
                 <time>{formatPostDate(post.publishedAt)}</time>

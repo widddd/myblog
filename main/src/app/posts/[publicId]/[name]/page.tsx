@@ -16,6 +16,7 @@ import {
   getPublishedPostMetaByPublicId,
 } from "@/lib/posts/query";
 import { isPostUnlocked } from "@/lib/posts/unlock";
+import { readingStats } from "@/lib/posts/reading";
 import { publicMetadata } from "@/lib/seo/site";
 
 type PostPageProps = {
@@ -60,6 +61,8 @@ export default async function PostPage({ params }: PostPageProps) {
     notFound();
   }
   const toc = postContent ? await extractToc(postContent.content) : undefined;
+  // 字数与阅读时长按**正文**算（口径见 lib/posts/reading.ts）；加密文章没有正文，不显示这两项
+  const reading = postContent ? readingStats(postContent.content) : null;
   const comments = unlocked
     ? await listApprovedComments({
         targetType: "post",
@@ -70,7 +73,7 @@ export default async function PostPage({ params }: PostPageProps) {
   return (
     <>
       {postContent ? <ReadingProgress /> : null}
-      <PostHero post={post} />
+      <PostHero post={post} reading={reading} />
       <div className="home-below" style={{ marginTop: 0, paddingTop: 8 }}>
         <div className="layout">
           <div className="layout__main">

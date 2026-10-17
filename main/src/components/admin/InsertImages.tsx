@@ -6,6 +6,7 @@ import { useState } from "react";
 import { insertImage$ } from "@myblog/mdx-editor";
 
 import { MediaInsertMenu } from "@/components/admin/MediaInsertMenu";
+import { registerLocalPreviews } from "@/lib/client/local-preview";
 import { editorImageUrl, uploadAdminFiles, UploadCancelledError } from "@/lib/client/upload";
 
 export function InsertImages() {
@@ -18,12 +19,12 @@ export function InsertImages() {
     }
     setBusy(true);
     try {
-      const uploaded = await uploadAdminFiles(
-        Array.from(files),
-        "image",
-        undefined,
-        { defer: true },
-      );
+      const selected = Array.from(files);
+      const uploaded = await uploadAdminFiles(selected, "image", undefined, {
+        defer: true,
+      });
+      // 本机刚选的图：登记 blob 预览，编辑器就不会为显示立刻回源拉一遍原图
+      registerLocalPreviews(selected, uploaded.map(editorImageUrl));
       for (const item of uploaded) {
         insertImage({ src: editorImageUrl(item), altText: "" });
       }

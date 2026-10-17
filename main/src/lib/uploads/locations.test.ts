@@ -6,6 +6,7 @@ import { formatClockDuration } from "../utils/date";
 import {
   keysForDelete,
   mimePrefixForKind,
+  mimePrefixesForKinds,
   parseUploadDuration,
   plannedLocations,
 } from "./locations";
@@ -21,6 +22,19 @@ test("mimePrefixForKind and parseUploadDuration", () => {
   assert.equal(parseUploadDuration(90_000), null);
   assert.equal(formatClockDuration(83), "1:23");
   assert.equal(formatClockDuration(3661), "1:01:01");
+});
+
+test("mimePrefixesForKinds：多值/单值/脏值都与旧行为一致", () => {
+  // 瞬间配图的媒体库选择器：图片 + 视频
+  assert.deepEqual(mimePrefixesForKinds("image,video"), ["image/", "video/"]);
+  assert.deepEqual(mimePrefixesForKinds(" video , image "), ["video/", "image/"]);
+  assert.deepEqual(mimePrefixesForKinds("image"), ["image/"]);
+  // 重复值去重；未知值 / 空值 = 不过滤（与 mimePrefixForKind 同口径）
+  assert.deepEqual(mimePrefixesForKinds("image,image"), ["image/"]);
+  assert.deepEqual(mimePrefixesForKinds("nope"), []);
+  assert.deepEqual(mimePrefixesForKinds(""), []);
+  assert.deepEqual(mimePrefixesForKinds(null), []);
+  assert.deepEqual(mimePrefixesForKinds(undefined), []);
 });
 
 test("plannedLocations lists local thumbs and never puts thumb2 on COS", () => {

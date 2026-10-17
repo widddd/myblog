@@ -32,6 +32,7 @@ export type ReservedDecision = "block" | "warn";
 export const RESERVED_SEGMENTS = [
   // —— 本站真实顶层路由（与 src/app 对齐，测试会守着这一半）——
   { segment: "admin", decision: "block", reason: "后台工作区 /admin" },
+  { segment: "albums", decision: "block", reason: "相册页 /albums" },
   { segment: "api", decision: "block", reason: "接口前缀 /api" },
   { segment: "archives", decision: "block", reason: "归档页 /archives" },
   { segment: "categories", decision: "block", reason: "分类页 /categories" },

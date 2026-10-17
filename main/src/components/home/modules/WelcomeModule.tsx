@@ -1,26 +1,14 @@
 import Link from "next/link";
 
+import { WelcomeChips } from "@/components/home/modules/WelcomeChips";
+import { DEFAULT_CHIPS, normalizeChipLabels, normalizeChipVisible } from "@/lib/home/chips";
 import type { HomeModuleConfig } from "@/lib/home/types";
 import { isSafeHref } from "@/lib/media/url";
 
-const CHIP_COLORS = [
-  "#4db8e8",
-  "#5ba3d9",
-  "#e38100",
-  "#57bd6a",
-  "#62c4ee",
-  "#ff7c7c",
-];
-
-const DEFAULT_CHIPS = ["NX", "TS", "MD", "SQL", "CSS", "UI"];
-
+/** 泡泡文字：配了就用自己的，没配用默认那 6 个。顺序在客户端打散。 */
 function chipLabels(config: HomeModuleConfig): string[] {
-  const custom = (config.chips ?? [])
-    .map((item) => item.trim().slice(0, 8))
-    .filter(Boolean)
-    .slice(0, 12);
-  const labels = custom.length > 0 ? custom : DEFAULT_CHIPS;
-  return [...labels, ...labels];
+  const custom = normalizeChipLabels(config.chips);
+  return custom.length > 0 ? custom : DEFAULT_CHIPS;
 }
 
 export function WelcomeModule({ config }: { config: HomeModuleConfig }) {
@@ -42,17 +30,7 @@ export function WelcomeModule({ config }: { config: HomeModuleConfig }) {
         ))}
       </h2>
       {config.showChips !== false ? (
-        <div className="dash-chips" aria-hidden="true">
-          {chips.map((label, index) => (
-            <div
-              className="dash-chip"
-              key={`${label}-${index}`}
-              style={{ background: CHIP_COLORS[index % CHIP_COLORS.length] }}
-            >
-              {label}
-            </div>
-          ))}
-        </div>
+        <WelcomeChips labels={chips} visible={normalizeChipVisible(config.chipVisible)} />
       ) : null}
       <div className="dash-links">
         {config.primaryLabel ? (

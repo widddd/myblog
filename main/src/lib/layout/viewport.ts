@@ -12,10 +12,51 @@ export const LAYOUT_PHONE_COARSE_MAX_HEIGHT = 540;
 export const LAYOUT_PHONE_MEDIA =
   "(max-width: 959px), ((hover: none) and (max-height: 540px))";
 
+/**
+ * 模块高度（`hPct` / `mobileHPct`）：**0 = 自适应（随内容）**，其余按**像素**读。
+ *
+ * ⚠️ 曾经是「视口高度的百分数」（`hPct: 37` = 37% 视口），那个口径下把滑块调大只是
+ * 把**格子**撑高、模块本身还是被挤在里面（用户反馈：欢迎卡文字挤成一团、泡泡变矮）。
+ * 现在滑块直接就是模块高度（px），所见即所得；0 交给内容自己决定。
+ */
 export const H_PCT_MIN = 0;
-export const H_PCT_MAX = 100;
-export const H_UNIT_MIN_PX = 7;
-export const H_UNIT_MAX_PX = 11;
+export const H_PCT_MAX = 1200;
+
+/** 高度滑块的最小/最大步进（px）。 */
+export const H_PCT_STEP = 10;
+
+/** 模块高度是不是自适应。 */
+export function isAutoHeight(hPct: number): boolean {
+  return !(hPct > 0);
+}
+
+/** 模块高度 → CSS 长度：自适应给 `auto`，否则给像素。 */
+export function moduleHeightCss(hPct: number): string {
+  return isAutoHeight(hPct) ? "auto" : `${Math.round(hPct)}px`;
+}
+
+/** 拖拽/输入框用的夹取。 */
+export function clampModuleHeight(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(H_PCT_MAX, Math.max(H_PCT_MIN, Math.round(value)));
+}
+
+/**
+ * 把「屏幕上的拖动距离」换算成模块高度变化量。
+ * 后台画布是缩放过的（`zoom` 与画框缩放都体现在 framePx 里），所以要按比例还原成模块像素。
+ */
+export function dragDeltaToModulePx(
+  deltaScreenPx: number,
+  framePx: number,
+  designPx: number = VIEWPORT_DESKTOP.height,
+): number {
+  if (!Number.isFinite(deltaScreenPx) || !(framePx > 0)) {
+    return 0;
+  }
+  return Math.round(deltaScreenPx * (designPx / framePx));
+}
 
 export type LayoutViewportId = "desktop" | "mobile";
 
@@ -63,23 +104,3 @@ export function isPhoneViewport(
 }
 
 export type BannerHeightPreset = "full" | "large" | "medium";
-
-export function bannerPresetToHPct(preset: BannerHeightPreset): number {
-  if (preset === "full") {
-    return 100;
-  }
-  if (preset === "large") {
-    return 70;
-  }
-  return 47;
-}
-
-export function hPctToBannerPreset(hPct: number): BannerHeightPreset {
-  if (hPct >= 85) {
-    return "full";
-  }
-  if (hPct >= 58) {
-    return "large";
-  }
-  return "medium";
-}

@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  bannerPresetToHPct,
-  hPctToBannerPreset,
+  clampModuleHeight,
+  dragDeltaToModulePx,
+  H_PCT_MAX,
+  isAutoHeight,
   isPhoneViewport,
+  moduleHeightCss,
 } from "./viewport";
 
 test("390 宽是手机", () => {
@@ -23,11 +26,28 @@ test("iPad 横屏高度约 744，不走手机套", () => {
   assert.equal(isPhoneViewport(1133, 744, false), false);
 });
 
-test("Banner 预设与 hPct 互转", () => {
-  assert.equal(bannerPresetToHPct("full"), 100);
-  assert.equal(bannerPresetToHPct("large"), 70);
-  assert.equal(bannerPresetToHPct("medium"), 47);
-  assert.equal(hPctToBannerPreset(100), "full");
-  assert.equal(hPctToBannerPreset(70), "large");
-  assert.equal(hPctToBannerPreset(47), "medium");
+test("模块高度：0 = 自适应，其余按像素", () => {
+  assert.equal(isAutoHeight(0), true);
+  assert.equal(isAutoHeight(-1), true);
+  assert.equal(isAutoHeight(380), false);
+  assert.equal(moduleHeightCss(0), "auto");
+  assert.equal(moduleHeightCss(380), "380px");
+  assert.equal(moduleHeightCss(379.6), "380px");
+});
+
+test("高度夹取到 0–H_PCT_MAX 且取整", () => {
+  assert.equal(clampModuleHeight(-20), 0);
+  assert.equal(clampModuleHeight(380.4), 380);
+  assert.equal(clampModuleHeight(9999), H_PCT_MAX);
+  assert.equal(clampModuleHeight(Number.NaN), 0);
+});
+
+test("拖动像素换算：画框被放大/缩小都要还原成模块像素", () => {
+  // 画框与设计视口等高：屏幕位移就是模块像素
+  assert.equal(dragDeltaToModulePx(100, 900, 900), 100);
+  // 画框只有设计视口一半高（缩放到 0.5）：屏幕拖 50px = 模块 100px
+  assert.equal(dragDeltaToModulePx(50, 450, 900), 100);
+  // 画框比设计视口还高（放大）：屏幕拖 100px 只该长 50px
+  assert.equal(dragDeltaToModulePx(100, 1800, 900), 50);
+  assert.equal(dragDeltaToModulePx(100, 0, 900), 0);
 });

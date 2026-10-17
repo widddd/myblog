@@ -39,7 +39,10 @@ export async function Footer({ showUptime = false }: { showUptime?: boolean }) {
           <span> · </span>
           <Link href="/rss.xml">RSS</Link>
           <span> · </span>
-          <Link href="/admin">管理后台</Link>
+          {/* 后台入口必须是文档级跳转：Permissions-Policy 是顶层文档策略，
+              从公共页面软导航进后台会让后台继续继承 microphone=()。 */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- 需要文档级跳转，不能软导航 */}
+          <a href="/admin">管理后台</a>
         </p>
       </div>
     </footer>

@@ -495,6 +495,23 @@
   }
 }
 
+.admin-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-color-row input[type="color"] {
+  width: 52px;
+  height: 40px;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+  cursor: pointer;
+}
+
 .admin-field__reset {
   height: 28px;
   padding: 0 10px;
@@ -1049,15 +1066,19 @@
   min-width: 120px;
 }
 
-.admin-workspace .pagination {
+/* 后台自己的分页（媒体库列表用的是共用 `Pagination` 组件）——**不要让它漏进首页画布**：
+   画框里是前台预览，44px 的触控区会把文章卡模块的下沿顶高 6px，预览就不再等于前台
+   （`scripts/home-layout-check.mjs` 的 s2 会逐模块比对几何，漏了会被它抓住）。
+   画框里那套分页按前台 globals.css 的口径走（38px / grid）。 */
+.admin-workspace .pagination:not(.home-editor__device *) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
 }
 
-.admin-workspace .pagination a,
-.admin-workspace .pagination span {
+.admin-workspace .pagination:not(.home-editor__device *) a,
+.admin-workspace .pagination:not(.home-editor__device *) span {
   display: inline-flex;
   min-width: 44px;
   min-height: 44px;
@@ -2286,19 +2307,88 @@ html:has(.admin-workspace) .site-footer {
   box-shadow: 0 0 0 2px var(--admin-accent-100);
 }
 
-.admin-sort-grid__item img {
+.admin-sort-grid__item img,
+.admin-sort-grid__item .admin-sort-grid__video {
   display: block;
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
 }
 
-.admin-sort-grid.is-single img {
+.admin-sort-grid.is-single img,
+.admin-sort-grid.is-single .admin-sort-grid__video {
   aspect-ratio: auto;
   height: auto;
   max-height: 300px;
   object-fit: contain;
   background: var(--admin-surface-2);
+}
+
+/* 视频格：黑底 + 右下角 ▶ 角标（视频没有封面，见 docs/moment-video-spec.md） */
+.admin-sort-grid__item .admin-sort-grid__video {
+  background: #000;
+}
+
+.admin-sort-grid__badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+
+/* 媒体库上传按钮在 App 里的两项下拉（相册视图 / 文件视图，见 docs/moment-video-spec.md）。
+   只有服务端判定为 SmartBlog App 才渲染这个浮层；浏览器里按钮仍旧直接开文件对话框。 */
+.admin-upload-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.admin-upload-menu__panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 232px;
+  padding: 6px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 14%);
+}
+
+.admin-upload-menu__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--admin-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-upload-menu__item:hover {
+  background: var(--admin-surface-2);
+}
+
+.admin-upload-menu__item strong {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.admin-upload-menu__item span {
+  color: var(--admin-ink-3);
+  font-size: 0.75rem;
 }
 
 .admin-sort-grid__tools {
@@ -2352,7 +2442,8 @@ html:has(.admin-workspace) .site-footer {
   opacity: 0.9;
 }
 
-.admin-sort-ghost img {
+.admin-sort-ghost img,
+.admin-sort-ghost video {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -2728,7 +2819,11 @@ html:has(.admin-workspace) .site-footer {
   padding: 12px 14px 18px;
   border-right: 1px solid var(--admin-line);
   background: color-mix(in srgb, var(--admin-surface) 86%, transparent);
+  /* `hidden` 仍允许 scrollIntoView / focus 程序化滚动，表现为 sheet 整体被顶上去
+     且用户无法手动滚回来（P-198）。这里用 clip 直接禁止 rail 自身滚动；
+     真正的内容滚动只交给 rail-body。 */
   overflow: hidden;
+  overflow: clip;
   transition:
     width var(--admin-slow) var(--admin-ease),
     flex-basis var(--admin-slow) var(--admin-ease),
@@ -2758,6 +2853,9 @@ html:has(.admin-workspace) .site-footer {
   min-height: 0;
   overflow: hidden auto;
   overscroll-behavior: contain;
+  /* 选完封面后内容会在 input 上方长高；禁用滚动锚定，避免浏览器为了“保持焦点不动”
+     把 rail-body 自己再往下推一段。 */
+  overflow-anchor: none;
   opacity: 1;
   transition: opacity var(--admin-mid) var(--admin-ease);
 }
@@ -2854,9 +2952,105 @@ html:has(.admin-workspace) .site-footer {
   font-weight: 600;
 }
 
+.admin-media-editor {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.admin-media-editor:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.admin-media-editor__head {
+  display: grid;
+  gap: 2px;
+}
+
+.admin-media-editor__head strong {
+  color: var(--admin-ink);
+  font-size: 0.95rem;
+}
+
+.admin-cover-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 2px;
+}
+
 .admin-cover-preview {
-  max-width: 240px;
+  display: block;
+  overflow: hidden;
+  width: min(240px, 100%);
+  height: 135px;
   border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+}
+
+.admin-cover-preview__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-banner-preview--editor {
+  height: 135px;
+}
+
+.admin-cover-empty {
+  display: grid;
+  width: min(240px, 100%);
+  height: 96px;
+  place-items: center;
+  border: 1px dashed var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  color: var(--admin-ink-3);
+  font-size: var(--admin-body);
+}
+
+.admin-cover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 焦点滑杆：触控高度按 44px 给，手机上也拖得动 */
+.admin-focal-controls {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.admin-focal-control {
+  display: grid;
+  gap: 4px;
+  color: var(--admin-ink-2);
+  font-size: var(--admin-body);
+}
+
+.admin-focal-control > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-focal-control em {
+  color: var(--admin-accent-500);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.admin-focal-control input[type="range"] {
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  accent-color: var(--admin-accent-500);
+  cursor: ew-resize;
 }
 
 .admin-banner-modes {
@@ -2866,9 +3060,18 @@ html:has(.admin-workspace) .site-footer {
 }
 
 .admin-banner-preview {
-  height: 72px;
+  position: relative;
+  overflow: hidden;
+  height: 112px;
   border-radius: var(--admin-radius-sm);
   background: var(--admin-surface-2);
+}
+
+.admin-banner-preview__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .admin-table {
@@ -3121,7 +3324,8 @@ html:has(.admin-workspace) .site-footer {
 }
 
 .moment-compose__media,
-.moment-compose__scope {
+.moment-compose__scope,
+.moment-compose__voice {
   position: relative;
 }
 
@@ -3166,6 +3370,190 @@ html:has(.admin-workspace) .site-footer {
   font-weight: 700;
   line-height: 15px;
   text-align: center;
+}
+
+/* ── 语音：麦克风按钮 + 置顶录音卡片 ───────────────────────────────────────────
+   用户口径（见 docs/moment-audio-spec.md §2.4）：点麦克风弹出**置顶**长条卡片，
+   左边实时波形（随时间从右往左走）、右边录制时间、最右停止按钮，按下即自动上传。 */
+
+/* 录音中：麦克风按钮本身给一个"正在录"的状态色 */
+.moment-compose__icon-btn[data-recording="true"] {
+  border-color: var(--admin-accent-500);
+  background: color-mix(in srgb, var(--admin-accent-500) 14%, var(--admin-surface-2));
+  color: var(--admin-accent-500);
+}
+
+/* 语音草稿：与图片/视频九宫格分区，不占格子 */
+.moment-compose__audios {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.voice-recorder {
+  position: fixed;
+  z-index: 260;
+  top: 14px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(680px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--admin-accent-500) 34%, var(--admin-line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--admin-surface) 92%, transparent);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 26%);
+  backdrop-filter: blur(10px);
+  transform: translateX(-50%);
+  animation: voice-recorder-in var(--admin-mid) var(--admin-ease-spring) both;
+}
+
+@keyframes voice-recorder-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-recorder {
+    animation: none;
+  }
+}
+
+.voice-recorder__dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--admin-ink-3);
+}
+
+.voice-recorder__dot[data-on="true"] {
+  background: var(--admin-danger);
+  animation: voice-recorder-pulse 1.4s var(--admin-ease) infinite;
+}
+
+@keyframes voice-recorder-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.voice-recorder__wave {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  /* 100 个固定槽位铺满整条：间距按窄屏调小，别让间隙比竖条还宽 */
+  gap: 1px;
+  min-width: 0;
+  height: 34px;
+  color: var(--admin-accent-500);
+}
+
+.voice-recorder__wave i {
+  /* 槽位等分整条宽度 —— 这里**不能**再设 max-width：
+     10 秒窗口的物理宽度必须固定，否则录到后面整条会缩到左边一小截 */
+  flex: 1 1 0;
+  min-width: 1px;
+  border-radius: 2px;
+  background: currentColor;
+  transition: height 80ms linear;
+}
+
+/* 还没录到的槽位：占位不画（前 10 秒从左往右长出来就是这么来的） */
+.voice-recorder__wave i[data-slot="empty"] {
+  visibility: hidden;
+}
+
+.voice-recorder__idle {
+  color: var(--admin-ink-3);
+  font-size: 0.84rem;
+}
+
+.voice-recorder__time {
+  flex: 0 0 auto;
+  color: var(--admin-ink);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.voice-recorder__left {
+  display: block;
+  color: var(--admin-danger);
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.voice-recorder__hint {
+  flex: 0 0 auto;
+  color: var(--admin-ink-3);
+  font-size: 0.82rem;
+}
+
+.voice-recorder__error {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--admin-danger);
+  font-size: 0.82rem;
+}
+
+.voice-recorder__redo {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--admin-accent-500) 40%, var(--admin-line));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--admin-accent-500);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.voice-recorder__cancel,
+.voice-recorder__stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--admin-line);
+  border-radius: 50%;
+  background: var(--admin-surface-2);
+  color: var(--admin-ink-2);
+  cursor: pointer;
+  transition:
+    background-color var(--admin-fast) var(--admin-ease),
+    color var(--admin-fast) var(--admin-ease),
+    opacity var(--admin-fast) var(--admin-ease);
+}
+
+.voice-recorder__cancel:hover:not(:disabled) {
+  color: var(--admin-danger);
+}
+
+.voice-recorder__stop {
+  border-color: transparent;
+  background: var(--admin-accent-500);
+  color: var(--admin-on-accent);
+}
+
+.voice-recorder__cancel:disabled,
+.voice-recorder__stop:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .moment-compose__scope-btn {
@@ -3475,6 +3863,28 @@ html:has(.admin-workspace) .site-footer {
   font-size: 28px;
   line-height: 1;
   color: var(--admin-accent-500);
+}
+
+/* 媒体库的音频卡片要能听（图片有预览、视频有 ▶，音频不能只有个 ♪） */
+.admin-media-card__play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--admin-accent-500) 16%, transparent);
+  color: var(--admin-accent-500);
+  cursor: pointer;
+  transition:
+    background-color var(--admin-fast) var(--admin-ease),
+    color var(--admin-fast) var(--admin-ease);
+}
+
+.admin-media-card__play:hover {
+  background: var(--admin-accent-500);
+  color: var(--admin-on-accent);
 }
 
 .admin-media-card__actions {
@@ -4092,10 +4502,14 @@ html:has(.admin-workspace) .site-footer {
 .home-editor__canvas {
   flex: 1;
   min-height: 0;
-  padding: 16px 0 48px;
-  overflow: auto;
+  padding: 12px;
+  /* 画布自己不滚：滚动容器是**画框**（`.home-editor__device`）——
+     它就是这个模拟视口的窗口，边缘自动滚动也认它。
+     触屏：手柄上是 `touch-action: none`（拖动不触发浏览器滚动），
+     所以在画布空白处仍然可以用手指滚动（pan-y）。 */
+  overflow: hidden;
   overscroll-behavior: contain;
-  touch-action: none;
+  touch-action: pan-y;
 }
 
 .home-editor__canvas.is-dragging {
@@ -4104,39 +4518,266 @@ html:has(.admin-workspace) .site-footer {
 }
 
 .home-editor__device {
-  container-type: size;
-  width: min(100%, 1440px);
-  aspect-ratio: 1440 / 900;
+  position: relative;
   margin-inline: auto;
+  /* 设计视口真尺寸（宽高由 JS 写内联），`zoom` 缩放适配窗口：
+     几何与前台逐像素一致的前提就是「画框真的有那么宽」。 */
   overflow: auto;
-  border: 1px solid var(--admin-line);
+  /* 画框里的滚动条必须**模拟、不能真占位**：经典滚动条宽 15 *视觉* px，
+     而画框是缩放过的 —— 由它占位会让内容宽度随 zoom 变（0.5 时吃掉 30 设计 px），
+     模块宽度就对不上前台了。做法：隐藏真滚动条 + 用**设计 px** 的 padding 补出那 15px，
+     于是内容宽恒等于「设计视口宽 − 15」（= 1440 宽 Chrome 窗口下的真实内容宽）。 */
+  scrollbar-width: none;
+  padding-right: 15px;
   border-radius: 12px;
   background: var(--admin-bg);
-  --h-unit: 1cqh;
+  box-shadow: 0 0 0 1px var(--admin-line);
+  /* 画框 = 前台视口的替身，所以这里要装回**前台 body** 的那套基础排版
+     （globals.css 的 body 规则）：后台自己的字号是 14px（`.admin-workspace`），
+     不挡掉的话预览里所有「继承字号」的模块都会比前台小一号 —— 文字一换行，
+     自适应高度就差出一大截，看着像"预览不准"。 */
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--heo-fontcolor);
+}
+
+.home-editor__device::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .home-editor__device.is-phone {
-  width: min(100%, 390px);
-  aspect-ratio: 390 / 844;
+  /* 真机是覆盖式滚动条：不占内容宽度 */
+  padding-right: 0;
 }
 
-.home-editor__device .home-grid {
-  min-height: 100%;
-  padding-bottom: 24px;
+/* 画布里**关掉 sticky**：格子跟随滚动时它的 rect 会偏离布局位置，而落点模型是
+   「按下那一刻冻结的坐标」—— 滚动一次，被钉住的侧栏列在模型里就整体漂了（实测偏 1300+px，
+   拖到右侧 widget 列的落点会掉到别的格子里）。编辑时不需要「侧栏跟随滚动」这个观感，
+   几何一致 + 落点稳定更重要；前台照旧 sticky。 */
+.home-editor__device .home-grid__area.is-sticky {
+  position: static;
+  top: auto;
 }
 
-.home-editor__preview .glass-card {
-  background: color-mix(
-    in srgb,
-    var(--admin-surface) var(--home-module-fill, 32%),
-    transparent
-  );
+/* 编辑辅助层：绝对定位、不占模块内容尺寸（这就是「不能影响布局」的落点）。
+   `pointer-events: none` 让点击穿透到模块内容，只有手柄自己收事件。 */
+.home-editor__chrome {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
 }
 
-/* 画布里的栅格不做出血，格子按内容缩到画布宽度 */
-.home-grid--canvas {
-  --grid-max: 1080px;
-  padding-bottom: 0;
+.home-editor__badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  max-width: calc(100% - 12px);
+  padding: 3px 8px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--admin-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--admin-surface) 88%, transparent);
+  color: var(--admin-ink);
+  cursor: grab;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.home-editor__badge:hover {
+  border-color: var(--admin-accent-500);
+}
+
+.home-editor__badge:active {
+  cursor: grabbing;
+}
+
+.home-editor__badge-name {
+  overflow: hidden;
+  max-width: 160px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-editor__coords {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--admin-surface) 82%, transparent);
+  color: var(--admin-ink-3);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.home-editor__drop-note {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  padding: 4px 10px;
+  translate: -50% -50%;
+  border-radius: 999px;
+  background: var(--admin-accent-500);
+  color: #fff;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.home-editor__cell {
+  /* 选中 / 落点都用描边表达：不占布局尺寸（outline 不参与盒模型） */
+  outline-offset: -2px;
+}
+
+.home-editor__cell.is-selected {
+  outline: 2px solid var(--admin-accent-500);
+}
+
+.home-editor__cell.is-drop-preview {
+  outline: 2px dashed #4db8e8;
+  outline-offset: -2px;
+}
+
+.home-editor__cell.is-drop-preview > .home-editor__chrome {
+  background: color-mix(in srgb, #4db8e8 8%, transparent);
+}
+
+.home-editor__floats {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.home-editor__float-slot {
+  position: absolute;
+  width: var(--float-w, 320px);
+  pointer-events: auto;
+}
+
+/* 覆盖层在画布里按它自己的出场边落位（真实位置由模块的 placement 决定） */
+.home-editor__float-slot {
+  right: 16px;
+  top: 18px;
+}
+
+.home-editor__float-slot.is-mobile {
+  right: 10px;
+  bottom: 12px;
+  left: 10px;
+  top: auto;
+  width: auto;
+}
+
+.home-editor__footer-band {
+  position: relative;
+  margin: 16px;
+  padding: 12px 14px;
+  border: 1px dashed var(--admin-line);
+  border-radius: 12px;
+}
+
+.home-editor__dragchip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 90;
+  display: grid;
+  max-width: 320px;
+  padding: 8px 12px;
+  gap: 2px;
+  border: 1px solid var(--admin-accent-500);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--admin-surface) 96%, transparent);
+  box-shadow: 0 14px 32px -18px rgba(15, 23, 42, 0.45);
+  color: var(--admin-ink);
+  font-size: 0.76rem;
+  pointer-events: none;
+}
+
+.home-editor__dragchip strong {
+  font-size: 0.82rem;
+}
+
+.home-editor__dragchip-hint {
+  color: var(--admin-ink-3);
+  font-size: 0.7rem;
+}
+
+.home-editor__dragchip.is-idle {
+  display: none;
+}
+
+.home-editor__height {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+}
+
+/* 栏位（侧面 / 固定）：同格一起改；被下面同列格子挡住时给原因 + 一键并进来 */
+.home-editor__pin {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.home-editor__pin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.84rem;
+}
+
+.home-editor__seg {
+  display: flex;
+  gap: 4px;
+}
+
+/* ⚠️ 手柄必须落在**格子可见范围内**（`right: 0` / `bottom: 0`）：固定高度的格子是
+   `overflow: hidden`，挂在格子外面（`right: -5px`）的那半截会被裁掉 —— 画着看得见，
+   但命中测试根本点不到（实测宽度手柄拖不动）。 */
+.home-editor__resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  cursor: col-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.home-editor__resize.is-width {
+  right: 0;
+}
+
+.home-editor__resize.is-height {
+  top: auto;
+  right: 12px;
+  bottom: 0;
+  left: 12px;
+  width: auto;
+  height: 10px;
+  cursor: row-resize;
+}
+
+.home-editor__resize:hover {
+  background: var(--admin-accent-100);
 }
 
 .home-grid__ruler {
@@ -4146,156 +4787,14 @@ html:has(.admin-workspace) .site-footer {
   visibility: hidden;
 }
 
-/* 画布里的格子不要继承前台 Banner 的 -48px 叠压与 z-index 压底 */
-.home-grid--canvas .home-grid__area,
-.home-grid--canvas .home-grid__area:has(.home-grid__cell--banner) {
-  position: relative;
-  z-index: 1;
-  margin-bottom: 0;
+/* 画布里的栅格铺满画框（空出来的地方也算页面的一部分），不改任何模块的几何 */
+.home-grid--canvas {
+  min-height: 100%;
 }
 
-.home-grid--canvas .home-grid__area.is-sticky {
-  position: relative;
-  top: auto;
-}
-
-.home-editor__module {
-  position: relative;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 0;
-  min-height: 0;
-  border: 1px dashed var(--admin-line);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--admin-surface) 60%, transparent);
-}
-
-.home-editor__module.is-fixed {
-  height: calc(var(--cell-h) * var(--h-unit));
-  max-height: calc(var(--cell-h) * var(--h-unit));
-  overflow: hidden;
-}
-
-.home-editor__module.is-selected {
-  border-color: var(--admin-accent-500);
-  border-style: solid;
-}
-
-.home-editor__area {
-  position: relative;
-}
-
-.home-editor__area.is-drop-target {
-  outline: 2px solid #4db8e8;
-  outline-offset: 3px;
-  border-radius: 14px;
-}
-
-.home-editor__ghost {
-  min-height: 80px;
-  border: 2px solid #4db8e8;
-  border-radius: 12px;
-  background: color-mix(in srgb, #4db8e8 10%, transparent);
-  pointer-events: none;
-}
-
-.home-editor__float {
-  position: fixed;
-  z-index: 80;
-  pointer-events: none;
-  opacity: 0.92;
-  filter: drop-shadow(0 16px 28px rgba(15, 23, 42, 0.22));
-}
-
-.home-editor__float .home-editor__module {
-  height: 100%;
-  overflow: hidden;
-}
-
-.home-editor__module-bar {
-  display: flex;
-  padding: 6px 8px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border-bottom: 1px solid var(--admin-line);
-  font-size: 0.78rem;
-}
-
-.home-editor__handle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 6px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: inherit;
-  cursor: grab;
-  font-size: 0.78rem;
-  font-weight: 700;
-  touch-action: none;
-}
-
-.home-editor__handle:active {
-  cursor: grabbing;
-}
-
-.home-editor__coords {
-  color: var(--admin-ink-3);
-  white-space: nowrap;
-}
-
-.home-editor__preview {
-  min-height: 0;
-  padding: 8px;
-  overflow: hidden;
-}
-
-/* 画布里的 Banner / 卡片跟格子走，不再写死像素 */
-.home-editor__preview .home-banner {
-  height: 100%;
-  min-height: 0;
-}
-
-.home-editor__preview .home-backdrop {
+/* 画布里没有真实底图（Banner 的 fixed 背景层会盖住整个后台），其余一律按前台规则走 */
+.home-editor__canvas .home-backdrop {
   display: none;
-}
-
-.home-editor__preview .dash-welcome,
-.home-editor__preview .dash-moments,
-.home-editor__preview .dash-recommend {
-  height: 100%;
-  min-height: 0;
-  max-height: none;
-}
-
-.home-editor__resize {
-  position: absolute;
-  top: 0;
-  right: -5px;
-  width: 10px;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  cursor: col-resize;
-  touch-action: none;
-}
-
-.home-editor__resize.is-height {
-  top: auto;
-  right: 12px;
-  bottom: -5px;
-  left: 12px;
-  width: auto;
-  height: 10px;
-  cursor: row-resize;
-}
-
-.home-editor__resize:hover {
-  background: var(--admin-accent-100);
 }
 
 /* —— 模块管理：积木与代码 —— */
@@ -4756,6 +5255,9 @@ html:has(.admin-workspace) .site-footer {
     bottom: 0;
     left: 0;
     width: 100%;
+    /* 固定高度，rail-body 才能用 height:0 + flex:1 正确拿到剩余空间；
+       只写 max-height 时父高是 auto，flex 子项会被算成 0，整页看起来像白色消失。 */
+    height: min(86dvh, calc(100dvh - 56px));
     max-height: min(86dvh, calc(100dvh - 56px));
     flex-basis: auto;
     padding: 8px 14px calc(18px + env(safe-area-inset-bottom));
@@ -4807,10 +5309,15 @@ html:has(.admin-workspace) .site-footer {
   }
 
   .post-workspace.is-sheet .post-workspace__rail-body {
-    height: auto;
+    /* 手机底部 sheet：固定“0 高 + flex 填满”才不会被内容顶出 max-height，
+       内容缩短时也不会把滚动位置甩到 sheet 下方的空白区。 */
+    height: 0;
+    min-height: 0;
+    flex: 1 1 auto;
     opacity: 1;
     pointer-events: auto;
     overflow: auto;
+    overscroll-behavior: contain;
   }
 
   .post-workspace__desktop-actions {
@@ -5505,6 +6012,519 @@ html:has(.admin-workspace) .site-footer {
   animation: admin-shimmer 1.4s linear infinite;
 }
 
+/* ==== 相册（/admin/albums 列表 + /admin/albums/{id} 详情 + 媒体库上的相册下拉）==== */
+.admin-albums {
+  display: grid;
+  gap: var(--admin-space-4);
+}
+
+.admin-album-create {
+  display: grid;
+  gap: var(--admin-space-3);
+  padding: var(--admin-space-4);
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  background: var(--admin-surface-2);
+}
+
+.admin-album-list {
+  display: grid;
+  gap: var(--admin-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-album-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-3);
+  align-items: center;
+  padding: var(--admin-space-3);
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  background: var(--admin-surface);
+}
+
+.admin-album-row__cover {
+  display: grid;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 48px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+  color: var(--admin-ink-3);
+}
+
+.admin-album-row__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-album-row__main {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-album-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-2);
+}
+
+.admin-album-row__spacer {
+  margin-left: auto;
+}
+
+.admin-album-editor {
+  display: grid;
+  gap: var(--admin-space-5);
+}
+
+.admin-album-editor__info {
+  display: grid;
+  align-items: end;
+  gap: var(--admin-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.admin-album-editor__photos {
+  display: grid;
+  gap: var(--admin-space-3);
+}
+
+.admin-album-editor__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-2);
+  align-items: center;
+  padding-bottom: var(--admin-space-3);
+  border-bottom: 1px solid var(--admin-line);
+}
+
+/* 这两个修饰符是通用形态（本页第一次用到）：行内勾选项 / 占满整行 */
+.admin-field--inline {
+  display: flex;
+  gap: var(--admin-space-2);
+  align-items: center;
+}
+
+.admin-field--wide {
+  grid-column: 1 / -1;
+}
+
+/* ── 相册编辑页：照片按卷分组 + 拖拽换卷 ──────────────────────────────── */
+/* 列表本身是网格：分组标头/空态必须整行铺开（grid-column: 1 / -1） */
+.admin-album-group__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  grid-column: 1 / -1;
+  margin: 14px 0 0;
+  padding: 6px 10px;
+  border-radius: var(--admin-radius-sm, 8px);
+  background: var(--admin-surface-2, rgba(127, 127, 127, 0.08));
+  list-style: none;
+}
+
+.admin-album-group__empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--admin-line-2, rgba(127, 127, 127, 0.35));
+  border-radius: var(--admin-radius-sm, 8px);
+  color: var(--admin-ink-3, inherit);
+  font-size: 0.86rem;
+  list-style: none;
+  text-align: center;
+}
+
+.admin-album-group__head.is-drop-target,
+.admin-album-group__empty.is-drop-target,
+.admin-album-photo.is-drop-group {
+  outline: 2px dashed var(--admin-accent, #4f46e5);
+  outline-offset: 2px;
+}
+
+/* 拖拽把手：触屏抓它才拖得动（touch-action: none 挡住页面滚动） */
+.admin-album-photo__grip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--admin-ink-3, inherit);
+  cursor: grab;
+  font-size: 14px;
+  line-height: 1;
+  touch-action: none;
+  user-select: none;
+}
+
+.admin-album-photo__grip:active {
+  cursor: grabbing;
+}
+
+.admin-album-photo {
+  position: relative; /* 把手是相对卡片定位的，卡片必须是定位元素 */
+  user-select: none;
+}
+
+.admin-album-photo.is-dragging {
+  opacity: 0.45;
+}
+
+.admin-album-drag-ghost {
+  position: fixed;
+  z-index: 400;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--admin-accent, #4f46e5);
+  color: var(--admin-on-accent, #fff);
+  font-size: 12px;
+  pointer-events: none;
+  transform: translate(12px, 12px);
+}
+
+.admin-album-photos {
+  display: grid;
+  gap: var(--admin-space-3);
+  margin: var(--admin-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.admin-album-photo {
+  display: grid;
+  gap: 6px;
+  padding: var(--admin-space-2);
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+}
+
+.admin-album-photo.is-cover {
+  border-color: var(--admin-accent-500);
+}
+
+.admin-album-photo__preview {
+  display: block;
+  overflow: hidden;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+  aspect-ratio: 4 / 3;
+}
+
+.admin-album-photo__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-album-photo__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-album-select {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-uploads-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-3);
+  align-items: end;
+  margin-bottom: var(--admin-space-4);
+}
+
+/* 媒体库的类型分区（全部 / 图片 / 视频 / 音频）：音频与图片、视频分开看 —— 见 docs/moment-audio-spec.md §2.6。
+   纯服务端 GET 表单（四个提交按钮），所以这里只需要把按钮画成一组等宽的分段控件。 */
+.admin-uploads-kinds {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: var(--admin-space-3);
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  background: var(--admin-surface-2);
+}
+
+.admin-uploads-kinds__btn {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--admin-ink-2);
+  cursor: pointer;
+  font-size: var(--admin-body);
+  font-weight: 600;
+  transition:
+    background-color var(--admin-fast) var(--admin-ease),
+    color var(--admin-fast) var(--admin-ease);
+}
+
+.admin-uploads-kinds__btn:hover {
+  color: var(--admin-accent-500);
+}
+
+.admin-uploads-kinds__btn.is-current {
+  background: var(--admin-accent-500);
+  color: var(--admin-on-accent);
+}
+
+/* ==== 折叠组在编辑器里的外壳（正文里由 lib/markdown/image-group.ts 渲染成原生 <details>）==== */
+.admin-mdx-group {
+  display: grid;
+  gap: var(--admin-space-2);
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  background: var(--admin-surface-2);
+}
+
+.admin-mdx-group__head {
+  display: flex;
+  gap: var(--admin-space-2);
+  align-items: center;
+}
+
+.admin-mdx-group__tag {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--admin-accent-500);
+  color: var(--admin-on-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-mdx-group__title {
+  flex: 0 1 320px;
+  min-width: 0;
+  height: var(--admin-control);
+  padding: 0 10px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+  color: inherit;
+  font-size: var(--admin-body);
+}
+
+.admin-mdx-group__body {
+  padding: 6px 8px;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+}
+
+/* ==== 媒体库上传预览（先看再传；相册下拉走 AdminSelect 的浮层自绘列表，不用 <select>）==== */
+.admin-upload-list {
+  display: grid;
+  gap: var(--admin-space-2);
+  max-height: 46vh;
+  margin: 0 0 var(--admin-space-4);
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.admin-upload-item {
+  display: flex;
+  gap: var(--admin-space-3);
+  align-items: center;
+  padding: var(--admin-space-2);
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+}
+
+.admin-upload-item__preview {
+  display: grid;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-3);
+  color: var(--admin-ink-3);
+}
+
+.admin-upload-item__preview img,
+.admin-upload-item__preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-upload-item__glyph {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.admin-upload-item__main {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-upload-item__main strong {
+  overflow: hidden;
+  font-size: var(--admin-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 上传预览弹窗里的相册区（下拉本体是 .admin-select*） */
+.admin-upload-album {
+  display: grid;
+  gap: var(--admin-space-2);
+  margin-bottom: var(--admin-space-4);
+}
+
+/* ==== 自绘下拉 AdminSelect（触发区 + 浮层面板）====
+   相册 / 卷这一族全部走它。面板由组件 portal 到 document.body、position: fixed
+   按触发按钮的 rect 定位（下方空间不足时向上翻），所以这里**只管视觉**：
+   颜色 / 圆角 / 阴影 / 内边距 / max-height + overflow，不写任何几何与 z-index 之外的定位。
+   z-index 需要盖过弹窗一档（--admin-z-dialog:90）、媒体弹窗(220)、设置抽屉(240)。 */
+.admin-select {
+  display: grid;
+  gap: var(--admin-space-2);
+  min-width: 0;
+}
+
+.admin-select__trigger {
+  display: flex;
+  gap: var(--admin-space-3);
+  align-items: center;
+  width: 100%;
+  min-height: var(--admin-control-field);
+  padding: 0 var(--admin-space-3);
+  cursor: pointer;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+  color: inherit;
+  font-size: var(--admin-body);
+  text-align: left;
+}
+
+.admin-select__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-select__trigger:focus-visible {
+  outline: none;
+  border-color: var(--admin-accent-500);
+  box-shadow: 0 0 0 3px var(--admin-focus-ring);
+}
+
+.admin-select__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-select__value.is-placeholder {
+  color: var(--admin-ink-3);
+  font-weight: 400;
+}
+
+.admin-select__chevron {
+  flex: 0 0 auto;
+  color: var(--admin-ink-3);
+  transition: transform var(--admin-fast) var(--admin-ease);
+}
+
+.admin-select__chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.admin-select__list {
+  z-index: 260;
+  display: grid;
+  gap: 2px;
+  max-height: 320px;
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+  box-shadow: var(--admin-shadow-3);
+}
+
+.admin-select__list:focus-visible {
+  outline: none;
+}
+
+.admin-select__option {
+  display: flex;
+  gap: var(--admin-space-3);
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px var(--admin-space-3);
+  cursor: pointer;
+  border: 0;
+  border-radius: var(--admin-radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: var(--admin-body);
+  text-align: left;
+}
+
+.admin-select__option:hover {
+  background: var(--admin-surface-3);
+}
+
+.admin-select__option:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--admin-accent-500) inset;
+}
+
+.admin-select__option.is-active {
+  background: var(--admin-accent-500);
+  color: var(--admin-on-accent);
+  font-weight: 600;
+}
+
+.admin-select__option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-select__option-hint {
+  flex: 0 0 auto;
+  color: var(--admin-ink-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.admin-select__option.is-active .admin-select__option-hint {
+  color: var(--admin-on-accent);
+  opacity: 0.8;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .admin-workspace *,
   .auth-shell * {
@@ -5513,4 +6533,135 @@ html:has(.admin-workspace) .site-footer {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* 相册：卷管理 */
+/* 卷（AlbumVolume）区块 + 照片网格上的勾选与「放入卷 / 移出卷」批量条。
+   建改删排都在 .admin-album-editor__volumes 里；归卷动作在照片区的 .admin-album-editor__bulk。 */
+.admin-album-editor__volumes {
+  display: grid;
+  gap: var(--admin-space-3);
+}
+
+.admin-volume-new,
+.admin-volume-row__input {
+  height: var(--admin-control);
+  padding: 0 10px;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+  color: var(--admin-ink);
+  font: inherit;
+  font-size: var(--admin-body);
+}
+
+.admin-volume-new {
+  flex: 1 1 220px;
+  max-width: 320px;
+}
+
+.admin-volume-new:focus,
+.admin-volume-row__input:focus {
+  outline: none;
+  border-color: var(--admin-accent-500);
+  box-shadow: 0 0 0 3px var(--admin-focus-ring);
+}
+
+.admin-volume-list {
+  display: grid;
+  gap: var(--admin-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-volume-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-2);
+  align-items: center;
+  padding: var(--admin-space-2) var(--admin-space-3);
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface);
+}
+
+.admin-volume-row__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-volume-row__input {
+  flex: 0 1 240px;
+  min-width: 0;
+}
+
+.admin-volume-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-2);
+  align-items: center;
+}
+
+.admin-album-editor__bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--admin-space-2);
+  align-items: center;
+  padding: var(--admin-space-2) var(--admin-space-3);
+  border: 1px dashed var(--admin-line-strong);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-surface-2);
+}
+
+/* 批量条的「放入卷」下拉：只限宽，视觉走 .admin-select* */
+.admin-album-editor__volume-pick {
+  max-width: 220px;
+}
+
+.admin-album-photo__pick {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 24px;
+  color: var(--admin-ink-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.admin-album-photo__pick input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--admin-accent-500);
+  cursor: pointer;
+}
+
+/* 卷下拉（UploadVolumeSelect）与相册下拉共用 .admin-select*，这里不再单独一套类名。 */
+
+/* 空卷名（2026-10-03）：卷名可以清空 = 这一卷不作为独立分组、照片并入前台最前那组。
+   列表里必须显式写出来（不能留白），所以这里只给它一个弱化的观感，与 .admin-muted 同一档。 */
+.admin-volume-row__title--empty {
+  color: var(--admin-ink-3);
+  font-weight: 400;
+}
+
+/* 卷区块顶部那行说明里的强调（「卷名清空 = 这一卷不作为独立分组」）。 */
+.admin-album-editor__bar strong {
+  color: var(--admin-ink);
+}
+
+/* 写文章页是固定视口：页面本身永远不滚，只允许内部编辑区/设置栏滚。
+   手机档的 html/body 原本是 overflow:auto（给普通后台页），这里把编辑器页单独锁死；
+   否则文件选择器把焦点还给 input 时，浏览器会把 body 滚到下方空白区。 */
+html:has(.post-workspace),
+html:has(.post-workspace) body {
+  height: 100%;
+  /* hidden 只挡用户滚动，文件选择器把 input 滚进视口时仍可能 programmatic scroll；
+     clip 才是“连代码也滚不动”。旧浏览器退回 hidden。 */
+  overflow: hidden;
+  overflow: clip;
+  overscroll-behavior: none;
 }

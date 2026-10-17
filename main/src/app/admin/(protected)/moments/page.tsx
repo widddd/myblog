@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
 
 import { AdminSection } from "@/components/admin/AdminSection";
 import { MomentAdminList } from "@/components/admin/MomentAdminList";
 import { MomentCompose } from "@/components/admin/MomentCompose";
+import { isSmartBlogApp } from "@/lib/client/detect";
 import { listAdminMoments } from "@/lib/moments/admin";
 import { buildAdminMomentListItems } from "@/lib/moments/admin-list-view";
 import { loadMomentComposeData } from "@/lib/moments/compose-data";
@@ -24,6 +26,9 @@ export default async function AdminMomentsPage({ searchParams }: PageProps) {
   const page = parsePage((await searchParams).page);
   // 时间只在服务端取一次：抽屉里的预览、列表的到期时刻与「还剩多久」都以它为准。
   const now = new Date();
+  // 这一发是不是 SmartBlog App：决定麦克风按钮弹网页录音卡片，还是交给宿主原生录音界面。
+  // 判定只有 lib/client/detect.ts 一个口子（UA 标记），不在客户端再写一遍（见 docs/moment-audio-spec.md §2.5）。
+  const isApp = isSmartBlogApp((await headers()).get("user-agent"));
   const [compose, list] = await Promise.all([
     loadMomentComposeData(now),
     listAdminMoments(page, MOMENTS_PAGE_SIZE, now),
@@ -36,6 +41,7 @@ export default async function AdminMomentsPage({ searchParams }: PageProps) {
       {/* 发布区：只有输入框 + 插入图片图标按钮 + 可见范围；其它设置全在右侧抽屉里 */}
       <div className="admin-section">
         <MomentCompose
+          appMode={isApp}
           globalDays={compose.globalDays}
           groups={compose.groups}
           maxImages={compose.maxImages}

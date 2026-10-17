@@ -107,3 +107,23 @@ export function mimePrefixForKind(kind?: string | null): "image/" | "video/" | "
   }
   return null;
 }
+
+/**
+ * `?kind=` 的**多值**解析（逗号分隔，如 `image,video`）。
+ *
+ * 瞬间配图要从媒体库里同时选图片和视频，列表接口就得多值；单值/空值/非法值的语义与
+ * 原来完全一致（空数组 = 不过滤），别在路由或组件里另写一份 split（P-004）。
+ */
+export function mimePrefixesForKinds(kinds?: string | null): string[] {
+  if (!kinds) {
+    return [];
+  }
+  const prefixes = kinds
+    .split(",")
+    .map((value) => value.trim())
+    .flatMap((value) => {
+      const prefix = mimePrefixForKind(value);
+      return prefix ? [prefix] : [];
+    });
+  return [...new Set(prefixes)];
+}

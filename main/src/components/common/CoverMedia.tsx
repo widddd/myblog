@@ -7,9 +7,11 @@ type CoverMediaProps = {
   src: string | null;
   title: string;
   alt?: string;
+  /** CSS object-position；封面的焦点位置，缺省浏览器按居中裁切。 */
+  objectPosition?: string;
 };
 
-export function CoverMedia({ src, title, alt }: CoverMediaProps) {
+export function CoverMedia({ src, title, alt, objectPosition }: CoverMediaProps) {
   if (src) {
     return (
       <div className="cover-media">
@@ -18,6 +20,7 @@ export function CoverMedia({ src, title, alt }: CoverMediaProps) {
           fill
           sizes="(max-width: 768px) 100vw, 720px"
           src={src}
+          style={objectPosition ? { objectPosition } : undefined}
         />
       </div>
     );

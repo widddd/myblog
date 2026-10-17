@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 
+import { albumHref } from "@/lib/albums/path";
+import { listPublicAlbums } from "@/lib/albums/query";
 import { cachedPublic, PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
 import { getStaticPagesDir, listEnabledStaticPages } from "@/lib/pages/admin";
 import { postHref } from "@/lib/posts/path";
@@ -9,17 +11,20 @@ import { getSiteOrigin } from "@/lib/seo/site";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return cachedPublic(["sitemap"], [PUBLIC_CACHE_TAGS.seo, PUBLIC_CACHE_TAGS.posts], async () => {
     const origin = await getSiteOrigin();
-    const [posts, categories, tags, staticPageDir, staticPages] = await Promise.all([
-      listArchivePosts(),
-      listCategories(),
-      listTags(),
-      getStaticPagesDir(),
-      listEnabledStaticPages(),
-    ]);
+    const [posts, categories, tags, staticPageDir, staticPages, albums] =
+      await Promise.all([
+        listArchivePosts(),
+        listCategories(),
+        listTags(),
+        getStaticPagesDir(),
+        listEnabledStaticPages(),
+        listPublicAlbums(),
+      ]);
 
     const staticRoutes: MetadataRoute.Sitemap = [
       "",
       "/posts",
+      "/albums",
       "/archives",
       "/categories",
       "/tags",
@@ -59,6 +64,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.4,
     }));
 
-    return [...staticRoutes, ...postRoutes, ...taxonomyRoutes, ...staticPageRoutes];
+    const albumRoutes = albums.map((album) => ({
+      url: `${origin}${albumHref(album.slug)}`,
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    }));
+
+    return [
+      ...staticRoutes,
+      ...postRoutes,
+      ...taxonomyRoutes,
+      ...staticPageRoutes,
+      ...albumRoutes,
+    ];
   });
 }

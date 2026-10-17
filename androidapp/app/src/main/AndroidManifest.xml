@@ -5,13 +5,29 @@
          而是在 MainActivity 里用 NetworkSecurityPolicy 按 URL 判定并弹警告（D3）。 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- 自有相册视图要读系统相册（遇到 <input type=file accept="image/*"> 时用它代替系统选择器）。
-         Android 13 起拆成了 READ_MEDIA_IMAGES，13 之前是 READ_EXTERNAL_STORAGE。
+    <!-- 自有相册视图要读系统相册（遇到纯图片 / 纯视频 / 图片+视频的 <input type=file> 时用它代替系统选择器）。
+         Android 13 起图片与视频是**两枚**权限（READ_MEDIA_IMAGES / READ_MEDIA_VIDEO），13 之前是 READ_EXTERNAL_STORAGE。
          用户拒绝授权也不会卡住：代码自动退回系统选择器（见 MainActivity.onFilePrompt 的分支）。 -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+
+    <!-- 消息提醒（可推送消息，见 docs/android/push-plan.md）：
+         POST_NOTIFICATIONS  Android 13+ 发通知要运行时授权（拒绝时功能静默降级，不报错）；
+         WAKE_LOCK           后台巡检被闹钟唤醒时，抓一次网络唤醒锁（60s 超时兜底）；
+         RECEIVE_BOOT_COMPLETED  重启/升级后闹钟会丢，靠它重新排下一次巡检。
+         ⚠️ 刻意**不申请**：SCHEDULE_EXACT_ALARM（后台用 setAndAllowWhileIdle，不需要特殊权限）、
+         FOREGROUND_SERVICE（不上常驻前台服务，免得通知栏永远挂着一条）。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- 语音瞬间：站点在 App 模式下把麦克风按钮做成"录音 accept"，宿主弹原生录音界面（见 docs/moment-audio-spec.md）。
+         这一枚是**运行时**权限：点麦克风时才要，拒绝就取消这一次请求（页面拿到 dismiss，不会一直悬着）。
+         没有它，GeckoView 里 getMediaPermissionRequest / MediaRecorder 一律起不来。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- allowBackup=false：App 的数据里有 GeckoView 的 profile（cookies.sqlite 含站点会话 cookie）。
          开着的话 Android 自动备份会把它传到用户的云备份里，等于把登录态带出设备；
@@ -38,6 +54,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 后台巡检：闹钟唤醒 + 重启/升级后重新排程。
+             两个都是系统广播，exported=false 也能收到（BOOT_COMPLETED 是例外，
+             系统照样投递给静态注册的接收器）。 -->
+        <receiver
+            android:name=".NotifyAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

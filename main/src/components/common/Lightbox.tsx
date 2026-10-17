@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   useEffect,
   useLayoutEffect,
@@ -36,6 +37,8 @@ type SelectedImage = {
   alt: string;
   width?: number;
   height?: number;
+  /** 这张图所属的相册（没有相册的图不存在这一项，按钮也就不出现） */
+  album?: { href: string; title: string } | null;
 };
 
 type CachedOriginal = {
@@ -95,6 +98,7 @@ function imageFromTarget(target: EventTarget | null): HTMLImageElement | null {
 }
 
 function selectedFromImage(image: HTMLImageElement): SelectedImage {
+  const albumHref = image.dataset.lightboxAlbum;
   return {
     src: image.dataset.lightboxSrc ?? image.src,
     thumb: image.dataset.lightboxThumb || image.src,
@@ -102,6 +106,9 @@ function selectedFromImage(image: HTMLImageElement): SelectedImage {
     alt: image.alt,
     width: image.naturalWidth || undefined,
     height: image.naturalHeight || undefined,
+    album: albumHref
+      ? { href: albumHref, title: image.dataset.lightboxAlbumTitle || "相册" }
+      : null,
   };
 }
 
@@ -627,6 +634,8 @@ function LightboxStage({
 export function Lightbox({
   children,
   onClose,
+  openAlbumHref,
+  openAlbumTitle,
   openAlt,
   openHeight,
   openKey,
@@ -636,6 +645,9 @@ export function Lightbox({
 }: {
   children?: ReactNode;
   onClose?: () => void;
+  /** 受控模式下的相册跳转（相册详情页自己就是那个相册，传它自己的地址） */
+  openAlbumHref?: string | null;
+  openAlbumTitle?: string | null;
   openAlt?: string;
   openHeight?: number | null;
   openKey?: string | null;
@@ -656,6 +668,9 @@ export function Lightbox({
           alt: openAlt ?? "",
           width: openWidth || undefined,
           height: openHeight || undefined,
+          album: openAlbumHref
+            ? { href: openAlbumHref, title: openAlbumTitle || "相册" }
+            : null,
         }
       : null
     : internal;
@@ -721,6 +736,17 @@ export function Lightbox({
         >
           ×
         </button>
+        {selected?.album ? (
+          <Link
+            className="lightbox__album"
+            href={selected.album.href}
+            onClick={close}
+            title={`查看相册：${selected.album.title}`}
+          >
+            <span aria-hidden>▤</span>
+            {selected.album.title}
+          </Link>
+        ) : null}
         {selected ? (
           <LightboxStage
             image={selected}

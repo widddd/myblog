@@ -38,6 +38,13 @@
 
 更新包 `meta.json`：`{ kind:"app-update", schema:1, channel, version, label, createdAt }`。
 
+**重启有额度（2026-10-03 补）**：`data/update-pending.json` 里累计 `restartAttempts`，调度器到点最多排 **3** 次重启；用尽就写一条 `update-state.json`（`status:"failed"`，更新页显示「上次失败：… 可用 pnpm apply-update --file 手动应用」）并**取消预约**。原因见 P-133：如果这台机器的启动流程不应用预约更新（例如 pm2 直起 `next start`，没经过 `scripts/boot.cjs`），「到点」永远成立 → 每 60 秒重启一次 → 备份 / 导入 / 迁移这类长请求全被腰斩。重新设定重启时间会重置额度。
+
+**应用步骤的顺序（2026-10-03 补，别调换）**：`覆盖程序文件 → 依赖变化才 pnpm install → prisma migrate deploy → prisma generate → next build`。
+- `generate` 必须在**覆盖之后**：加模型的版本若在覆盖前手工 generate，那是旧 schema 的客户端，构建会报一屏 `Property 'x' does not exist on type 'PrismaClient'`（P-124 附，2026-10-03 真踩）。
+- `generate` 也必须排在 `install` 之后：install 有可能把 `@prisma/client` 从 store 里重新解开（那就回到未生成的桩）。
+- 代价实测约 150ms，所以无条件跑，不判断「schema 变没变」。
+
 - `GET /api/admin/update` → 当前版本、包列表、预约、上次结果
 - `POST /api/admin/update/upload` multipart `.tar.gz` → 入库，不立刻应用
 - `POST /api/admin/update/pack` → 把当前程序打成包并入库

@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type PointerEvent } from "react";
 
 import { CoverMedia } from "@/components/common/CoverMedia";
-import { bannerFill, postBannerKind } from "@/lib/posts/banner";
+import { MomentCard } from "@/components/home/modules/MomentCard";
+import { interleaveByDate } from "@/lib/home/interleave";
+import type { HomeMoment } from "@/lib/moments/types";
+import { focalPosition, resolveCoverVisual } from "@/lib/posts/banner";
 import { postHref } from "@/lib/posts/path";
 import type { PostCardModel } from "@/lib/posts/types";
 import { formatRelativeDate } from "@/lib/utils/date";
@@ -28,15 +31,16 @@ export function PostCard({ post, index = 0 }: PostCardProps) {
   const nextRippleId = useRef(0);
   const [ripples, setRipples] = useState<Ripple[]>([]);
 
-  // 卡片画什么由 bannerStyle 决定（**不能只看 cover 字段**：选了"纯色 / 混色"的文章
-  // 本来就没有图，那是作者选的色块，不是"无封面"）：
+  // 列表卡只看封面自己的配置，**不再受 bannerStyle 影响**：
   //   image = 封面图 → 原大卡；fill = 纯色/混色 → 大卡 + 色块；none = 无封面 → 细条卡
-  const banner = postBannerKind(post.bannerStyle, post.cover);
-  const plain = banner === "none";
-  const fill =
-    banner === "fill"
-      ? bannerFill(post.bannerStyle, post.bannerColor, post.bannerColor2)
-      : undefined;
+  const cover = resolveCoverVisual(
+    post.coverStyle,
+    post.cover,
+    post.coverColor,
+    post.coverColor2,
+  );
+  const plain = cover.kind === "none";
+  const fill = cover.kind === "fill" ? cover.background : undefined;
   const lead = post.locked ? LOCKED_LEAD : post.excerpt;
 
   const onPointerDown = useCallback((event: PointerEvent<HTMLElement>) => {
@@ -92,8 +96,13 @@ export function PostCard({ post, index = 0 }: PostCardProps) {
         </div>
         {plain ? null : (
           <div className="post-card__cover">
-            {banner === "image" ? (
-              <CoverMedia alt={post.title} src={post.cover} title={post.title} />
+            {cover.kind === "image" ? (
+              <CoverMedia
+                alt={post.title}
+                objectPosition={focalPosition(post.coverFocalX, post.coverFocalY)}
+                src={cover.src}
+                title={post.title}
+              />
             ) : (
               <div className="post-card__fill" style={{ background: fill }} />
             )}
@@ -153,12 +162,53 @@ export function PostCard({ post, index = 0 }: PostCardProps) {
   );
 }
 
-export function PostList({ posts }: { posts: PostCardModel[] }) {
+export type PostListProps = {
+  posts: PostCardModel[];
+  /**
+   * 穿插进文章流里的瞬间（一个卡片一条瞬间）。不传 = 纯文章列表，行为与之前一致。
+   * 取数在 `loadHomeData()` 里一次拿好，两个模块（瞬间模块 / 文章卡片）共用同一份。
+   */
+  moments?: HomeMoment[];
+  /** 一页最多穿插几条瞬间；0 = 不插 */
+  momentLimit?: number;
+};
+
+export function PostList({ posts, moments = [], momentLimit }: PostListProps) {
+  // 瞬间与文章按时间穿插：发布时刻更早的排前面；比本页最后一篇还早的瞬间留给后面的页
+  const sequence = useMemo(() => {
+    if (moments.length === 0 || !momentLimit) {
+      return null;
+    }
+    return interleaveByDate(posts, moments, {
+      postDate: (post) => post.publishedAt,
+      momentDate: (moment) => moment.createdAt,
+      limit: momentLimit,
+    });
+  }, [posts, moments, momentLimit]);
+
+  if (!sequence) {
+    return (
+      <div className="post-list">
+        {posts.map((post, index) => (
+          <PostCard index={index} key={post.slug} post={post} />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="post-list">
-      {posts.map((post, index) => (
-        <PostCard index={index} key={post.slug} post={post} />
-      ))}
+      {sequence.map((entry, index) =>
+        entry.kind === "post" ? (
+          <PostCard index={index} key={`post-${entry.item.slug}`} post={entry.item} />
+        ) : (
+          <MomentCard
+            index={index}
+            key={`moment-${entry.item.id}`}
+            moment={entry.item}
+          />
+        ),
+      )}
     </div>
   );
 }

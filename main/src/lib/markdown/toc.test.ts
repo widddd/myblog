@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { collectTocItems, headingDepth, type TocTreeNode } from "./toc";
+import { IMAGE_GROUP_CLASS } from "./image-group";
 
 test("headingDepth maps h1–h6 and rejects other tags", () => {
   assert.equal(headingDepth("h1"), 1);
@@ -58,4 +59,56 @@ test("collectTocItems keeps heading hierarchy and fills missing ids", () => {
     ],
   );
   assert.equal(tree.children?.[0]?.properties?.id, "heading-1");
+});
+
+test("折叠组（默认收起的 details）里的标题不进目录", () => {
+  const tree: TocTreeNode = {
+    type: "root",
+    children: [
+      {
+        type: "element",
+        tagName: "h2",
+        properties: {},
+        children: [{ type: "text", value: "正常标题" }],
+      },
+      {
+        type: "element",
+        tagName: "details",
+        properties: { className: [IMAGE_GROUP_CLASS] },
+        children: [
+          {
+            type: "element",
+            tagName: "summary",
+            properties: {},
+            children: [{ type: "text", value: "花期 · 2 张" }],
+          },
+          {
+            type: "element",
+            tagName: "h3",
+            properties: {},
+            children: [{ type: "text", value: "组里的标题" }],
+          },
+        ],
+      },
+      {
+        // 普通的 details（不是折叠组）不归本规则管
+        type: "element",
+        tagName: "details",
+        properties: {},
+        children: [
+          {
+            type: "element",
+            tagName: "h4",
+            properties: {},
+            children: [{ type: "text", value: "别的折叠块标题" }],
+          },
+        ],
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    collectTocItems(tree).map((item) => item.text),
+    ["正常标题", "别的折叠块标题"],
+  );
 });

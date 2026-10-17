@@ -5,6 +5,7 @@ export const PUBLIC_CACHE_TAGS = {
   taxonomies: "public-taxonomies",
   home: "public-home",
   seo: "public-seo",
+  albums: "public-albums",
 } as const;
 
 export function cachedPublic<T>(

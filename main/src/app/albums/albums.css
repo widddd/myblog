@@ -1,0 +1,409 @@
+/* ============================================================================
+   相册板块样式（只被 /albums 与 /albums/[slug] 两条路由 import）
+   版式定稿：demo/album-page（2026-10-03）。类名与 demo 一一对应，便于对照：
+     列表  .album-list / .album-card*        详情  .album-detail / .album-hero* / .album-fold*
+     引擎  .pile*                            —— 文章折叠组的 .ig* 在 globals.css，刻意分开
+   颜色一律用站点既有 token，不新造色值。
+   ========================================================================== */
+
+.album-page {
+  --album-spread-ease: cubic-bezier(0.33, 0, 0.67, 1);
+  --album-spread-ms: 420ms;
+  display: grid;
+  gap: 26px;
+}
+
+/* ---------------------------------------------------------------- 相册列表 */
+
+.album-list {
+  display: grid;
+  gap: 20px 22px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.album-card {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--heo-card-bg, #fff);
+  box-shadow: var(--heo-shadow-border, 0 0 0 1px rgba(0, 0, 0, 0.06));
+  transition:
+    transform 220ms var(--album-spread-ease),
+    box-shadow 220ms var(--album-spread-ease);
+}
+
+.album-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--heo-shadow, 0 8px 24px rgba(0, 0, 0, 0.08));
+}
+
+.album-card__link {
+  display: grid;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 封面 = 这本相册的一叠照片：21:9 的框里，照片各自向右铺开平摆。
+   宽度 / 层次 / 错峰由 AlbumCard 按 pileSpread() 写首帧内联样式（叠放态）；
+   约 1s 后由 usePileSpread() 写 left / transform 触发过渡（**唯一执行器**，
+   首页「相册卡片」模块用的是同一个 hook、同一套过渡口径）。 */
+.album-card__stack {
+  position: relative;
+  aspect-ratio: 21 / 9;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.album-card__stack img {
+  position: absolute;
+  top: auto;
+  right: auto;
+  bottom: 0;
+  left: 0;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 3px var(--heo-card-bg, #fff),
+    var(--heo-shadow-border, 0 0 0 1px rgba(0, 0, 0, 0.06));
+  transform-origin: center bottom;
+  /* 只过渡 left 与 transform —— 尺寸从头到尾不变，所以第一张（位置/角度都不变）完全不动。
+     transform 也要过渡：倾斜是同一时刻写进去的，不补间就是"滑到一半突然歪一下"。
+     手机档没有任何地方把这里的 transition 置成 none（只有 prefers-reduced-motion 会）。 */
+  transition:
+    left var(--album-spread-ms) var(--album-spread-ease),
+    transform var(--album-spread-ms) var(--album-spread-ease);
+  /* 逐张错峰：延迟由组件按层写内联 --pile-delay（transition 简写会把 delay 归零，这行要在它后面） */
+  transition-delay: var(--pile-delay, 0ms);
+}
+
+.album-card__title {
+  font-size: 1.02rem;
+  font-weight: 650;
+}
+
+.album-card__meta,
+.album-card__desc {
+  color: var(--heo-secondtext, #6b7280);
+  font-size: 0.82rem;
+}
+
+.album-card__desc {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.86rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.album-card__empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  border-radius: 10px;
+  background: var(--heo-secondbg, #f3f4f6);
+  color: var(--heo-secondtext, #6b7280);
+}
+
+/* ---------------------------------------------------------------- 相册详情 */
+
+.album-detail {
+  display: grid;
+  gap: 26px;
+  /* minmax(0,1fr)：不写的话网格项按 auto 最小宽度被内容撑大（横向展开那一行会把视口撑开） */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.album-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--heo-secondbg, #f3f4f6);
+  aspect-ratio: 21 / 9;
+  box-shadow: var(--heo-shadow-border, 0 0 0 1px rgba(0, 0, 0, 0.06));
+}
+
+.album-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.album-hero__body {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: grid;
+  gap: 6px;
+  padding: 26px;
+  color: #fff;
+  background: linear-gradient(
+    to top,
+    rgba(12, 10, 20, 0.82),
+    rgba(12, 10, 20, 0.42) 55%,
+    rgba(12, 10, 20, 0)
+  );
+}
+
+.album-hero__eyebrow {
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  opacity: 0.86;
+}
+
+.album-hero__title {
+  margin: 0;
+  font-size: clamp(1.5rem, 3.2vw, 2.1rem);
+  font-weight: 700;
+  line-height: 1.2;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+.album-hero__meta,
+.album-hero__desc {
+  margin: 0;
+  font-size: 0.88rem;
+  opacity: 0.9;
+}
+
+.album-hero__desc {
+  max-width: 46em;
+  line-height: 1.6;
+}
+
+.album-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 相册页自己的按钮/标签（不依赖站点其它按钮类，避免类名漂移） */
+.album-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--heo-secondbg, #f3f4f6);
+  color: var(--heo-fontcolor, #111827);
+  font: inherit;
+  font-size: 0.84rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 180ms var(--album-spread-ease), color 180ms var(--album-spread-ease);
+}
+
+.album-pill:hover {
+  background: color-mix(in srgb, var(--heo-fontcolor, #111827) 12%, var(--heo-secondbg, #f3f4f6));
+}
+
+.album-toolbar__count {
+  margin-right: auto;
+  color: var(--heo-secondtext, #6b7280);
+  font-size: 0.88rem;
+}
+
+/* 一"卷"：组头 + 一叠照片 */
+.album-fold {
+  display: grid;
+  gap: 12px;
+  /* 同上：必须给网格列一个可收缩的最小值，否则横向展开那一行会把整块撑宽 */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.album-fold__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+}
+
+.album-fold__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--heo-fontcolor, #111827);
+  opacity: 0.5;
+}
+
+/* 组头里的卷名：自由文本（日期可以写进名字）。没有名字的那一组只显示张数、不显示文案。 */
+.album-fold__title {
+  color: var(--heo-fontcolor, #111827);
+  font-weight: 600;
+}
+
+.album-fold__count {
+  margin-left: 2px;
+  color: var(--heo-secondtext, #6b7280);
+  font-size: 0.84rem;
+}
+
+/* ---------------------------------------------------------------- 一叠照片（引擎） */
+
+.pile {
+  --pile-expand-ms: 340ms;
+  --pile-collapse-ms: 280ms;
+  --pile-ease: cubic-bezier(0.33, 0, 0.67, 1);
+  --pile-ms: var(--pile-collapse-ms);
+  position: relative;
+  /* 横向展开成一行时，这一层不能被内容撑宽 */
+  min-width: 0;
+}
+
+.pile[data-expanded="true"] {
+  --pile-ms: var(--pile-expand-ms);
+}
+
+.pile__viewport {
+  position: relative;
+  max-width: 100%;
+  /* 首屏脚本执行前的兜底高度，免得整叠先排成一列闪一下（真实高度由组件写内联样式） */
+  height: 320px;
+  overflow: hidden;
+  outline: none;
+  transition: height var(--pile-ms) var(--pile-ease);
+  touch-action: pan-y;
+}
+
+/* 折叠态不该有滚动条：横向扇开时最外几层的转角会探出布局盒，裁掉那几像素。
+   竖屏随手叠放已按旋转后的包络 + 四周余量定高、横移夹在容器内，正常不会碰到这条。 */
+.pile:not([data-expanded="true"]) .pile__viewport {
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.pile__viewport:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--heo-fontcolor, #111827) 35%, transparent);
+  border-radius: 12px;
+}
+
+.pile__track {
+  position: relative;
+}
+
+.pile__card {
+  position: absolute;
+  top: 0;
+  right: auto;
+  left: 0;
+  /* 高度永远由图片决定（组件不写尺寸，竖屏的大小只走 transform: scale）。
+     ⚠️ 别给卡片加 overflow: hidden：图片那圈 3px 底色描边是 box-shadow，画在盒子外面，
+     一裁就没了 —— 照片失去"相纸白边"，横竖两个方向都变得像一摞色块。
+     四个属性都要过渡：横向展开用的是 left + width。
+     **不设 transition-delay**：所有照片同时起步、用时一致（错峰会让"一起滑"变成"排队"）。 */
+  transition:
+    top var(--pile-ms) var(--pile-ease),
+    left var(--pile-ms) var(--pile-ease),
+    width var(--pile-ms) var(--pile-ease),
+    transform var(--pile-ms) var(--pile-ease);
+}
+
+.pile__card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 3px var(--heo-card-bg, #fff),
+    var(--heo-shadow-border, 0 0 0 1px rgba(0, 0, 0, 0.06));
+}
+
+.pile__hint {
+  display: block;
+  margin-top: 10px;
+  color: var(--heo-secondtext, #6b7280);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+/* `display: block` 会盖掉 `[hidden]` 的 UA 规则，必须显式写一条（否则展开后提示不消失） */
+.pile__hint[hidden] {
+  display: none;
+}
+
+.pile__badge {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 900;
+}
+
+.pile[data-expanded="true"] .pile__badge {
+  /* display:block —— button 默认 inline-block，`margin: auto` 对它不生效（会贴左边不居中） */
+  display: block;
+  position: static;
+  width: fit-content;
+  margin: 14px auto 0;
+}
+
+/* 横屏展开：这一卷在**一行里全部铺开**；行比容器宽时横向滚动，滚轮翻阅 */
+.pile[data-expanded="true"][data-axis="x"] .pile__viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  touch-action: auto;
+}
+
+.pile[data-expanded="true"][data-axis="x"] .pile__viewport::-webkit-scrollbar {
+  height: 8px;
+}
+
+.pile[data-expanded="true"][data-axis="x"] .pile__viewport::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--heo-secondtext, #6b7280) 32%, transparent);
+}
+
+.pile[data-expanded="true"][data-axis="x"] .pile__viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------- 响应式 */
+
+@media (max-width: 720px) {
+  .album-page {
+    gap: 20px;
+  }
+
+  /* 窄屏 / 竖屏：列表每行一张，详情页展开方向回落到"向下"（见 PhotoPile 的 isVertical()） */
+  .album-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .album-hero {
+    border-radius: 16px;
+    aspect-ratio: 16 / 10;
+  }
+
+  .album-hero__body {
+    padding: 18px;
+  }
+
+  .album-toolbar__count {
+    width: 100%;
+  }
+}
+
+/* 关掉动效偏好：几何一样算，只是不补间 —— 直接展示**终态**。
+   位置/角度取自组件按 pileSpread() 写的那两个内联变量（几何仍只有一份来源，不是第二套动画）：
+   这样 SSR 首帧就已经是终态，不会先叠一下再跳。
+   `!important` 是必须的：组件为了首帧稳定给每一张写了内联 `left: 0%`（叠放态），
+   内联样式只有 `!important` 的规则能盖掉（见 P-128 同款教训）。 */
+@media (prefers-reduced-motion: reduce) {
+  .album-card__stack img {
+    left: var(--pile-left, 0%) !important;
+    transform: rotate(var(--pile-rotate, 0deg)) !important;
+    transition: none;
+  }
+
+  .pile__viewport,
+  .pile__card {
+    transition: none;
+  }
+}

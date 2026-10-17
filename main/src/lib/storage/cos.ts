@@ -9,6 +9,7 @@ import {
   requireCosSettings,
   type CosSettings,
 } from "./cos-config";
+import { createProgressStream } from "./progress-stream";
 import {
   InvalidStorageRangeError,
   StorageObjectNotFoundError,
@@ -17,6 +18,7 @@ import {
   type StorageDriver,
   type StorageObject,
   type StorageObjectStat,
+  type StoragePutOptions,
 } from "./types";
 
 export { CosNotConfiguredError } from "./cos-config";
@@ -60,25 +62,69 @@ function asCosError(error: unknown, fallback: string): Error {
   return new Error(fallback);
 }
 
+/** 只重试"还能再试一次"的错误：连接层 / 408 / 429 / 5xx；4xx 权限与参数错误直接抛出 */
+function isRetryableCosError(error: unknown): boolean {
+  const status =
+    error && typeof error === "object" && "statusCode" in error
+      ? Number(error.statusCode)
+      : 0;
+  if (!Number.isFinite(status) || status <= 0) {
+    return true;
+  }
+  return status === 408 || status === 429 || status >= 500;
+}
+
 export class CosDriver implements StorageDriver {
   readonly name = "cos" as const;
 
-  async put(key: string, data: Uint8Array, options?: { publicRead?: boolean }) {
+  async put(
+    key: string,
+    data: Uint8Array,
+    options?: StoragePutOptions,
+  ) {
     const normalized = normalizeStorageKey(key);
     const config = await requireCosSettings();
     const client = createClient(config);
-    await invoke((callback) =>
-      client.putObject(
-        {
-          Bucket: config.bucket,
-          Region: config.region,
-          Key: normalized,
-          Body: Buffer.from(data),
-          ACL: options?.publicRead === false ? undefined : "public-read",
-        },
-        callback,
-      ),
-    );
+    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const onProgress = options?.onProgress;
+    const acl = options?.publicRead === false ? undefined : "public-read";
+    const send = (body: Buffer | Readable) =>
+      invoke((callback) =>
+        client.putObject(
+          {
+            Bucket: config.bucket,
+            Region: config.region,
+            Key: normalized,
+            Body: body,
+            // 流 body 必须自己给长度，否则 SDK 会走「服务端流式上传」的另一种语义
+            ContentLength: onProgress ? buffer.byteLength : undefined,
+            ACL: acl,
+          },
+          callback,
+        ),
+      );
+
+    if (!onProgress) {
+      await send(buffer);
+      return;
+    }
+
+    // 要进度就走自计数流（见 lib/storage/progress-stream.ts：SDK 自己的 onProgress
+    // 对 Buffer body 实测只有 0%/100% 两次回调，画不出进度条）。
+    // 代价：SDK 对**流** body 不做自动重试，所以这里自己重试，且每次都要重新建流。
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await send(createProgressStream(buffer, onProgress));
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableCosError(error)) {
+          break;
+        }
+      }
+    }
+    throw asCosError(lastError, "上传 COS 对象失败");
   }
 
   async putFile(

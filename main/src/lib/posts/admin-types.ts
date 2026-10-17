@@ -14,9 +14,21 @@ export type AdminPostView = {
   content: string;
   excerpt: string | null;
   cover: string | null;
+  /** 列表卡封面独立形态：image | solid | gradient | none */
+  coverStyle: string;
+  coverColor: string | null;
+  coverColor2: string | null;
   bannerStyle: string;
+  /** Banner 单独上传的图；bannerStyle=cover 时不使用 */
+  bannerImage: string | null;
   bannerColor: string | null;
   bannerColor2: string | null;
+  /** 列表卡片封面焦点（0–100，百分比；50 = 居中） */
+  coverFocalX: number;
+  coverFocalY: number;
+  /** 文章详情 Banner 焦点（与卡片分开） */
+  bannerFocalX: number;
+  bannerFocalY: number;
   status: string;
   publishedAt: Date | string | null;
   pinned: boolean;

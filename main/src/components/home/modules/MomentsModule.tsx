@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
+import { MomentVideoPlayer } from "@/components/moment/MomentVideoPlayer";
 import type { HomeModuleConfig } from "@/lib/home/types";
-import type { HomeMoment } from "@/lib/moments/types";
+import { momentMediaKind, type HomeMoment } from "@/lib/moments/types";
 import {
   fillToHeight,
   layoutWaterfall,
@@ -92,32 +93,56 @@ function WaterfallRows({
   rows: WaterfallRow[];
 }) {
   return (
-    <div aria-hidden={hidden} className="dash-moments__stack">
+    <div
+      aria-hidden={hidden}
+      className="dash-moments__stack"
+      // 滚动轨道的第二份是视觉复制：视频预览按钮不能进入 Tab 顺序 / 点击命中的语义层。
+      inert={hidden ? true : undefined}
+    >
       {rows.map((row, rowIndex) => (
         <div
           className={cn("dash-moments__row", `is-${row.kind}`)}
           key={`${row.kind}-${rowIndex}-${row.items[0]?.src}`}
         >
-          {row.items.map((image, imageIndex) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              alt=""
-              key={`${image.src}-${imageIndex}`}
-              data-fallback={image.fallback}
-              onError={(event) => {
-                const node = event.currentTarget;
-                const fallback = node.dataset.fallback;
-                if (fallback && node.src !== fallback) {
-                  node.src = fallback;
-                }
-              }}
-              src={image.src}
-              style={{
-                ["--moment-w" as string]: String(image.width),
-                ["--moment-h" as string]: String(image.height),
-              }}
-            />
-          ))}
+          {row.items.map((image, imageIndex) =>
+            image.video ? (
+              // 视频用首帧作封面；几何仍按 width/height 走（与图片同一套排布）。
+              <MomentVideoPlayer
+                alt="首页瞬间视频"
+                className="dash-moments__video"
+                key={`${image.src}-${imageIndex}`}
+                style={{
+                  ["--moment-w" as string]: String(image.width),
+                  ["--moment-h" as string]: String(image.height),
+                } as CSSProperties}
+                video={{
+                  key: image.src,
+                  src: image.src,
+                  width: image.width,
+                  height: image.height,
+                }}
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                alt=""
+                key={`${image.src}-${imageIndex}`}
+                data-fallback={image.fallback}
+                onError={(event) => {
+                  const node = event.currentTarget;
+                  const fallback = node.dataset.fallback;
+                  if (fallback && node.src !== fallback) {
+                    node.src = fallback;
+                  }
+                }}
+                src={image.src}
+                style={{
+                  ["--moment-w" as string]: String(image.width),
+                  ["--moment-h" as string]: String(image.height),
+                }}
+              />
+            ),
+          )}
         </div>
       ))}
     </div>
@@ -128,12 +153,21 @@ function collectPool(moments: HomeMoment[]): WaterfallImage[] {
   const pool: WaterfallImage[] = [];
   for (const moment of moments) {
     for (const image of moment.images) {
+      // 语音没有画面：这个模块是一面"图墙"，语音进去只会变成一块占位的空瓦片。
+      // 语音瞬时仍然进上面那几行文案（点进去看/听），这里跳过（见 docs/moment-audio-spec.md §2.6）。
+      if (momentMediaKind(image) === "audio") {
+        continue;
+      }
+      const video = momentMediaKind(image) === "video";
       pool.push(
         toWaterfallImage({
-          src: image.thumb2Src,
+          src: video
+            ? image.src
+            : (image.thumb2Src ?? image.thumbSrc ?? image.src),
           width: image.width,
           height: image.height,
-          fallback: image.thumbSrc,
+          fallback: video ? undefined : (image.thumbSrc ?? image.src),
+          video,
         }),
       );
     }

@@ -7,8 +7,9 @@ import {
   pickBox,
   type DualLayoutBox,
 } from "./box";
+import { H_PCT_MAX } from "./viewport";
 
-test("格点越界收进 12 列，hPct 收进 0–100", () => {
+test("格点越界收进 12 列，hPct 收进 0–H_PCT_MAX（像素）", () => {
   assert.deepEqual(normalizeBox({ col: 11, colSpan: 6, row: 2, hPct: 37 }), {
     col: 7,
     colSpan: 6,
@@ -19,11 +20,17 @@ test("格点越界收进 12 列，hPct 收进 0–100", () => {
     col: 1,
     colSpan: 12,
     row: 1,
-    hPct: 100,
+    hPct: 800,
+  });
+  assert.deepEqual(normalizeBox({ col: 0, colSpan: 99, row: -3, hPct: 99999 }), {
+    col: 1,
+    colSpan: 12,
+    row: 1,
+    hPct: H_PCT_MAX,
   });
 });
 
-test("hPct 缺省为 0（hug）", () => {
+test("hPct 缺省为 0（自适应，随内容）", () => {
   assert.equal(normalizeBox({ col: 1, colSpan: 6, row: 2 }).hPct, 0);
 });
 

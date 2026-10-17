@@ -24,6 +24,8 @@ export type ApplyOptions = {
   now?: number;
   skipInstall?: boolean;
   skipMigrate?: boolean;
+  /** 跳过重建 Prisma 客户端（默认不跳；顺序见 applyPendingUpdate() 里的注释） */
+  skipGenerate?: boolean;
   skipBuild?: boolean;
 };
 
@@ -128,6 +130,27 @@ export async function applyPendingUpdate(
       migrated = true;
     }
 
+    /**
+     * **必须**在构建之前按**刚覆盖好的** `prisma/schema.prisma` 重建 Prisma 客户端。
+     *
+     * 2026-10-03 生产实测：加模型的版本上机时，管理员按老文档在**覆盖之前**手工跑了一次
+     * `pnpm prisma generate`（那次生成的是旧 schema 的客户端）→ `pnpm install` 没有重跑
+     * `@prisma/client` 的 postinstall → `next build` 拿旧客户端类型检查，报一屏
+     * `Property 'album' does not exist on type 'PrismaClient'`，更新失败、站点回落旧构建（P-124）。
+     *
+     * 顺序不能变：install（可能重置客户端）→ migrate（先把库改到位）→ generate（对齐客户端）→ build。
+     * 实测一次 generate 约 150ms，代价可以忽略。
+     */
+    let generated = false;
+    if (!options.skipGenerate) {
+      const prismaCli = path.join(cwd, "node_modules", "prisma", "build", "index.js");
+      const generate = runLogged(process.execPath, [prismaCli, "generate"], cwd);
+      if (!generate.ok) {
+        throw new Error(`Prisma 客户端生成失败：${generate.output.slice(0, 2000)}`);
+      }
+      generated = true;
+    }
+
     let built = false;
     if (mode === "start" && !options.skipBuild) {
       const nextDir = path.join(cwd, ".next");
@@ -180,6 +203,7 @@ export async function applyPendingUpdate(
       removed: overlay.removed,
       installed,
       migrated,
+      generated,
       built,
     };
     await writeUpdateState(state);
@@ -189,6 +213,7 @@ export async function applyPendingUpdate(
       removed: overlay.removed,
       installed,
       migrated,
+      generated,
       built,
     });
     return state;

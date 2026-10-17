@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { DeleteButton } from "@/components/admin/DeleteButton";
+import { MicIcon } from "@/components/common/MicIcon";
 import { adminJson } from "@/lib/client/admin";
 import type { AdminMomentListItem } from "@/lib/moments/admin-list-view";
 import { MOMENT_VISIBILITY_UNLIMITED, momentVisibilityDaysLabel } from "@/lib/moments/visibility";
@@ -90,15 +91,21 @@ export function MomentAdminList({
             style={{ "--i": index } as React.CSSProperties}
           >
             <div className="admin-moment-content">
-              <p>{moment.content}</p>
+              {/* 瞬间可以只发媒体不发文字（2026-10，见 docs/moment-video-spec.md）：空文案给个占位，别留一行空白 */}
+              <p>{moment.content.trim() || "（无文字）"}</p>
             </div>
             <div className="admin-moment-meta">
               <span className="admin-moment-time">
                 <ClockIcon /> {moment.createdAtText}
               </span>
-              {moment.imageCount > 0 && (
+              {moment.mediaCount > 0 && (
                 <span className="admin-moment-badge">
-                  <CameraIcon /> {moment.imageCount} 张图片
+                  <CameraIcon /> {moment.mediaCount} 个媒体
+                </span>
+              )}
+              {moment.audioCount > 0 && (
+                <span className="admin-moment-badge">
+                  <MicIcon /> {moment.audioCount} 条语音
                 </span>
               )}
               <span className="admin-moment-badge">{moment.visibilityText}</span>

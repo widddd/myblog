@@ -1,6 +1,10 @@
 import type { Prisma } from "@prisma/client";
 
 import { AdminHttpError } from "@/lib/admin/http";
+import {
+  MOMENT_MAX_AUDIOS,
+  MOMENT_MAX_MEDIA_ITEMS,
+} from "@/lib/moments/compose-rules";
 import { prisma } from "@/lib/db";
 import { resolvePublicImageUrl, resolveThumb2Src } from "@/lib/moments/media";
 import type {
@@ -10,6 +14,7 @@ import type {
   PublicMoment,
   PublicMomentImage,
 } from "@/lib/moments/types";
+import { momentMediaKind } from "@/lib/moments/types";
 import { buildMomentVisibilityFilter } from "@/lib/moments/visibility";
 import { loadMomentVisibilityContext } from "@/lib/moments/visibility-groups";
 import { loadCosSettings } from "@/lib/storage";
@@ -45,24 +50,43 @@ function parseImages(raw: string): MomentImage[] {
   }
 }
 
+/**
+ * 公开投影：图片 + 视频 + 语音。
+ *
+ * 条数按**分项**截断（图片/视频 ≤ 9、语音 ≤ 5）—— 不能沿用"整个数组切前 9 个"，
+ * 那样一条瞬间里放在后面的语音会被无声丢掉（见 docs/moment-audio-spec.md §2.6）。
+ * 视频与语音都没有一级缩略图（站点不装 ffmpeg）：渲染端按 kind 走播放瓦片 / 播放行。
+ */
 function toPublicImages(raw: string): PublicMomentImage[] {
-  return parseImages(raw)
-    .slice(0, 9)
-    .flatMap((image) => {
-      const original =
-        resolvePublicImageUrl(image.key) ?? resolvePublicImageUrl(image.thumb);
-      const thumbSrc = resolvePublicImageUrl(image.thumb) ?? original;
-      if (!original || !thumbSrc) {
-        return [];
+  const result: PublicMomentImage[] = [];
+  let visual = 0;
+  let audios = 0;
+  for (const media of parseImages(raw)) {
+    const kind = momentMediaKind(media);
+    if (kind === "audio") {
+      if (audios >= MOMENT_MAX_AUDIOS) {
+        continue;
       }
-      return [
-        {
-          ...image,
-          src: original,
-          thumbSrc,
-        },
-      ];
-    });
+      audios += 1;
+    } else {
+      if (visual >= MOMENT_MAX_MEDIA_ITEMS) {
+        continue;
+      }
+      visual += 1;
+    }
+    const original =
+      resolvePublicImageUrl(media.key) ?? resolvePublicImageUrl(media.thumb);
+    if (!original) {
+      continue;
+    }
+    if (kind === "image") {
+      const thumbSrc = resolvePublicImageUrl(media.thumb) ?? original;
+      result.push({ ...media, kind, src: original, thumbSrc });
+    } else {
+      result.push({ ...media, kind, src: original });
+    }
+  }
+  return result;
 }
 
 export async function listPublicMoments(options: {
@@ -117,8 +141,11 @@ export async function listPublicMoments(options: {
   };
 }
 
+/** 首页瞬间池的上限：瞬间模块与文章卡片的穿插共用这一批（再大也只是白查）。 */
+const HOME_MOMENTS_MAX = 12;
+
 export async function listHomeMoments(limit: number): Promise<HomeMoment[]> {
-  const pageSize = Math.min(12, Math.max(1, Math.round(limit)));
+  const pageSize = Math.min(HOME_MOMENTS_MAX, Math.max(1, Math.round(limit)));
   await loadCosSettings();
   const maxPx = await readThumb2MaxPx();
   const { globalDays, groups } = await loadMomentVisibilityContext();
@@ -126,42 +153,63 @@ export async function listHomeMoments(limit: number): Promise<HomeMoment[]> {
     where: visibleWhere({ globalDays, groups }),
     orderBy: { createdAt: "desc" },
     take: pageSize,
-    select: { id: true, content: true, images: true },
+    select: { id: true, content: true, images: true, createdAt: true },
   });
 
   return Promise.all(
     rows.map(async (row) => ({
       id: row.id,
       content: row.content,
+      createdAt: row.createdAt,
       images: await toHomeImages(row.images, maxPx),
     })),
   );
 }
 
 async function toHomeImages(raw: string, maxPx: number): Promise<HomeMomentImage[]> {
+  const base: HomeMomentImage[] = [];
+  let visual = 0;
+  let audios = 0;
+  for (const media of parseImages(raw)) {
+    const kind = momentMediaKind(media);
+    if (kind === "audio") {
+      if (audios >= MOMENT_MAX_AUDIOS) {
+        continue;
+      }
+      audios += 1;
+    } else {
+      if (visual >= MOMENT_MAX_MEDIA_ITEMS) {
+        continue;
+      }
+      visual += 1;
+    }
+    const original =
+      resolvePublicImageUrl(media.key) ?? resolvePublicImageUrl(media.thumb);
+    if (!original) {
+      continue;
+    }
+    if (kind === "image") {
+      const thumbSrc = resolvePublicImageUrl(media.thumb) ?? original;
+      base.push({ ...media, kind, src: original, thumbSrc, thumb2Src: thumbSrc });
+    } else {
+      // 视频 / 语音都不进二级缩略图链路（没有封面文件，查了也只是徒劳的 stat/生成）
+      base.push({ ...media, kind, src: original });
+    }
+  }
+
   return Promise.all(
-    parseImages(raw)
-      .slice(0, 9)
-      .flatMap((image) => {
-        const original =
-          resolvePublicImageUrl(image.key) ?? resolvePublicImageUrl(image.thumb);
-        const thumbSrc = resolvePublicImageUrl(image.thumb) ?? original;
-        if (!original || !thumbSrc) {
-          return [];
-        }
-        return [
-          {
+    base.map(async (image) =>
+      momentMediaKind(image) === "image"
+        ? {
             ...image,
-            src: original,
-            thumbSrc,
-            thumb2Src: thumbSrc,
-          },
-        ];
-      })
-      .map(async (image) => ({
-        ...image,
-        thumb2Src: await resolveThumb2Src(image.key, image.thumbSrc, maxPx),
-      })),
+            thumb2Src: await resolveThumb2Src(
+              image.key,
+              image.thumbSrc ?? image.src,
+              maxPx,
+            ),
+          }
+        : image,
+    ),
   );
 }
 

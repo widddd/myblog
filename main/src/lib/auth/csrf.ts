@@ -7,6 +7,7 @@ import { unsealData } from "iron-session";
 import type { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 
+import { CSRF_COOKIE_NAME } from "@/lib/auth/csrf-cookie";
 import {
   getSession,
   getSessionOptions,
@@ -15,7 +16,7 @@ import {
   type SessionData,
 } from "@/lib/auth/session";
 
-export const CSRF_COOKIE_NAME = "myblog.csrf";
+export { CSRF_COOKIE_NAME } from "@/lib/auth/csrf-cookie";
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}\.[a-f0-9]{64}$/;
 

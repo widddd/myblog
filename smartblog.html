@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SmartBlog</title>
+<meta name="description" content="SmartBlog：随时查看我的实时动态和发表的文章。">
+<style>
+  :root {
+    --bg: #101217;          /* 开屏背景色 */
+    --blue-light: #4fa8f5;  /* 图标渐变起点（= splash_logo.xml 的 #FF4FA8F5） */
+    --blue-deep: #2a4fd0;   /* 图标渐变终点（= splash_logo.xml 的 #FF2A4FD0） */
+    --bubble-back: #9fc1f5; /* 图标里后面的半透明气泡 */
+    --text: #f2f5fa;
+    --muted: #8f98a8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC",
+                 "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ---------- 首屏：大图标 ---------- */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 64px 0 48px;
+  }
+
+  .icon-wrap {
+    position: relative;
+    width: min(56vw, 280px);
+    aspect-ratio: 1;
+    margin-bottom: 48px;
+  }
+
+  /* 图标背后一层很淡的蓝色光晕 */
+  .icon-wrap::before {
+    content: "";
+    position: absolute;
+    inset: -28%;
+    background: radial-gradient(closest-side, rgba(61, 118, 232, .32), rgba(61, 118, 232, 0));
+    z-index: 0;
+  }
+
+  .icon { position: relative; z-index: 1; width: 100%; height: 100%; display: block; }
+
+  /* 页面唯一的动效：后面的气泡先出现，前面的白色气泡随后弹出 */
+  /* transform-origin 走 viewBox 坐标（SVG 元素默认 transform-box: view-box），
+     取值 = 两个气泡各自的中心，由 splash_logo.xml 的路径数据算出：
+     回声气泡 x 29.9–57.2 / y 28.8–50.9 → 43.6,39.9；主气泡 x 44.6–78.2 / y 45.6–72.9 → 61.4,59.3 */
+  .b-back  { transform-origin: 43.6px 39.9px; animation: pop .6s .15s cubic-bezier(.2,.9,.3,1.2) both; }
+  .b-front { transform-origin: 61.4px 59.3px; animation: pop .6s .45s cubic-bezier(.2,.9,.3,1.2) both; }
+  @keyframes pop {
+    from { opacity: 0; transform: scale(.6); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  h1 {
+    font-size: clamp(40px, 9vw, 60px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+
+  .tagline {
+    margin-top: 16px;
+    font-size: clamp(17px, 4.4vw, 20px);
+    color: var(--muted);
+  }
+
+  .intro {
+    margin-top: 28px;
+    max-width: 30em;
+    font-size: 17px;
+    color: #c9d0dc;
+  }
+
+  .download {
+    display: inline-block;
+    margin-top: 40px;
+    padding: 16px 44px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--blue-light), var(--blue-deep));
+    color: #fff;
+    font-size: 17px;
+    font-weight: 600;
+    text-decoration: none;
+    box-shadow: 0 10px 30px rgba(42, 80, 212, .35);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .download:hover { transform: translateY(-2px); box-shadow: 0 14px 36px rgba(42, 80, 212, .5); }
+  .download:active { transform: translateY(0); }
+  .download:focus-visible { outline: 3px solid var(--bubble-back); outline-offset: 4px; }
+
+  /* ---------- 功能：两个气泡，呼应图标里的前后两个气泡 ---------- */
+  .features {
+    display: grid;
+    gap: 20px;
+    padding: 24px 0 96px;
+  }
+
+  .bubble {
+    max-width: 440px;
+    padding: 28px 32px;
+    border-radius: 28px;
+  }
+  .bubble h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .bubble p  { font-size: 16px; }
+
+  .bubble.back {
+    background: rgba(159, 193, 245, .16);
+    color: #dbe8fb;
+    border-bottom-left-radius: 8px;
+  }
+  .bubble.front {
+    justify-self: end;
+    background: #fff;
+    color: #11151d;
+    border-bottom-right-radius: 8px;
+  }
+  .bubble.front p { color: #4a5262; }
+
+  footer {
+    padding: 0 24px 48px;
+    text-align: center;
+    font-size: 14px;
+    color: #5d6676;
+  }
+
+  @media (max-width: 520px) {
+    .bubble { padding: 24px; }
+    .bubble.back  { margin-right: 28px; }
+    .bubble.front { margin-left: 28px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .b-back, .b-front { animation: none; }
+    .download { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<main>
+  <section class="hero">
+    <div class="icon-wrap">
+      <!-- 图标与 App 同源：路径逐条来自
+             androidapp/app/src/main/res/drawable/splash_logo.xml（圆形开屏 logo）
+             = docs/android/icon.svg（设计源，108 画布，中心 66 圆安全区）
+           改这里的路径必须同步那两个文件 —— 别在网页上单独重绘一版近似图形。 -->
+      <svg class="icon" viewBox="0 0 108 108" role="img" aria-label="SmartBlog 图标">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#4fa8f5"/>
+            <stop offset="1" stop-color="#2a4fd0"/>
+          </linearGradient>
+        </defs>
+
+        <!-- 正圆底 + 斜向蓝渐变 -->
+        <circle cx="54" cy="54" r="54" fill="url(#bg)"/>
+
+        <!-- 回声气泡：另一个「我」（白 42%） -->
+        <path class="b-back" fill="#ffffff" fill-opacity="0.42"
+              d="M37.8,28.8 H49.3 A7.9,7.9 0 0 1 57.2,36.7 V43 A7.9,7.9 0 0 1 49.3,50.9 H37.8 A7.9,7.9 0 0 1 29.9,43 V36.7 A7.9,7.9 0 0 1 37.8,28.8 Z"/>
+
+        <g class="b-front" fill="#ffffff">
+          <!-- 主气泡：你 -->
+          <path d="M54.6,45.6 H68.2 A10,10 0 0 1 78.2,55.6 V62.9 A10,10 0 0 1 68.2,72.9 H54.6 A10,10 0 0 1 44.6,62.9 V55.6 A10,10 0 0 1 54.6,45.6 Z"/>
+          <!-- 尾巴：话从嘴里出来，又指回自己 -->
+          <path d="M53,70.8 L44.6,82.4 L63.5,72.9 Z"/>
+        </g>
+      </svg>
+    </div>
+
+    <h1>SmartBlog</h1>
+    <p class="tagline">我的动态和文章，一个应用看完。</p>
+    <p class="intro">用 SmartBlog，你可以实时看到我发布的最新动态，也能随时阅读我写下的每一篇文章。你还可以及时收到提醒，快速查看我最新发布的文章。</p>
+
+    <!-- ▼▼▼ 【在这里填下载链接】把下面 href="#" 里的 # 换成你的下载地址 ▼▼▼ -->
+    <a class="download" href="#" id="download-btn">下载 SmartBlog</a>
+    <!-- ▲▲▲ 【在这里填下载链接】 ▲▲▲ -->
+  </section>
+
+  <section class="features">
+    <div class="bubble back">
+      <h2>实时动态</h2>
+      <p>我刚发布的内容，会第一时间出现在你的手机上。</p>
+    </div>
+    <div class="bubble front">
+      <h2>发表的文章</h2>
+      <p>我写的每一篇文章都收在这里，随时翻阅。</p>
+    </div>
+  </section>
+</main>
+
+<footer>© SmartBlog</footer>
+
+</body>
+</html>

@@ -8,6 +8,8 @@ export type SortableImageItem = {
   /** 稳定 id：**不要**把数组下标编进来，否则拖动重排后 React 会按新 key 重挂 <img>，图片会重新请求。 */
   id: string;
   src: string;
+  /** 视频格：渲染 `<video>` 而不是 `<img>`（缺省 = 图片；见 docs/moment-video-spec.md） */
+  kind?: "image" | "video";
 };
 
 type SortableImageGridProps<T extends SortableImageItem> = {
@@ -34,7 +36,12 @@ export function SortableImageGrid<T extends SortableImageItem>({
 }: SortableImageGridProps<T>) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
-  const [ghost, setGhost] = useState<{ x: number; y: number; src: string } | null>(null);
+  const [ghost, setGhost] = useState<{
+    x: number;
+    y: number;
+    src: string;
+    kind?: "image" | "video";
+  } | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const columns = images.length <= 1 ? 1 : images.length <= 4 ? 2 : 3;
 
@@ -56,7 +63,12 @@ export function SortableImageGrid<T extends SortableImageItem>({
     event.currentTarget.setPointerCapture(event.pointerId);
     setDragId(images[index].id);
     setDropIndex(index);
-    setGhost({ x: event.clientX, y: event.clientY, src: images[index].src });
+    setGhost({
+      x: event.clientX,
+      y: event.clientY,
+      src: images[index].src,
+      kind: images[index].kind,
+    });
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLElement>) {
@@ -110,17 +122,33 @@ export function SortableImageGrid<T extends SortableImageItem>({
             data-sort-index={index}
             key={image.id}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              alt={`图片 ${index + 1}`}
-              decoding="async"
-              draggable={false}
-              loading="eager"
-              src={image.src}
-            />
+            {image.kind === "video" ? (
+              // 视频格：本机 blob（或媒体库地址）直接当静音缩略图用；真正的播放交给「从媒体库/本地上传」后的正式链路
+              <video
+                className="admin-sort-grid__video"
+                muted
+                playsInline
+                preload="metadata"
+                src={image.src}
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                alt={`图片 ${index + 1}`}
+                decoding="async"
+                draggable={false}
+                loading="eager"
+                src={image.src}
+              />
+            )}
+            {image.kind === "video" ? (
+              <span aria-hidden className="admin-sort-grid__badge">
+                ▶
+              </span>
+            ) : null}
             <div className="admin-sort-grid__tools">
               <button
-                aria-label={`拖动排序（第 ${index + 1} 张）`}
+                aria-label={`拖动排序（第 ${index + 1} 个）`}
                 className="admin-sort-grid__handle"
                 disabled={disabled}
                 onPointerCancel={handlePointerUp}
@@ -151,8 +179,12 @@ export function SortableImageGrid<T extends SortableImageItem>({
           className="admin-sort-ghost"
           style={{ left: ghost.x, top: ghost.y }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" draggable={false} src={ghost.src} />
+          {ghost.kind === "video" ? (
+            <video muted playsInline preload="metadata" src={ghost.src} />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt="" draggable={false} src={ghost.src} />
+          )}
         </span>
       ) : null}
     </>

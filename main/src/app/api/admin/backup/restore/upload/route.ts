@@ -7,11 +7,12 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 import { requireAdmin } from "@/lib/auth/guard";
-import { deleteBackup, isBackupRunning, replicateBackupToCos } from "@/lib/backup/backup";
+import { deleteBackup, isBackupRunning } from "@/lib/backup/backup";
 import { readBackupPackageDek } from "@/lib/backup/container";
 import { getBackupFilePath, MAX_BACKUP_PACKAGE_BYTES } from "@/lib/backup/files";
 import { stageImportedBackup } from "@/lib/backup/restore";
 import { saveBackupKeyHash } from "@/lib/backup/secrets";
+import { queueBackupCosUpload } from "@/lib/backup/uploads";
 import {
   AdminHttpError,
   handleAdminError,
@@ -74,9 +75,10 @@ export async function POST(request: Request) {
       await rm(peekDir, { recursive: true, force: true }).catch(() => undefined);
     }
 
-    const cosUploaded = await replicateBackupToCos(imported.name, storedPath);
-    if (cosUploaded) {
-      logger.info("已把上传的备份同步到 COS", { name: imported.name });
+    // 上传同样交给后台队列：这份包也有几十 MB，不能让导入请求陪着传完
+    const cosUploadQueue = await queueBackupCosUpload(imported.name, storedPath);
+    if (cosUploadQueue === "queued") {
+      logger.info("已把上传的备份排进 COS 后台上传队列", { name: imported.name });
     }
 
     return jsonData({
@@ -84,7 +86,7 @@ export async function POST(request: Request) {
       format: imported.format,
       encrypted: imported.encrypted,
       releaseLabel: imported.releaseLabel,
-      cosUploaded,
+      cosUploadQueue,
     });
   } catch (error) {
     await unlink(tempPath).catch(() => undefined);

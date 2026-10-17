@@ -15,8 +15,9 @@ export function MomentCard({ moment, comments, commentTotal }: MomentCardProps) 
   return (
     <article className="moment-card glass-card" id={`moment-${moment.id}`}>
       <time>{formatPostDate(moment.createdAt)}</time>
-      <p>{moment.content}</p>
-      <MomentGrid alt="瞬间图片" images={moment.images} />
+      {/* 瞬间可以不发文字（只发图片 / 视频）：空文案不渲染空段落，免得白占一行 */}
+      {moment.content.trim() ? <p>{moment.content}</p> : null}
+      <MomentGrid alt="瞬间媒体" images={moment.images} />
       <div className="moment-card__bar">
         <LikeButton
           likeCount={moment.likeCount}

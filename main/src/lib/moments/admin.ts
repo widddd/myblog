@@ -11,6 +11,7 @@ import {
   ensureVisibilityGroupExists,
   loadMomentVisibilityContext,
 } from "@/lib/moments/visibility-groups";
+import { momentContentError } from "@/lib/moments/compose-rules";
 
 export type { MomentImage } from "@/lib/moments/types";
 
@@ -131,6 +132,15 @@ export async function updateAdminMoment(
   }
   if (input.visibilityGroupId !== undefined && input.visibilityGroupId !== null) {
     await ensureVisibilityGroupExists(input.visibilityGroupId);
+  }
+  // PATCH 是 partial：schema 里没有跨字段规则（.partial() 套不上 refine），
+  // 所以这里把「入参 + 现有行」合并后再走同一段判断——文字与媒体至少一个、视频最多 1 个。
+  const message = momentContentError({
+    content: input.content ?? current.content,
+    images: input.images === undefined ? parseImages(current.images) : input.images,
+  });
+  if (message) {
+    throw new AdminHttpError("VALIDATION_ERROR", message, 400);
   }
   const row = await prisma.moment.update({
     where: { id },

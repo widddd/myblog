@@ -386,6 +386,7 @@
   - **CSS 自定义属性（token）要跨文件查，别只看一个文件**：本项目 `--admin-fast/mid/slow`（160/220/280ms）与 `--admin-ease` 定义在 **`globals.css`**（前后台共享层，前台 `TransferHud` 也用），`admin.css` 只是使用者。只 grep `admin.css` 会得出"token 未定义、过渡全失效"的**错误结论**；真去 `admin.css` 补一个 `--admin-fast: 120ms` 还会反手把全后台的动效时长改错。
   - **别拿被截断的输出当全量**：同一处 `Select-String ... | Select-Object -First 8` 把 23 处用法说成 2 处。列用法/定义时不要加 `-First`；加了就要在结论里标注"已截断"。
   - **兜底证据永远看运行时**：`getComputedStyle(document.documentElement).getPropertyValue('--admin-fast')`、`getComputedStyle(el).transitionDuration`，比任何静态 grep 都硬。
+  - **数行数 / 统计代码量别用 shell 命令**：`Get-Content | Measure-Object -Line` 不准、被 `-First` 截断的结果不全。走 `pnpm loc`（`main/scripts/count-loc.mjs`，只读、零依赖、不写任何文件）：它按桶数物理行，显式剔掉依赖（`node_modules`）、vendor 冻结子树（`src/editor`）、构建产物（`.next` / `build`）、运行时数据（`main/data`）、锁文件（`pnpm-lock.yaml`）与二进制；一个文件只落一个桶（不会重复计数），`--all` 会把「没计入的都有什么」**和「没被任何桶接住的文件」**一起列出来——后者是漏数的唯一保险绳。⚠️ 第一次写这个脚本时就栽在口径上：`pnpm-lock.yaml`（9,631 行）被「工程配置」那一桶接走，配置虚高 30 倍，是 `--all` 审计里看出锁文件没出现在「未计入」清单才发现的。
 - 📎 案例：第三轮后台重写（2026-02）；以及 2026-02 的一次**误报**——先报"`--admin-fast` 未定义导致 `.admin-btn` / `.admin-list__row` hover 瞬变"，实测 `.admin-btn` 计算值 `0.16s ×5 + 0.12s`、`:root` 上 `--admin-fast = .16s`，结论作废；真正要改的只有自己新写的 `.admin-choice__btn` 硬编码了 `120ms`，已改成 `var(--admin-fast)`。
 
 ### P-078 清理自建进程必须按 PID / 专属特征，禁止按进程名 Stop-Process
@@ -508,7 +509,12 @@
   - 📎 连带解释了历史怪现象：以前被我掐断的那几次脚本，其实**活都干完了**（包括 finally 里的清理），只是进程不退出 —— 于是"看起来卡住"。
 - ✅ 配套纪律：类型检查/构建各自单独一次，别和 UI 验证同一条命令；AI 的每次工具调用都是冷进程，凡是"大量小文件读写"（tsc 解析、Chromium profile）都会被放慢，能省的都要省。
   - ⚠️ AI 还有个自伤操作：**别用 pwsh 的 `-replace` / `Set-Content` 管道改源码**（见 P-077），中文会被 GBK 往返毁成乱码，整文件重写更省事。
-- 📎 案例：2026-02 同一处卡片改动，前几轮验证动辄几分钟（还被掐断两次），换成 ui-shot 后 2.6s。
+- 🔴 **读内联值证明不了过渡在跑**：`el.style.top` / `el.style.transform` 是**声明值**，点击瞬间就跳到终点；过渡补的是**计算值**。想看动画有没有真的在滑，只能读 `getBoundingClientRect()`（或 `getComputedStyle`）逐帧采样。实测：折叠组点开时 `style.top` 第一帧就是 `2347px`（看着像"瞬跳"），而 `rect.top` 是 `68.8 → 150.6 → 338.9 → 501.2 → 555`（真在滑）——只读内联值会把好的动画误判成坏的。
+- 🔴 **截图和尺寸都看不出「交互死了」——改交互必须真点一遍**：`pnpm shot` 只能证明"画出来了、几何对"，证明不了"点得动"。实测：折叠组组件因为 `useCallback` 依赖里漏了 `expanded`，**点展开没有任何 effect 重跑**（内联 `height` 还停在牌堆高度、卡片 `transform` 没清）→ 视觉完全没反应；而此时 `pnpm shot` 量出来的 `.ig__viewport` = 433px（客户端 layout effect 跑过）、截图里叠放卡 + 「展开 4」胶囊一应俱全，**看起来完全正常**。
+  - 做法：写十几行 CDP（`scripts/ui-shot.mjs` 里有全套现成管线：spawn 浏览器 → `Target.createTarget` → `Target.attachToTarget` → `Runtime.evaluate`），在页面里 `.click()` 真点，然后**前后各量一次**同一个盒子（本例：视口高 376 → 2893 = 真展开；点「收起」→ 440 = 真收回）。顺带覆盖"两个入口都要能用"（牌堆本体 + 左侧胶囊）。
+  - 收尾别 `await send("Browser.close")`：连接已经被自己关掉时那个 Promise 永不 settle，Node 会以"unsettled top-level await"退出且**跳过后面的 `child.kill()`**。先 `socket.close()` → `child.kill()`，或者把 close 包在 `Promise.race` + 超时里。
+  - 用 `taskkill` 清残留时**只杀命令行里带自己 profile 目录的进程**（`Get-CimInstance Win32_Process` 过滤 `CommandLine -like "*myblog-ui-shot-profile*"`），不要按进程名一刀切——那会把用户自己开的浏览器一起杀掉。
+- 📎 案例：2026-02 同一处卡片改动，前几轮验证动辄几分钟（还被掐断两次），换成 ui-shot 后 2.6s；2026-10-03 折叠组"根本展不开"就是这么定位并复验的。
 
 ### P-087 `updatedAt` 不能当「作者改过的时间」：浏览量自增 / 定时发布 / publicId 回填都会刷它
 - ❌ 错误：文章页的「已修改」直接读 `Post.updatedAt`。Prisma 的 `@updatedAt` 在**任何** `update/updateMany` 上都会跳到"现在"：
@@ -658,8 +664,11 @@
      ```
      对应 dev server 日志里的 `⚠ Blocked cross-origin request to Next.js dev resource /_next/static/chunks/... from "127.0.0.1"`。
 - ✅ 规则：**本地自动化一律用 `http://localhost:3000`，不要用 `http://127.0.0.1:3000`**。Next 16 dev 只信任 `localhost`（这是 P-093 `allowedDevOrigins` 的另一面），`127.0.0.1` 会被判定为跨源并 403 掉部分 chunk；本机 HTTP 之外**不要**为了绕过它去加 `allowedDevOrigins`。截图脚本同理（`pnpm shot` 默认就是 `127.0.0.1`，遇到整页空白先换 `localhost` 复测）。
+  - ✅ 本仓库自带的 `ui-shot.mjs` 与 `measure` 类脚本的**默认 `--base` 就是 `http://127.0.0.1:3000`**，所以"量尺寸对、交互全无反应"在自动化里极易复现；自己写 CDP 脚本时第一句就用 `localhost`。
 - ✅ 顺带结论：**空白截图 ≠ 页面坏了**。本次两张"内容区全白"的截图与折叠箭头、按钮无反应是同一个根因（未水合），换 `localhost` 后一切正常且交互全通过。
-- 📎 案例：2026-09 瞬间发布区改版（朋友圈式）验收时，为了验证 popover/抽屉交互才发现；此前两轮"headless 动画不跑"的猜测是错的方向。
+- ⚠️ **复发（2026-10，同一根因、更难认）**：这次的表现不再是"按钮没反应"，而是**「服务端渲染出来的部分一切正常、客户端 effect 从来没跑过」**——模块水合后本该由 `useEffect` 填充的瀑布区一直空着（`stack` 节点 0 个）、页面上 `window.__xxx` 探针全为 `undefined`。我按"组件逻辑坏了"排查了几轮（读源码、比对下发 chunk、查 HMR、重启 dev server），最后靠**反向探针**定位：往组件里塞 `document.body.dataset.debugEffect = ...`，探针为 `null` 就说明**组件根本没在客户端执行**，与业务逻辑无关；再回查 `_dev.err.log` 就看到 `⚠ Blocked cross-origin request to Next.js dev resource ... from "127.0.0.1"`。
+  - 教训：**"渲染结果正确但没有任何客户端副作用"= 先怀疑水合，别先怀疑逻辑**；判据就一条——探针（`dataset` / `globalThis`）有没有值。
+- 📎 案例：2026-09 瞬间发布区改版（朋友圈式）验收时，为了验证 popover/抽屉交互才发现；此前两轮"headless 动画不跑"的猜测是错的方向。2026-10 首页瞬间穿插卡验收时**同一坑复发**（浪费数轮排查），故补上面这条判据。
 
 ### P-102 图片拖动排序：别用 HTML5 `draggable`，也别把数组下标编进 key
 - ❌ 错误 1（**手机端拖不动**）：`SortableImageGrid` 原来用 `draggable` + `onDragStart/onDragOver/onDrop`。HTML5 拖放**在触屏上根本不触发**，手机上永远拖不动；而且没有 `touch-action` 声明，手指移动会被浏览器当成页面滚动吞掉。
@@ -1002,7 +1011,7 @@
   1. **删功能要留痕**：至少进 changelog 批次与发行说明，并把 README / module.md / 设置页 / 概览页这几处「承诺」一起改掉。只把实现删掉、把 UI 与文档留在原地，等于给用户一句假话（同类：P-015 改代码未同步文档、P-112 删入口后文案变假）
   2. **改行为前后用一句话说清「现在是什么」**，别只留 `logger.debug`：日志是给排查用的，不是给下一个人理解设计用的
   3. **顺带记住那条被删掉的逻辑本来也不完整**：旧实现调 `runBackup()` 不带口令，而 `runBackup` 在「加密开启且无口令」时直接抛「加密备份必须输入口令」——**加密状态下的周期备份从来就没成功过**。要恢复这个功能，得先想清楚加密时口令从哪来（当前设计是「口令不保存、每次输入」，见 `api/admin/backup/passphrase/route.ts` 的 410）
-- 📎 案例：2026-10-01 用户提问时发现。**处置（用户选定「恢复自动备份」）**：按上面规则 3 把实现重写回来——`lib/scheduler/backup.ts` 恢复 `checkBackupDue()`，到期判定抽成纯函数 `isBackupDue()` / `resolvePeriodDays()`（`DEFAULT_BACKUP_PERIOD_DAYS = 3`；非法/缺失回落 3 天，空值与坏日期都算「从没备份过」→ 到期），配 `scheduler/backup.test.ts` 4 条并挂进 `pnpm test`。**加密时不再假装能跑**：明确跳过 + 记 `info` 日志，并把这些话说进两个「承诺处」——设置页「自动备份」一节加了说明，概览页状态行在加密开启时改说「加密备份要手动输入口令，不会自动执行 · 保留 N 份」；`docs/user-manual.md` §备份与恢复 同步。
+- 📎 案例：2026-10-01 用户提问时发现。**处置（用户选定「恢复自动备份」）**：按上面规则 3 把实现重写回来——`lib/scheduler/backup.ts` 恢复 `checkBackupDue()`，到期判定抽成纯函数 `isBackupDue()` / `resolvePeriodDays()`（`DEFAULT_BACKUP_PERIOD_DAYS = 3`；非法/缺失回落 3 天，空值与坏日期都算「从没备份过」→ 到期），配 `scheduler/backup.test.ts` 4 条并挂进 `pnpm test`。**加密时不再假装能跑**：明确跳过 + 记 `info` 日志，并把这些话说进两个「承诺处」——设置页「自动备份」一节加了说明，概览页状态行在加密开启时改说「加密备份要手动输入口令，不会自动执行 · 保留 N 份」；`docs/user-manual.md` §备份与恢复 同步。**（2026-10 后续：那一节连同到期判定已搬到备份页 / `lib/backup/schedule.ts`，说明文字跟着搬走，设置页只留一句指路；见 P-126。）**
 
 ### P-124 更新包不重建 Prisma 客户端：加了模型的版本上机后，表建好了、功能仍报「模型不存在」
 - ❌ 现象（2026-10-01 核部署流程时发现）：更新流程只跑 `prisma migrate deploy`，而它**不重建 Prisma 客户端**。于是服务器上表建出来了，但 `node_modules` 里的客户端还是**首装那次**生成的，不认识本次新增的 `StaticPage`、`MomentVisibilityGroup`、`Moment.visibilityGroupId` —— 迁移成功、新功能照旧报错。
@@ -1017,6 +1026,14 @@
 - 📎 案例：2026-10-01 回答「怎么提交到服务器」时逐行核出来的。顺带把 6 处把 `pnpm prisma migrate dev` 写成生产操作的地方（AGENTS §1/§6、README、`docs/user-manual.md` ×2、`docs/data-models.md`、`docs/moment-visibility-spec.md`）一起改成 `migrate deploy` + `generate` 的正确口径。
 - 🔎 **同日后记（自己的判断要复核）**：当天我让用户「这一版上机必须手工补 `generate`」，实际去生产机核过之后**并没有踩到**——他们首装的包是当天从工作区打的，schema 里已经含 `StaticPage` / `MomentVisibilityGroup`，客户端 17:46 生成时就认识这两个模型（`index.d.ts` 里各 410 / 460 处命中），两张表也在。**但从 0.1.1 的 release 包首装的机器就会踩**。教训：断言"你必须做 X"之前，先去机器上核一下当前状态。
 
+#### P-124 附（2026-10-03 真踩了，而且踩在"手工补 generate 的时机"上）：更新链路现在自己 generate
+- ❌ 现象：上相册版本（`Album` / `AlbumVolume` / `Upload.albumId`）时，管理员按老口径**先** `pnpm apply-update --file`（只入库，`.next` 还是旧的），**再** `pnpm prisma generate`，最后 `pnpm apply-update --pending --start`。构建挂在 TypeScript：
+  `src/lib/albums/admin.ts(78,29): error TS2339: Property 'album' does not exist on type 'PrismaClient'`、`data-clear.ts` 的 `albumVolume` 同样报错 —— 一屏「模型不存在」，看着像代码问题，其实是**客户端还是旧 schema 的那一代**。
+- ✅ 根因：`generate` 跑在**程序文件覆盖之前**，生成的是**旧** `prisma/schema.prisma` 的客户端；随后 `applyPendingUpdate()` 里的 `pnpm install --frozen-lockfile` 没有重跑 `@prisma/client` 的 postinstall（包已在 store 里，pnpm 不会重放安装脚本）→ 真正 `next build` 时用的还是旧客户端。**手工 `generate` 必须发生在覆盖之后**，这个时机太难记对了，所以不该让人记。
+- ✅ 规则（代码已落地）：`lib/update/apply.ts` 在 `migrate deploy` 之后、`next build` 之前**无条件**跑一次 `prisma generate`（实测 ~150ms），并把 `generated` 写进 `update-state.json`。顺序不能变：**install（可能重置客户端）→ migrate（改库）→ generate（对齐客户端）→ build（类型检查/产物）**。于是 P-124 第 1 条对**更新流程**不再适用：手工 `pnpm prisma generate` 只在"自己手跑 `migrate deploy`"或"首装/换机"这类绕过更新流程的场合才需要。
+- ✅ 救场口径（构建失败、`src/` 已被覆盖、`.next` 已回落旧构建时）：`mv data/update-pending.json` 移走（构建失败不清 pending，旧构建没有额度保护就会进 61 秒重启循环，见 P-133 附）→ `pnpm prisma generate`（此时 `src/` 已是新 schema）→ 手工 `next build` → `pm2 start myblog`。**别在 `generate` 之后再跑 `pnpm install`**，那是唯一可能把客户端重置回去的操作。
+- 🔎 判据：构建报错里出现 `Property 'X' does not exist on type 'PrismaClient'`（或 `PrismaClient` 上的模型名全找不到）＝ 客户端没跟上 schema，**先去核 `prisma/schema.prisma` 与 `node_modules/.prisma/client/index.d.ts` 的时间戳/内容，别改业务代码**。
+
 ### P-125 备份列表把每个包整读两遍：两个 59MB 的包让后台「备份」页卡 27 秒
 - ❌ 现象（2026-10-01 生产）：后台「备份」页点开一直转，看着像死住；`next-server` 持续 44% CPU、`load average 2.5`，整台机器跟着发涩。
 - ✅ 定位（**在真机上分段计时量的，不是猜的**）：在生产机跑一遍备份页的五个取数，`listBackupRecords()` = **26 750ms**，其余四个（`getSetting` / `readPendingRestore` / `listBackupKeyHashes` / `resolveBackupEncrypt`）都是 **0–61ms**。再切细：`listCosBackupNames` 0ms，而 `inspectBackupPackage()` **每个 59MB 的包 13.5 秒**（两个 ≈ 27s）。备份页 SSR 跑一遍、面板挂载后 `/api/admin/backup/list` 再跑一遍 —— 一轮五十多秒，还顺带把 CPU 打满。
@@ -1027,3 +1044,690 @@
   3. **性能问题先在真机上分段计时**：本地开发库没有大包，这个坑在开发机上**永远复现不出来**（本次就是拿用户的生产机逐段量出来的）。
 - 📎 案例：`lib/backup/backup.ts` 的 `listBackupRecords()` 改成「先读清单 → 缺失才开包并回写」。**同一台机器、同一批数据**实测：**26 750ms → 44ms**（两个包都走了清单）。`docs/ai/module.md` 的备份行同步。
 - 📌 遗留（不在本轮）：清单缺失时的兜底仍要开包两遍（约 13s/包）。手工导入的包第一次进列表会慢一次，之后靠回写变快；真要治，得让 `inspectBackupPackage` 只扫一遍、拿到 `meta.json` 就早退。
+
+
+### P-126 周期备份加「几点几分」时踩的两脚：分钟级 tick 会放大日志，Zod 的长度上限写在 trim 之前
+- ❌ 现象一（写实现时自己撞出来的）：给「到期才备份」的检查从小时级定时器挪到 60 秒的 tick 之后，原本**一轮一条**的日志变成**每分钟一条**——`跳过周期备份：已有备份任务在进行`、加密跳过、以及 `runBackup()` 抛错时的 `定时任务失败：backup`。而「到期」是**状态**不是事件：只要没成功，条件每分钟都成立，磁盘满 / 权限错这类持续失败会一直刷 error。
+- ✅ 规则：
+  1. **tick 变密，输出必须跟着节流**：同一个到期窗口只提醒一次（记住 `lastBackupAt|periodDays|atTime` 这个键），失败后加退避闸门（`RETRY_AFTER_FAILURE_MS`，本次 15 分钟），成功后清空。
+  2. 写循环任务前先问一句「**失败会怎样**」：成功路径的分支通常不会暴露问题，失败路径的日志量才是真正会咬人的地方（P-123 反面：什么都不记，出事没人知道）。
+  3. 想做到「精确到分钟」就得让判定跑在分钟级 tick 上；**别用小时级定时器 + 分钟级设置**——用户设了 03:05，实际 03:59 才跑，那就等于没设。
+- ❌ 现象二（实测的单元测试失败）：`settingsPutSchema` 写成 `z.string().max(5).refine(isBackupAtTime)`，`{"backupAtTime": " 03:30 "}` **直接被拒**——长度检查跑在 refine 里的 `trim` 之前，用户看到的是「太长」这种和格式无关的错；新加的用例「备份时刻：合规值通过并去空白」当场失败（`false !== true`）。
+- ✅ 规则：**归一化必须排在校验之前**：`.transform((v) => v.trim())` → `.refine(格式)`。别指望「反正前端会 trim」——接口是自己收请求的那一端，写接口的人得自己兜（与 P-122 同源：报错口径要对用户说得清）。
+- ✅ 规则（页面搬迁的通用检查）：把一组设置从 A 页搬到 B 页 = **写入白名单 / Zod schema / 默认值 / 读取归一 / 表单 payload 五处一起动**。表现在代码里最容易漏的是白名单：漏了就是「界面显示已保存、值根本没落库」。本次专门加 `src/lib/validation/settings.test.ts` 钉住「`backupAtTime` 在 `WRITABLE_SETTING_KEYS` 里」与「区间与 `BACKUP_LIMITS` 一致」，并把四个数字字段的区间收进 `lib/backup/schedule.ts` 一处（接口、输入框 min/max、提交前校验都从它取）。
+- 📎 案例：2026-10 用户要求「自动备份设置移到备份栏目、每隔几天要能设到几点几分」。新增 `lib/backup/schedule.ts`（纯函数：到期 / 下次到期 / 时刻归一 / 区间 / 表单校验）+ `lib/backup/schedule.test.ts` 11 条 + `lib/validation/settings.test.ts` 4 条；`pnpm test` 215/215、`tsc --noEmit` 与改动文件 eslint 全 0。日志节流与失败退避写在 `lib/scheduler/backup.ts`。
+
+### P-127 同一块版式别同时挂「容器查询」和「按视口」两套几何：手机格宽落在断点外，文案被裁成一行半
+- ❌ 现象：用户反馈"手机端瞬间卡片显示错误，浮动文字只显示一点，图片只显示一列"。实测（504px 视口、格子 472px 宽）：瞬间模块仍走**横向**版式 —— 文案区只剩 366px 宽、三行文案单行裁断；右侧瀑布被压到 185px，两个竖排图片行各自只有一列（另一半空着），整块看起来像"图只剩一列"。
+- ✅ 根因：这块的手机版式只由 `@container home-mod (max-width: 360px)` 决定，而格子宽度 = `(视口 - 2×padding - 11×gap)/12 × 用户设的列跨度` —— **随设备和用户设的跨度浮动**。390px 设备实测约 343px，**大于 360 的上限**，于是容器查询不命中；项目里真实的手机断点是 `(max-width: 959px), ((hover: none) and (max-height: 540px))`（走手机套，见 [responsive-layout-spec.md](responsive-layout-spec.md)）。两套几何互不知道对方，谁都没兜住。
+- ✅ 规则：
+  1. **版式切换一律跟"走手机套"的那个断点走**，不要自造容器查询阈值。写选择器时同时覆盖真机与后台画框：`.home-grid:not([data-vp]) .xxx`（真机 + 默认布局）与 `.home-grid[data-vp="mobile"] .xxx`（后台手机画框 `data-vp="mobile"`），两条并列写；**不要**把规则写进 `@container`（后台画框的宽度由画布决定，容器查询会给出和真机不同的结果）。
+  2. 高度只有 32–36vh 的模块，**文案可见行数要给底线**（`min-height: calc(var(--行高) * 3)`），别只靠 `overflow: hidden` 裁 —— 否则"能显示几行"完全取决于设备高度。
+  3. 拆分样式时把"行高/间距"抽成模块自己的 CSS 变量（`--dash-line-height` / `--dash-line-gap`），测量代码与 CSS 引用同一个值，改一处不会两边不一致。
+- ✅ 验证口径（可复用，看数字不看感觉）：手机档量 `copy.bottom - falls.top`（本次 **−10px**，说明两区不重叠、文案区拿到 126px ≈ 3 行 × 26px + 间距）、`falls` 内 `img` 个数（本次 2 张，之前 0 张可见）、整体 `document.scrollWidth` 不超视口。
+- 📎 案例：2026-10「手机端瞬间卡片显示错误」。修后实测：手机 460px 下模块 472×290，文案区 446×126（3 行），瀑布区 446×130 装下 2 张竖图。
+
+### P-128 内联 CSS 变量挡得住媒体查询：手机档改网格列数要给 `--moment-cols` 写 `!important`（但不许带进展开态）
+- ❌ 现象：瞬间页的九宫格在手机档"图片只显示一列 / 每张只有 ~80px"。根因是网格列数写成了内联自定义属性 `style={{ "--moment-cols": 3 }}`，消费方 `.moment-grid { grid-template-columns: repeat(var(--moment-cols, 3), minmax(0,1fr)) }`。**自定义属性在同一元素上做级联时，内联样式压过媒体查询里的规则**（媒体查询不改优先级），所以"手机档两列"怎么都盖不上。
+- ✅ 规则：
+  1. 手机档覆盖时显式加 `!important`，并且**把作用域收紧到非展开态**：`.moment-grid:not(.is-expanded) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }`。展开态的列是「大图 + 侧边缩略条」，是另一套几何，被 `!important` 一起拍平会让展开功能失效。
+  2. 更彻底的做法是**别用内联自定义属性当列数**（列数由 `data-count` + CSS 决定），新写组件时优先这个；本次是沿用既有实现，所以只做窄覆盖。
+  3. 覆盖后要量两件事：`getComputedStyle(grid).gridTemplateColumns` 的实际列宽（本次手机档 = 两列 215px ×2），以及**展开一次**确认展开态仍是「1fr + 22%」（`!important` 的常见副作用就发生在这里）。
+- 📎 案例：2026-10 同上一处反馈（"图片也只显示了一列"）。修后瞬间页手机档两列方图、页面无横向溢出。
+
+### P-129 受控多行输入框别在 `onChange` 里 `filter(Boolean)`：用户刚按下的回车会被自己的清洗吃掉
+- ❌ 现象：后台「首页管理 → 选欢迎光临模块 → 主标题（每行一句）/ 漂浮色块文字」两个多行框**按回车没反应**：输入 `AAA` → 按 Enter → 框里还是 `AAA`，接着打 `BBB` 得到 **`AAABBB`**（两段粘成一段）。DOM 检查一律正常（`textarea`、`rows` 正确、`white-space: pre-wrap`），所以很容易误判成浏览器或 CSS 问题。
+- ✅ 根因：这两个字段的值是**数组**（`lines: string[]` / `chips: string[]`），受控 textarea 的 `value` 由 `array.join("\n")` 生成；`onChange` 里写了 `.split("\n").map(trim).filter(Boolean)`。用户按下回车 → 原生 value 变成 `"AAA\n"` → 清洗把末尾空行丢掉 → state 仍是 `["AAA"]` → React 把 value 写回 `"AAA"`，光标回到末尾 → 新行被**立刻抹掉**，下一个字符自然粘在后面。
+- ✅ 规则：
+  1. **编辑态的清洗只做「逐行 trim + 长度上限 + 条数上限」，绝不过滤空行**；空行是用户在编辑的中间态，不是脏数据。
+  2. 去掉空行放到**保存前一处**收尾（本次：`sanitizeConfig()` 在 `PATCH /api/admin/modules/:id` 之前跑 `sanitizeLineField()`），落库与前台渲染都不带占位空串。
+  3. 判断口径：受控输入框只要出现「删掉空串/去重/排序」这类**会改变用户刚敲下的字符**的清洗，就会有同类问题（去重更狠：会把两个相同标签合并掉）。
+- 🔎 复现/验证口径（可复用，别靠手感）：CDP `Input.dispatchKeyEvent` 真的敲一次回车，再读 `textarea.value` 与 `selectionStart`。
+  - 修前：`AAA` → Enter → `{"value":"AAA","cursor":3}` → 再打 `BBB` = `AAABBB`（实测原始值）；
+  - 修后：`AAA` → Enter → `{"value":"AAA\n","cursor":4}` → 再打 `BBB` = `AAA\nBBB`；
+  - 保存后再刷新页面读回仍是两行，`PATCH` 请求体里是 `["第一行","第二行"]`（没有空串）。
+- 🔎 回归单测：`src/lib/home/builtins.test.ts`（`parseLineField("lines", "AAA\n", 3)` 必须给出 `["AAA",""]`；`sanitizeLineField()` 负责在保存时清空行）。
+- 📎 案例：2026-10 用户反馈「首页编辑里的模块设置，欢迎模块设置里的漂浮色块设置和主标题两个输入框都无法换行」。修复文件：`HomeLayoutEditor.tsx`（`lines` 分支改用 `parseLineField()`、保存改用 `sanitizeConfig()`）、`lib/home/builtins.ts`（新增两个纯函数 + 单测）。
+
+### P-130 混在图流里的卡片：尺寸由**图片**决定，不是由所在列宽决定
+- ❌ 现象：首页文章流里穿插的瞬间卡，被做成「跟文章大卡同宽（896px）+ 网格固定三列 + `4/5` 方框 + `object-fit: cover`」。一张 2:1 的手机截屏被竖着裁成细高条，卡片整体 896×448 —— 用户原话是「**恐怖的宽高比**」「不一定要很大的卡片，应该是以图片为准的」。
+- ✅ 规则：
+  1. 图片卡**不要预设大画框**：给一个固定的**行高**（本次桌面 168px / 手机 118px），每张图按 `aspect-ratio: 原图宽/原图高` 决定自己的宽度；
+  2. 原图比例**必须从数据来**（本项目 `Moment.images[].width/height`），没有就按 4:3 兜底 —— 别用统一方框 + `cover` 硬凑，那必然要裁掉一半画面；
+  3. 极宽图要设**宽度上限**（本次 55%）并改成 `object-fit: cover` 从中间裁：不裁的话 2:1 的截屏会顶满整行；
+  4. 单图走 `contain`（整图看得见）+ 从高度上限反推宽度上限 `max-width: calc(上限高 * 比例)` —— 只设 `max-height` 不推出宽度，`aspect-ratio` 的盒子仍会被容器拉伸；
+  5. 卡片高度直接写死或写 `aspect-ratio` 时，先拿"最宽的图 + 最竖的图"各量一次，别拿示例图当全部。
+- 🔎 验证口径：逐格比对 `img.getBoundingClientRect()` 的宽高比与 `naturalWidth/naturalHeight`（本次 336/126/168 × 168 对上 2:1、3:4、1:1），并量卡片总高（本次 896×260，改前 896×448）。
+- 📎 案例：2026-10 首页穿插卡第二版（推翻第一版的固定网格）；记录见 [moments-home-spec.md](moments-home-spec.md) §2.6。
+
+### P-131 走手机套后侧栏压到正文上：`position: static` 的**内联 `top` 依然生效**
+- ❌ 现象：文章页手机视图里，目录卡片的底边压进正文约 60px（命中测试：目录底边往里 0/8/16px 三个采样点全落在 `.post-sidebar` 内，正文标题被玻璃底压住）。
+- ✅ 根因：`ReadingProgress`（顶部阅读进度）会给侧栏写**内联 `top`**（桌面 sticky 的偏移，实测 76px）。走到手机套后 `.layout__aside .sticky-stack { position: static }` 把它变回 static —— **但 `position: static` 元素的 `top` 不算，`position: relative` 才算**：`.layout__aside .post-sidebar` 是 `position: relative`，于是这个 76px 偏移照样把它整体推下去，侧栏"看起来是排在正文前面"，实际是压在上面。
+- ✅ 规则：把某个元素从 sticky/absolute 改成 static/relative 时，**顺手把它身上的 `top/right/bottom/left` 一起 `auto` 掉**（本次：手机档 `.layout__aside .sticky-stack` 与 `.post-sidebar` 都写 `top: auto`）。判断依据就是内联样式 —— 组件写内联 `top` 时，CSS 里那一条 `position` 覆盖根本挡不住它。
+- 🔎 验证口径：`getComputedStyle(sidebar).top`（应为 `0px`/`auto`）、`sidebar.getBoundingClientRect().top - aside.getBoundingClientRect().top`（应为 0），再加 `elementFromPoint` 在边界三点命中测试（修前 `inToc: true,true,false`，修后应全部 false）。
+- 📎 案例：2026-10 文章页手机端目录置顶（用户口径「手机视图应该是目录在上面」）。
+
+### P-132 `width: min(50%, max-content)` 是无效值：`min()` 只吃长度，整条声明会被静默丢掉
+- ❌ 现象：想让瞬间卡"先占文章卡一半、内容多再长到满宽"，写成 `width: min(50%, max-content)`。CSSOM 里 `.home-moment` 的规则**根本没有这条 `width`**，计算宽度仍是整列 896px（应该是 448）。
+- ✅ 根因：`min()`/`max()`/`clamp()` 的参数只能是**可计算的长度/百分比**，`max-content` 这类 intrinsic sizing keyword 不合法 → 该声明在解析期被丢弃（`CSS.supports("width", "min(50%, max-content)") === false`）。整条声明消失，不报错、不进控制台。
+- ✅ 正确写法：用 flex/grid 项自己的尺寸规则表达"下限 + 内容撑开"：`width: fit-content; min-width: 50%; max-width: 100%; justify-self: start`（本次的有效解，实测 896 的列里 = 448）。
+- 🔎 验证口径：**先看 CSSOM 有没有这条规则**（遍历 `document.styleSheets` 找 `selectorText`，打印 `rule.cssText`），再看计算值；只看计算值容易误判成"优先级被盖住"。
+- 📎 案例：2026-10 首页穿插卡宽度（与 P-130 同一处）。
+
+### P-133 预约更新的失败不会清 pending：pm2 每次拉起都白跑一次全量构建
+- ❌ 现象：更新失败后站点一直起不来。`pm2 restart` 反复拉起，每次都卡在编译（实测单次 2.3–3.1 分钟，用户观感"以前两分钟、这次八分钟"），`.next` 被反复删了又建，`curl` 一直 `000`。
+- ✅ 根因：`data/update-pending.json` 一旦写上就**长期有效**（`isPendingUpdateDue()` 只看 `restartAt ≤ now`）。失败路径只写 `data/update-state.json`、**不动 pending**（见 `lib/update/apply.ts`）→ 每次 `boot.cjs` 拉起都重试一次完整更新（覆盖 + 可能 `pnpm install` + `migrate deploy` + `next build`）。而 `boot.cjs` 里「应用更新 → startNext」是**一次性**的：构建把 `.next` 清了、启动又失败，就留下一台既不响应也没有产物的机器。
+- ✅ 规则：
+  1. 更新失败先看 `data/update-pending.json` 在不在——**在就说明每次重启都会重试**；要停掉重试就把它移走（留档到 `/var/backups/`），再手动 `next start` 或干净重建一次。
+  2. 手动应用更新时**先 `pm2 stop`**：`prisma migrate deploy` 撞上正在跑的实例会 `database is locked`（实测），这也是本次「第一次 apply 失败」的直接原因。
+  3. 一次只跑一个构建：CLI 与 boot 同时进来会互相抢 `.next/lock`，报 `Another next build process is already running`。
+  4. 编排类动作（apply/build）用「轮询产物与进程状态」的方式推进，别把一长串命令串在一条里——SSH 一断，后面的步骤全都不执行（本次因此多绕了两轮）。
+  5. `pkill -f "<模式>"` 会匹配到**执行这条命令的 bash 自己**（命令行里就含那个模式），把会话连同后续命令一起杀掉；要用 `pkill -f "[a]pply-pending-update"` 这种括号写法。
+- 🔎 验证口径：`ls data/update-pending.json`（应不存在）+ `.next/BUILD_ID` 存在 + `curl -o /dev/null -w '%{http_code}'` 为 200。
+
+#### P-133 附（2026-10-03 生产第三次踩到，这次是**每分钟自我重启**）：pm2 直起 `next start` 后 pending 永远没人消费
+- ❌ 现象：后台点「立即备份」→ `Unexpected token '<', "<html> <h"... is not valid JSON`（见 P-157）；刷新后本地包在、COS 里没有。取数：nginx `error.log` 在 `20:13:46` / `20:15:49` 记 `upstream prematurely closed connection while reading response header`（**不是超时**），access log 对应两条 `POST /api/admin/backup/run 502`；`pm2 describe` 报 `restarts 1235`；应用日志里 `[myblog] 即将重启进程 {"supervised":true,…}` 出现 1241 次；`data/update-pending.json` 里是 10-02 23:09 的预约，`restartAt` 早已过点。
+- ✅ 根因：`lib/scheduler/index.ts` 的 60 秒 tick 里有 `update-due` 检查，`isPendingUpdateDue()` 只看「到点没有」——**过点就永远成立**，于是每趟排一次重启。而真正应用更新的只有 `scripts/boot.cjs`（与 CLI），这台机器在 10-02 的部署里把 pm2 改成**直接起 `next start`**（[linux-deploy-spec.md](linux-deploy-spec.md) §5），boot 不在链路里 → pending 永远不被消费也不被清掉 → **每 ~61.5 秒重启一次，永不停**。两次备份请求正好落在退出点上被腰斩。核算：1235 次 × 61.5s ≈ 21.1h，正好是 10-02 23:10 到发现问题的时长。
+- ✅ 规则（代码层已落地）：
+  1. **重启要有额度**：`data/update-pending.json` 累计 `restartAttempts`，到 3 次就写 `update-state.json`（`status:"failed"` + 中文原因，更新页显示「上次失败：…可用 `pnpm apply-update --file` 手动应用」）并**取消预约**；恢复同理（`decidePendingRestoreRestart()`）。判定是纯函数，配单测。
+  2. 「到点」是**状态**不是事件：任何"到点就做某件有副作用的事"的调度，都要有「做了几次、还做不做」的上限与终态。
+  3. 部署方式变了要回头查「谁消费这些预约文件」：`boot.cjs` 不在链路里时，`update-pending.json` 这类文件只剩「触发重启」的作用。
+  4. 排障顺序：`pm2 describe`（看 script/restarts/uptime）→ `data/update-pending.json` 内容 → 应用日志里 `即将重启进程` 的**次数** → nginx `error.log` 对时间点。uptime 只有几十秒 + `即将重启进程` 上百次 = 自我重启循环，别再往业务代码里找。
+- 📎 案例：2026-10-03 备份页面报 `Unexpected token '<'` 与「本地有、云端没有」（同轮修复：P-157 的诊断口径 + P-158 的后台上传）。止血：`mv /opt/myblog/data/update-pending.json /var/backups/myblog/`，下一个 tick 起不再自动重启。
+- 📎 案例：2026-10-02 线上更新（本地打包 → scp → apply），完整步骤见 [linux-deploy-spec.md](linux-deploy-spec.md) §5.1。
+
+### P-134 覆盖前的临时快照别放在项目根：`tsconfig` 的 `**/*.ts` 会把它扫进类型检查
+- ❌ 现象：线上 `next build` 编译成功、类型检查阶段爆一屏与本次改动无关的错，报错路径全是 `myblog-pre-update-20261002-202833/src/editor/...`（我为防万一放在项目根的那份覆盖前快照）。
+- ✅ 根因：`tsconfig.json` 的 `include` 是 `**/*.ts` / `**/*.tsx`，**不看 `.gitignore`**；把旧代码快照（尤其含 vendor 编辑器源码）放进项目根，等于给类型检查喂了两套互相冲突的类型。
+- ✅ 规则：
+  1. 迁移/覆盖前的留档一律放**项目之外**：本次统一放 `/var/backups/myblog/`（含旧目录整包 tar）。
+  2. 判断口径：构建报错路径如果指向一个"你刚拷进去的备份目录"，先怀疑这一条，而不是业务代码。
+  3. 同理适用于任何会被 `next build` 扫到的临时目录（截图、抓板产物）：别放在项目里（Windows 侧另见 P-120 的打包拒绝名单）。
+- 📎 案例：2026-10-02 线上 `/root` → `/opt/myblog` 迁移。
+
+### P-135 覆盖层写在祖先里就压不住：祖先有 `z-index` 就建了**层叠上下文**
+- ❌ 现象：首页弹窗卡片已经 `position: fixed; z-index: 100`，仍然被 Banner 盖住。`elementFromPoint` 拿到的三层全是 `home-banner__copy`。
+- ✅ 根因：`.home-float` 当时是 `.home-shell` 的**后代**，而 `.home-shell`（首页有 Banner 时）带 `z-index: 1` + `position: relative` → **给后代开了一个新的层叠上下文**。弹窗的 `z-index: 100` 只在这个上下文内部比大小，对外整体仍排在 Banner 那个（同样 `z-index:1`、但 DOM 在后面/在别的上下文里）之下。`elementsFromPoint` 的返回顺序把这件事直接摊开了：它把 `home-shell` 排在弹窗**之前**。
+- ✅ 规则：
+  1. 做覆盖层（弹窗 / Toast / 悬浮球）时，**让它成为带 `z-index` 的那个容器的兄弟**，别做后代。
+  2. 排查顺序永远是：`elementsFromPoint(x, y)` 看**谁在最上面** → 打印那个元素的祖先链 `getComputedStyle(...).zIndex / position` → 找第一个建上下文的祖先；**先怀疑层叠上下文，再怀疑 z-index 数值**。
+  3. `transform / filter / contain / will-change` 也会建包含块（`fixed` 会变成相对那个祖先定位），所以 `.home-float` 这一层**这些属性一个都不能写**。
+- 🔎 验证口径：`elementFromPoint` 在卡片自己的矩形内取样（我第一版把点算到矩形外 24px，白折腾一轮），`top.closest(".home-popup")` 必须为真。
+- 📎 案例：2026-10 首页覆盖层模块（弹出模块 / 推荐应用）。
+
+### P-136 `pointer-events: none` 会让元素从命中测试里“消失”：它不能是个常驻态
+- ❌ 现象：弹窗的关闭叉叉点了没反应，`elementFromPoint` 在按钮中心返回空串（`className: ""`），`elementsFromPoint` 里也找不到弹窗 —— 但截图里卡片明明画得好好的、`getBoundingClientRect` 也正常。
+- ✅ 根因：延迟出场期间给卡片挂了 `is-delayed { pointer-events: none }`，**动画结束后没摘**（组件只用它来表达「还没出来别点」）。`pointer-events: none` 的元素对 `elementFromPoint` 完全不可见，也不接收点击。
+- ✅ 规则：
+  1. 想表达「还没出现」用 **`visibility: hidden` / `display: none`**，比 `pointer-events: none` 更彻底也更少歧义；非要用它就**必须成对回收**（`setTimeout(delay)` 之后 `classList.remove`）。
+  2. **别在入场动画还没跑完时测量**：滑入动效期间 `getBoundingClientRect()` 是运动中的位置，命中测试必然miss（本次两次误判都是这个原因）。先等 `animationend` 或足够长的 `sleep`。
+  3. 判据排序：截图对 → `rect` 对 → 命中测试不对时，**先查 `pointer-events` / `visibility` / `z-index` 三个计算值**，再怀疑布局。
+- 📎 案例：2026-10 首页覆盖层模块（与 P-135 同处）。
+
+### P-137 覆盖层模块把正文直接返回 = 卡片静默掉进格点流
+- ❌ 现象：首页「推荐应用」卡在 `.home-float__slot` 里画出来了，但**没有外层 `.home-popup`** —— 于是 `position: fixed`、出场动画、关闭按钮全部消失，卡片跟着文档流跑；前台截图看着「有内容」，交互与定位全丢。`elementFromPoint` 命中的是后面的 banner 格子（卡片本身还带着 `pointer-events: none`）。
+- ✅ 根因：「可编辑内置模块」（推荐应用写了自己的 HTML 时）那条分支**只 return 了 `CustomModuleRuntime`**，没套 `PopupShell`。外壳才是浮层本体，正文只是它的 children。
+- ✅ 规则：
+  1. 覆盖层的判定**只有一个口子**：`lib/home/types.ts` 的 `isFloatingModule(module)`（内置看在不在 `FLOATING_MODULE_KEYS`，自建看 `config.floating`）。别再在 `HomeGrid` / `HomeFloat` / `ModuleBody` 各写一遍 `builtinDefinition(...)?.floating` —— 三处各判各的，等于三种真相。
+  2. 任何「浮层模块的正文分支」都必须包在 `PopupShell` 里返回；`PopupShell` 单独一个文件（`components/home/modules/PopupShell.tsx`），避免与正文组件互相 import 造成初始化顺序问题。
+  3. 用模板建出来的「弹出模块 / 推荐应用」是 **`kind: custom` + `config.floating: true`**：以前只按 `builtinKey` 判浮层，这类模块被判成普通模块塞进格子里（同一根因的另一半）。
+- 🔎 验证口径：渲染测试断言外壳与内容的**相对顺序**（`markup.indexOf("home-popup") < markup.indexOf("home-custom--")`），比事后肉眼看截图可靠；线上抓一张卡还要量 `getComputedStyle(el).position === "fixed"` + 关掉延迟后 `elementFromPoint` 命中卡片内部。见 [HomeModuleRenderer.test.tsx](../main/src/components/home/HomeModuleRenderer.test.tsx)。
+- 📎 案例：2026-10-02 模块编辑器（可编辑内置模块）。
+
+### P-138 dev 下 `allowedDevOrigins` 漏了 127.0.0.1：页面能渲染，但**整页不 hydrate**
+- ❌ 现象：`http://127.0.0.1:3000/` 首页 HTML 正常、截图正常，但**所有客户端交互都是死的**（搜索按钮点不开、弹窗关不掉、`useEffect` 一律不执行）。控制台只有一句 React DevTools 提示，没有报错；`document.querySelector(el)` 上连 `__reactFiber$` 都没有。
+- ✅ 根因：Next 16 默认拦跨源 dev 资源，`allowedDevOrigins` 里当时只有 `192.168.2.*` / `10.0.2.2`。**`localhost` 与 `127.0.0.1` 不是同源**，用后者访问时 `/_next/static/chunks/*` 与 `/_next/hmr` 全被 403 拦掉 → client chunk 没加载 → 页面只有 SSR 的静态 HTML。服务端日志里其实写得很清楚（`Blocked cross-origin request to Next.js dev resource ... from "127.0.0.1"`）。
+- ✅ 规则：
+  1. `pnpm shot`（`ui-shot.mjs`）与一切 CDP 截图/量尺寸工具**默认就用 127.0.0.1**，所以 `allowedDevOrigins` 必须包含 `127.0.0.1`，否则本项目的 UI 验证快路径全是假绿。
+  2. 判据：**「SSR 对、交互不对、控制台没报错」先查 dev 跨源拦截**，别去改业务代码 —— 服务端日志 grep `Blocked cross-origin`。
+  3. 影响面比想的大：`PopupShell` 的「延迟结束摘掉 `pointer-events: none`」也在 effect 里，hydrate 不跑就等于 P-136 复发（卡片永远点不动）。**排查「某个 effect 没执行」之前，先确认整页到底 hydrate 了没有。**
+- 🔎 验证口径：在 effect 里挂个可观测标记（例如给根元素加 id），再用 `pnpm shot <url> --selector "#那个id"`：等得到就是 hydrate 了，等不到就是没 hydrate。
+- 📎 案例：2026-10-02 模块编辑器验证（同一批截图里 5 个取样点全部"看起来正常"）。
+
+### P-139 高度是「视口百分数」时，调滑块只把格子撑高、模块本身不会长
+- ❌ 现象：后台把欢迎卡的高度从 37 调到 60/100，格子确实变高了，但**卡片还是矮矮一条**：正文挤在一起、漂浮泡泡被压成十几像素的扁片、瞬间卡也是空一块。用户原话：「调高度居然不会扩大模块只会扩大它的占用面积」。
+- ✅ 根因有三层，缺一层都复现：
+  1. **口径错**：`hPct` 是「视口高度的百分数」，`height: calc(var(--cell-h) * var(--h-unit))`（`--h-unit ≈ 1dvh`）。用户心里想的是「这个模块多高」，滑块给的却是「占屏幕多大比例」，谁也调不准。
+  2. **百分比高度悬空**：卡片的 `.dash-welcome { height: 100% }` 只有在祖先有**确定高度**时才成立。格子是固定高度、但中间那层（`.home-module` / `.home-custom-module`）没有高度 → `100%` 解不开 → 卡片塌成内容高度，盒子的高度白配。
+  3. **弹性子项被挤扁**：`.dash-chips` 是 `height: 100%` 的 flex 列，泡泡没写 `flex-shrink: 0` → 列高不够时 12 颗泡泡被均摊成 `(378-11×12)/12 ≈ 21px` 的扁片；瞬间模块的文案用 `flex: 1`，被压成 60px 后剩下的图轨直接 0 高。
+- ✅ 规则：
+  1. **高度统一按像素读，0 = 自适应**（`lib/layout/viewport.ts` 的 `moduleHeightCss()` / `isAutoHeight()` / `clampModuleHeight()`）——「自适应」交给内容决定，不再有 `dvh` 换算。滑块 = 模块高度本身，拖多少长多少。
+  2. 固定高度的格子必须把高度**一路送到内容**：`--cell-h` 由 `lib/home/grid.ts` 直接产出 CSS 长度（`380px` / `auto`），配 `.home-grid__cell.is-hfixed > * { height: 100% }`。少这一层，卡片的 `height: 100%` 就是空转。
+  3. **两个视口的固定高度要分别标记**（`is-hfixed` / `is-m-hfixed`）：共用一个标记时，「只有手机配了高度」也会把桌面钉上高度 + `container-type: size`，两边互相顶。
+  4. 装饰性弹性子项**一律 `flex: 0 0 auto`**（泡泡这种）；容器交给 `overflow: hidden` + 自己的滚动动画。
+  5. 矮格子的兜底用**容器查询**（`@container home-mod (max-height: …)`），且容器必须是格子：给卡片自己写 `container-type: size` 会被它的 `height: 100%` 绕成循环依赖、直接塌成 0 高。
+- 🔎 验证口径：量**四层**才算数 —— 格子高度 = 模块高度 = 内容盒高度，且装饰子项没有被压扁（`chip.h === 86`）。只看格子高度会以为已修好（本次就是这么误判过一轮）。
+- 📎 案例：2026-10-02 首页欢迎卡 / 瞬间卡「特别矮、文字挤成一团」。
+- ⚠️ **两个连环坑（都在这次踩过）**：
+  1. **半迁移的高度**：老数据里桌面有值、手机没值（Banner 就是 `hPct: 100` / `mobileHPct: 0`）。迁移只改「命中的那一侧」会留下 `桌面 0 / 手机 100` 这种状态；而走手机套的断点判断在窄屏下会让手机那个值反过来决定桌面 —— 于是桌面被 100 钉成固定高度。**命中一侧就两侧一起写**。
+  2. **`unstable_cache` 骗人**：`getHomeLayout()` 走 `cachedPublic`，**改库不会让缓存失效**。实测库里已经把 banner 的高度改成 0，页面照样吐 `--cell-h:740px`（旧值），清 `.next/dev/cache` 重启才对上。改完布局数据只看到「页面没变」时，先怀疑这层缓存，别急着改 CSS。
+  3. **Banner 的高度不属于 `hPct`**：它由自己的 `config.height` 预设（100vh / 70vh / 420px）决定，格点高度必须是 0（自适应）。自适应分支里**什么都别写** —— `height: 100%` 会被祖先的确定高度压成内容高度，`height: auto` 会把 100vh 干掉、只剩 `min-height`（实测塌成 520px）。
+
+### P-140 同一个 SVG 标记在页面上出现两次：`<defs>` 的 id 会串味
+- ❌ 现象：内置「推荐应用」卡（React 组件画的 logo）与模块自带的 HTML 版本（同一份出厂代码）同时出现在一页时，两边的渐变/裁切 id 都是 `app-logo-bg` / `app-logo-squircle`，第二份 SVG 会引用**第一份**的定义：渐变指向别人的 `<linearGradient>`，裁切形状也可能套错。
+- ✅ 根因：SVG 的 `id` 是**文档级**的，`url(#id)` 永远解析到文档里第一个同名元素；同一段标记被内联两次就撞车。
+- ✅ 规则：
+  1. 生成内联 SVG 的工厂函数收一个 `suffix`（`appLogoSvgMarkup("-promo")` / `AppLogoMark({ idSuffix })`），id 一律带后缀。
+  2. **同一份几何只写一处**：`lib/home/app-logo.ts`（纯数据 + 字符串生成，无 react）同时供 React 组件、模块出厂 HTML、测试断言使用；谁都不许再抄一份路径。
+  3. 测试直接断言「出厂 HTML 里的路径 === 组件里的路径」（见 `HomeModuleRenderer.test.tsx`），防止两边慢慢漂。
+- 📎 案例：2026-10-02 推荐应用 logo（同时修掉了一份「长得像但不是 App 图标」的近似图形：方形圆角 `rx=24` + 斜向蓝渐变 + 回声气泡/主气泡/尾巴，与 `docs/android/icon.svg` 同源）。
+
+### P-141 `package.json` 的测试清单是**手写文件列表**：粘在一起的路径会被静默跳过，`pnpm test` 照样 exit 0
+- ❌ 现象：清单里 `sanitize.test.tsx` 与 `toc.test.ts` 之间**少了一个空格**（实测字符码是 `…115,120,115,114…`，即 `sx` 紧跟 `sr`，两段之间没有任何分隔字符）。于是它被当成**一个不存在的路径**：`pnpm test` 少跑这两个文件，却仍然 `exit 0`、报告「268 tests / 0 fail」。
+- ✅ 判据：`npx tsx --test <粘起来的路径>` 单独跑会明确报 `Could not find '…'`（exit 1），但混在一长串参数里只被忽略。所以**看 exit code 与总数不够**，得按测试名确认它真的跑了。
+- ✅ 规则：
+  1. 新增测试文件后，`grep` 一次 `pnpm test` 的输出里**该文件的测试名**（例如 `collectTocItems`），确认它出现在结果里。
+  2. 总数突然变少/变多都要能解释：修掉这个空格后同一份代码从 268 → 283 条（两个文件一直都在，只是从没跑过）。
+  3. 这条同样适用于任何「手写的文件/路径清单」（`scripts/check-admin-classes.mjs` 的 FILES 同理：新组件不登记就永远不检查）。
+- 📎 案例：2026-10-03 加相册功能时顺手发现；同一次把 `image-group.test.ts`、`slug.test.ts`、`albums.test.ts` 补进清单。
+
+### P-142 mdast 与 hast 的图片节点**形状不同**：rehype 插件拿到的是 `element img`，不是 `image`
+- ❌ 错误：给折叠组写「数一数组里几张图」的单测时，我拿 `fromMarkdown()`（mdast）解析出的树去断言，结果数出 0 张 → 两个测试红。当时的直觉是「实现有 bug」，实际是**测试站错了层**。
+- ✅ 根因：`mdast` 阶段图片是 `{type:"image", url}`；`remark-rehype` 之后才是 `{type:"element", tagName:"img"}`。`rehypeImageGroups` 是 **rehype 插件**，它只在 hast 上跑。
+- ✅ 规则：
+  1. rehype 插件的单测用**合成 hast 树**（`element` + `tagName`），与 `sanitize.test.tsx` 的既有写法一致；markdown 往返（幂等/缩进）的断言留在 mdast 层。
+  2. 失败先问「我喂给它的树是哪一层的」，再怀疑实现。
+- 📎 案例：2026-10-03 `lib/markdown/image-group.test.ts`。
+
+### P-143 这个 shell 是 **Windows PowerShell 5.1**：`Set-Content` / `Out-File` 默认写 ANSI，会把 UTF-8 源码写坏
+- ❌ 错误：为了改一个 token 名，我用 `Get-Content -Raw` + `.Replace()` + `Set-Content -NoNewline` 去改 `main/src/app/admin/admin.css`（128KB、大量中文注释）。PS 5.1 读时按 ANSI 解释 UTF-8 字节、写时再按 ANSI 落盘，**601 处字符被替换成 `?`**，文件不再合法 UTF-8 —— Read 工具直接拒读（`invalid UTF-8 text`），类名自查也跟着失真。
+- ✅ 判据与修复：`New-Object Text.UTF8Encoding($false,$true)` 严格解码能立刻判定（抛 `DecoderFallbackException`）；坏文件先 `Copy-Item` 到 `%TEMP%` 留档，再 `git checkout -- <file>` 恢复，然后用**编辑工具**重贴改动。恢复后必须复验：严格 UTF-8 + `node scripts/check-admin-classes.mjs` 缺失为 0（它同时守住了「重贴时漏了别的类名」）。
+- ✅ 规则：
+  1. **不要用 shell 写源码/文档文件**：一律走读写/编辑工具。
+  2. 确需 shell 处理文本时显式 `-Encoding utf8`，且**读也要显式指定编码**——PS 5.1 的 `Get-Content`（不带 `-Encoding`）按 ANSI 读 UTF-8 文件，读进来就已经是乱码字符串，写回再"正确"编码也没用。
+  3. **严格 UTF-8 校验拦不住这种事故**：乱码（`鏂囩珷` 之类）本身是合法 UTF-8，`Text.UTF8Encoding($false,$true)` 会报 OK。唯一可靠的验收是**用 Read 工具读回来眼看内容对不对**（或按要求的中文串断言）。
+  4. 交叉验证输出：`(Get-Content).Count` 实测比真实行数少（同一文件 5400 vs 5516），行数/字符统计一律以 Read 工具为准（P-077 同源）。
+  5. **git 只救得回已跟踪的文件**：新建文件被写坏时没有 `git checkout` 兜底，只能重写——所以更要把 shell 排除在编辑手段之外。
+  6. **复发（2026-10，轻量级版本）**：这次没写乱码，但 `Set-Content -Encoding utf8` 在 PS 5.1 下会**写 UTF-8 BOM**（文件头多出 `EF BB BF`），Kotlin 源码莫名多出三个字节、diff 里看着像"文件被整体改过"。判据一条命令：`[System.IO.File]::ReadAllBytes(...)` 看前三个字节是不是 239/187/191。修法不是"再写一次"——**用编辑/写入工具重写整个文件**。结论不变：**凡是源码/文档，一律不要用 shell 写**。
+- 📎 案例：2026-10-03 加相册后台样式时（`admin.css`，已跟踪 → 从 git 恢复）；同一天改 `ImageGroupView.tsx`（新增文件）时**又踩一次**，只能整份重写。
+
+### P-144 `rehype-sanitize` 对**认不出的节点类型**直接把整棵子树丢掉：正文里内容凭空消失、控制台一行报错都没有
+- ❌ 现象：正文里写了 `<ImageGroup title="花期">…</ImageGroup>`，页面上**整段内容和图片一起消失**，没有报错、没有占位。
+- ✅ 根因：`rehype-sanitize` 的 `transform()` 只认 `comment`/`doctype`/`element`/`root`/`text`，其余类型 `return undefined` —— 而 MDX 的 JSX 节点在 hast 里是 `mdxJsxFlowElement`，于是被整棵丢弃。现有的 `<Video />` / `<Audio />` 之所以活着，是因为 `rehypeAllowVideo` 在 sanitize **之前**把它们换成了真元素。
+- ✅ 规则：**任何新的正文 JSX 组件都必须先挂一个 rehype 转换插件**（把 `mdxJsxFlowElement` 变成白名单元素），并排在 `rehypeSanitize` 前面；转换后**继续递归子节点**，否则组内嵌套的 `<Video />` 会被一起吃掉。转换函数写成纯函数（`lib/markdown/image-group.ts`）并配单测，断言「转出来的是 `details` + `summary` 且张数正确」。
+- 📎 案例：2026-10-03 文章折叠组（`<ImageGroup>` → 原生 `<details>`）；同源先例见 P-020。
+
+### P-145 可选的云存储别做成常规流程的卡点：没配 COS 时媒体库上传必然 503
+- ❌ 现象：纯本地站点（没填 COS）在后台上传文件报「请先在设置里填写腾讯云 COS 配置后再发布」，上传不成功。
+- ✅ 根因：`finalizeUpload()` 的 `replicate` 步无条件 `requireCos()` → 抛 503。而这一步的调用方有**三条常规路**：媒体库上传（`UploadsToolbar`，它不带 `defer`）、文章保存发布、发瞬间（后两者走 `finalizeAdminUploads`）。`defer:true` 只把上传推迟到发布，并没有绕开这一步——所以三条路都会在纯本地站点上失败。
+- ✅ 规则：
+  1. **COS 是可选的**（`docs/api-contracts.md` 的 `/api/upload` 写着「未配 COS 时也可入库」）。缺它就**跳过那一步并如实返回 `{skipped:true}`**，不要报错；只有「用户显式要求 COS」的动作（迁移到 COS、COS 连接测试、备份上云）才该 503。
+  2. 判断「配没配」要 `await loadCosSettings()`（真去读配置），**不要用 `peekCosSettings()`**：后者读的是内存缓存，新进程里可能是空的，会把配了 COS 的站点误判成没配 —— 那会**静默漏传**（比报错更难发现）。原来那行 `if (!isUploadPending(row) && peekCosSettings())` 正是这个隐患。
+  3. 顺带确认过的邻居（都已经是安全的，别改坏）：`pruneLocalMedia()` 没 COS 直接 return（**永不删唯一副本**）、`regenerateThumbs()` 用 `cosConfigured ? getDriver("cos") : null`、`CosDriver` 的方法都是 `async`（内部 `await requireCosSettings()` 会 reject 而不是同步抛），所以 `cos.delete(...).catch()` 兜得住。
+  4. 副作用要讲清楚：没有 COS 时「本地媒体上限」不会清任何文件（因为清的前提是有云端副本），磁盘只会涨 —— 媒体库页面对此有一句明示。
+- 📎 案例：2026-10-03 用户报「上传媒体库提示必须配置 COS」。修法：`lib/uploads/finalize.ts` 用 `shouldSkipCosStep(step, Boolean(cos))` 短路 + `lib/uploads/steps.ts` 纯函数与单测（steps.test.ts）把这条规则钉住。
+
+### P-146 MDX 只把「大写开头」的名字当组件：显式 JSX 转出来的小写标签会被静默跳过映射
+- ❌ 现象：`<ImageGroup>` 由 rehype 插件转成 `<details class="post-image-group">`，又在 `compileMDX({components:{details: 我的组件}})` 里注册了——前台渲染出来的是**原生 `<details>`**：摘要、图片、样式全都在，**一行报错都没有**，只是"组件那套交互"（叠放卡、滑动、展开动画）完全不出现。极容易被当成"功能没做"，其实做了、只是没生效。
+- ✅ 根因（`@mdx-js/mdx` 的 `lib/plugin/recma-jsx-rewrite.js`，三个分支）：
+
+  | 标签名 | MDX 怎么处理 |
+  |---|---|
+  | 大写开头（`Foo`） | **组件**：从 `_components` 取 → 命中 `components.Foo` ✅ |
+  | 小写 + markdown 产出（`# 标题` → `h1`） | HTML 标签，**会**查 `components.h1` ✅ |
+  | 小写 + **显式 JSX 产出** | 源码注释原文 `Do not turn explicit JSX into components from _components`（判据是节点上的 `_mdxExplicitJsx`）→ **保持原生标签** ❌ |
+
+  折叠组是用户写的显式 JSX，转成小写 `details` 正好落进第三类。
+- ✅ 规则：转换层把 `tagName` 写成**大写**的组件名（`IMAGE_GROUP_TAG = "ImageGroup"`），`sanitizeSchema.tagNames` 放行它、`attributes.ImageGroup = ["className"]`，组件注册到 `components.ImageGroup`。大写名走组件分支，与 `_mdxExplicitJsx` 无关，稳。
+- ✅ 判据（两条独立、都很快）：
+  1. **抓一次页面看 SSR**：`fetch` 文章页搜"只有组件才会产出的类名"（本例 `ig__viewport`）。搜不到、只有转换后的原生标签 ⇒ 映射没生效。比读源码快得多，也不会被"样式齐全"骗过。
+  2. **单测守卫**：`image-group.test.ts` 断言「标签名必须大写 + sanitize 必须放行 + attributes 必须是 `["className"]`」，改回小写直接失败。
+- ✅ 附带教训：`components.img / video / audio` 能用**不代表**别的标签也能——`rehypeAllowVideo` 那条路整个 DOM（`figure`、视频标记）都是在 HAST 里搭好的，从不依赖 `components`。拿它当"组件映射一定生效"的先例是错的推断。
+- 📎 案例：2026-10-03 用户问「折叠效果呢？」。SSR 里是 `["$","details",null,{...}]`（原生标签），而同页 Lightbox 是 `["$","$L16e",...]`（客户端组件引用）——一眼定性。修后 SSR 里出现 `ig__viewport` / `ig__card` / `ig__backdrop`，`pnpm shot` 量到 `.ig__viewport` 818×433（不是 SSR 兜底的 320px，说明客户端 layout effect 也跑了）。
+
+### P-147 给布局属性加过渡前，先确认两个端点都是可插值长度：`auto` 不参与补间，会当场跳到终值
+- ❌ 现象：点开相册里的一叠照片时，整叠**先瞬移一下再滑动**——首帧就跳到半路（实测：点击后 2ms 内 `width 508→260`、`y 0→-45`），之后才连续。
+- ✅ 根因：折叠态卡片靠 `left: 0; right: 0` 撑出宽度 → `width` 的**计算值是 `auto`**；`auto → 401px` 不可插值，浏览器**直接把该属性跳到终值**，而同一帧里 `left/top/transform` 还在正常补间 → 视觉就是"瞬移 + 滑动"两段。**"声明了 transition" ≠ "会补间"。**
+- ✅ 规则：凡是要补间的盒子，两个端点的几何都写成**可插值的长度**（`left: 0; right: auto; width: Npx`）；能写显式长度就别依赖两只定位边撑开。
+- ✅ 判据（可量）：`requestAnimationFrame` 逐帧**同时**采 x/y/w/h（只采一个轴会漏掉纵向与尺寸的跳变），用「单帧位移 ÷ 该元素总行程」与缓动函数的理论单帧峰值比（easeInOutCubic 在 16ms/340ms 下约 7%）。修前 **48%** → 修后 **5.6%**；列表"第一张不动"也要用硬断言（`left` 起止相同 + `offsetWidth` 恒定），别靠眼睛。
+- 📎 案例：2026-10-03 相册详情展开（`components/album/PhotoPile.tsx`；版式原型是 `demo/album-page/pile.js`，同一套几何）。
+
+### P-148 Windows 上 Prisma 的 generate / migrate 与运行中的 dev server 互斥：别用 `--no-engine` 绕，更别 reset
+- ❌ 现象：dev server 在跑时 `npx prisma generate` 报 `EPERM: operation not permitted, rename ... query_engine-windows.dll.node.tmpXXXX -> query_engine-windows.dll.node`；`npx prisma migrate deploy` 报 `SQLite database error / database is locked`（而此时用 better-sqlite3 开写事务是**通的**，0ms 就能拿到锁）。
+- ✅ 根因：前者是 dev server 进程加载着 native query engine，Windows 不允许替换被加载的 DLL；后者是 Prisma schema engine 自己的锁竞争，与 `busy_timeout` 无关。
+- ✅ 规则：
+  1. **先停 dev server，再 generate / migrate deploy，然后立刻把 server 起回来**（带新模型的版本本来也要重启才生效）。停之前按命令行匹配确认是**本项目的进程**（`Win32_Process` 里含项目路径），别误杀其它服务。
+  2. **不要用 `prisma generate --no-engine` 绕 DLL 锁**：项目用 driver adapter（`lib/db.ts` 的 `PrismaBetterSQLite3`），Prisma 会直接拒绝——`PrismaClientValidationError: Prisma Client was configured to use the adapter option but prisma generate was run with --no-engine`，运行时必炸；更坑的是 `--no-engine` 已经改写了 client 的 JS，必须整目录还原（处置：先把 `.prisma/client` 复制一份到仓库外做备份）。
+  3. **drift 提示不要顺着走**：`migrate dev` 会提示 "We need to reset the SQLite database"（本仓 `Post` 表有既有 drift），**reset = 清空开发库**，绝不能点。要么用 `migrate deploy`（不做 drift 检测），要么按既有迁移的写法**手写迁移**再 deploy。
+  4. 手写迁移照 `prisma/migrations/20261003090000_album/migration.sql`：**外键内联在 `ADD COLUMN` 上**（SQLite 不支持 `ADD CONSTRAINT`；影子库走"空库 → 应用 migrations"，只认内联的 REFERENCES）。
+- ✅ 判据：`prisma migrate status` 说 up to date **不代表新表在库里**——用 better-sqlite3 直接查 `sqlite_master`（表 / 列 / 索引）与 `_prisma_migrations` 的行才算证据。**路径**：`DATABASE_URL=file:../data/blog.db` 是相对 `prisma/` 的 → 实际文件在 `main/data/blog.db`（不是 `main/../data/`）。
+- 📎 案例：2026-10-03 相册分卷批次（`20261003113000_album_volume`：新表 + 新列 + 2 索引 + 迁移登记行都做过物理核对）。生产仍走 `boot.cjs` 的 `migrate deploy`（Linux，无此 DLL 问题），带新模型的版本补一次 `prisma generate`，见 P-124。
+
+### P-149 脚本"清理自己刚创建的东西"前必须证明归属：`order by id desc limit 1` 不是证据
+- ❌ 现象：一个验收脚本先 POST 上传、再"删掉我刚创建的那条记录"——上传其实**失败**了（HTTP 403 `CSRF_INVALID`，`/api/upload` 的 CSRF 校验在 `handleUpload()` 里，只 grep 路由看不见），而清理仍按 `.order by id desc limit 1` 取"最新一行"删掉：**真实用户照片的行 + 6.3MB 原图被永久删除**（`fs.rmSync` 不进回收站）。相册张数 4 → 3、卷内 2 → 1。
+- ✅ 根因：把「查询到的最新一条」当成了「我这次创建的」，且**没有先看响应状态**就进入清理分支；破坏性操作与业务结果之间没有断言。
+- ✅ 规则：
+  1. **先判响应，再谈清理**：`if (!response.ok) { 记录状态并直接放弃，不执行任何清理 }`。
+  2. **清理只认可证明归属的标识**：用响应体里的 id / key，或写入前记录的前后差集，**不要用** `order by id desc limit 1`、`max(createdAt)`、"最新的那张"这类推断。
+  3. **删文件前打印并核对绝对路径**：`console.log(path.resolve(target))` 打出来，人眼过一遍再删（本次就是没做这一步）。
+  4. 脚本要按"能失败得安全"写：只增不删优先；确需删除时，删除范围尽量由**本次自己生成的唯一标记**圈定。
+- ✅ 出事后的正确动作（本次实际走的路）：**立刻停手、只做只读取证**（`data/backups/`、回收站、CDP 浏览器 HTTP 缓存、`_prisma_migrations` / 剩余缩略图）→ 判断可恢复边界 → 用**只增不删**的方式重建（新内容算新 sha256、沿用原 id、重建库行）→ 前台复核（组头张数、`img` 分层、三个 URL 状态码）。
+- 📎 案例：2026-10-03 相册分卷验收。原图**不可恢复**（扫了 20,842 个缓存文件 / 593 个 ≥16KB 的 JPEG 段，无一命中其 sha256；`data/backups/` 为空、回收站无），只能用保留下来的 **1280×853 一级缩略图**降级重建（`images/original/93/93afd49f….webp`，63KB），相册/卷归属与顺序复原。教训一句话：**验收脚本的"清场"是破坏性代码，要和业务写操作一样对待**。
+
+### P-150 blob URL 谁创建谁回收：在下游组件的 effect 清理里 revoke，开发模式首屏就把图撤销掉
+- ❌ 现象：媒体库「上传预览」弹窗里的本机缩略图**整片加载不出来**（`<img src="blob:…">` 解码失败、自然宽高 0），而文件名、体积、「移除」按钮、相册/卷下拉全都正常 —— 看起来像"图片读取失败"，其实是被撤销了。
+- ✅ 根因：预览地址由 `UploadsToolbar.toPending()` 创建，而 `UploadPreviewDialog` 里写了 `useEffect(() => () => items.forEach(revokeObjectURL), [items])`。调用方为了复位选择状态给弹窗按批 `key`（换一批文件就重挂载），React **开发模式**还会「挂载 → 清理 → 再挂载」→ 清理函数首屏即执行、把刚创建的 blob 全部撤销 → 图片必然空。**生产模式不双跑，所以这是"只有 dev 复现"的一类坑。**
+- ✅ 规则：**谁创建谁回收**。blob / objectURL 的所有者只能是创建它的那个组件；下游只负责渲染 URL，**不要**回收别人的。卸载兜底回收要写在所有者里，且**不能用会变的依赖**（`[items]` 这种写法等于"每次变化都撤销一批"）。
+- ✅ 工具：用 `useRef` 镜像最新值时，**写 ref 必须放在 effect 里**（`useEffect(() => { ref.current = value }, [value])`）——渲染期间直接 `ref.current = value` 会触发 `react-hooks/refs`（本次 lint 当场抓到）。
+- ✅ 判据（真浏览器，零数据风险）：给 `<input type=file>` 用 `DOM.setFileInputFiles` 塞两张不同比例的测试图（脚本生成、只放 `%TEMP%`），断言 `.admin-upload-item__preview img` 每张 `complete === true && naturalWidth > 0`（本次 `320×200` / `200×320` 全过；修前首屏就被撤销）。**不要点「确定上传」**，取消即可（`onCancel` → `discardPending()`）。
+- 📎 案例：2026-10-03 用户报「上传前的本地预览图无法正常加载」。同类排查陷阱：`AdminDialog` 是 **portal + `div.admin-dialog`**（`role="dialog"`），**不是原生 `<dialog>`** —— 用 `dialog[open]` 查会得出"弹窗没打开"的错误结论（我第一轮就踩了）。
+
+### P-151 要抢占的全局键（Esc 等）必须注册在 `document` 的 **capture 阶段**：冒泡里的 `stopPropagation` 拦不住先注册的兄弟监听
+- ❌ 现象：媒体库上传预览弹窗里展开相册下拉，按一次 Esc —— **下拉和弹窗一起关了**。以为「在面板的 React `onKeyDown` 里 `preventDefault` + `stopPropagation`」就够（旧实现就是这么写的，注释还写着"不拦住会把弹窗一起关掉"），实测不够。
+- ✅ 根因：`AdminDialog` 的 Esc 监听 `document.addEventListener("keydown", …)` 注册在**冒泡**阶段，`AdminSelect` 的同类监听也在冒泡；两者谁先注册由**挂载顺序**决定（弹窗先开、下拉后开时弹窗那条先注册）→ 弹窗先执行 `onClose()`，事件到下拉时弹窗已经没了。React 合成事件同样不可靠：它挂在容器根上，与直接挂 `document` 的原生监听没有顺序保证。
+- ✅ 规则：**要抢占的全局键（Esc / 方向键等）注册在 `document` 的 capture 阶段**：`document.addEventListener("keydown", handler, true)`，命中就 `preventDefault()` + `stopPropagation()` —— capture 在冒泡之前的**整条路径**上跑，弹窗的冒泡监听注定收不到这次按键。同时给浮层自己挂一个 `onKeyDown`（哪怕只处理方向键），让 React 的委托监听挂上，避免"capture 拦掉了、React 侧却没收到"的错觉。
+- ✅ 判据（真浏览器）：弹窗内展开下拉 → `Input.dispatchKeyEvent` 发 Esc → **50ms 内**断言 `document.querySelectorAll('.admin-dialog__panel').length === 1` 且下拉已收起；修前同一断言是 0（弹窗关掉）。想定位 listener 顺序就 patch `Document.prototype.addEventListener` 记 stack，别猜。
+- 📎 案例：2026-10-03 媒体库「相册 / 卷」下拉改浮层。诊断输出（`AdminDialog.useEffect` 注册在前、`AdminSelect.useEffect` 在后）直接把根因钉死；改成 capture 后同一脚本 19/19 通过。
+
+### P-152 浮层几何别放进 React state：effect 里 `setPos()` 就是 `react-hooks/set-state-in-effect`，直写 DOM 才是唯一不报错的写法
+- ❌ 现象：`useLayoutEffect`（或 `useEffect`）里量完触发按钮的 `getBoundingClientRect()` 想 `setPos({...})` → eslint 直接报 `react-hooks/set-state-in-effect: Calling setState synchronously within an effect can trigger cascading renders`（Next 16 的 `eslint-config-next` 带这条，**不是警告是 error**）。写成 `setPos(current => …)` 绕一下照样报。
+- ✅ 规则（本项目已有先例：`PhotoPile` / `ImageGroupView` 的几何都归 DOM）：**位置/尺寸这类几何直接写 DOM**——面板初始 `style={{ visibility: "hidden", position: "fixed" }}`，在 `useLayoutEffect`（渲染后、绘制前同步执行，不闪）里量好 rect、必要时向上翻（`top` 换 `bottom`）、按可用空间夹 `maxHeight`，最后 `panel.style.visibility = ""`。**React state 只装数据**（`open` / 值），不装坐标。
+- ✅ 附带两条：① 面板**必须在 `rAF` / 二次 effect 之后再量**是不必要的——`useLayoutEffect` 里 portal 节点已经挂上，直接量最准；② 每次量之前先把上一次的 `maxHeight` 清空，否则量到的是被夹过的矮面板（会越开越矮）。
+- 📎 案例：2026-10-03 `AdminSelect` 浮层定位（`left`/`top`/`width`/`maxHeight` 全走 inline style 直写）。同一轮还顺手确认：`document.documentElement.scrollHeight` 在展开前后不变（`position: fixed` 的面板不参与文档流），这是"浮层不挤压布局"的可复现判据。
+
+### P-153 一个盒子同时被「flex 高度」和「宽高比」夹住时，几何就变成了循环依赖：量一次、写成一个变量
+- ❌ 现象：首页相册卡片模块里，封面的「一叠」要让照片**按原比例铺满封面区** —— 叠高 = 封面区宽 ÷ 宽高比。可封面区的宽来自 flex（卡片宽 = 行高 × 卡片宽高比），于是宽度依赖高度、高度又依赖宽度。硬写 CSS 公式（`height: calc(100% / var(--ar))`、给叠加 `max-height: 100%`、或让层按 `aspect-ratio` 反推宽度）都会**静默**给出错的尺寸：实测第 0 张只剩叠宽的 51.6%（211 宽的卡里照片 109 宽，像块小邮票贴在中间），而 `getComputedStyle` 里每条声明看着都"生效了"。
+- ✅ 规则：这类几何**在 layout effect 里量一次、写成一个 CSS 变量**（本项目同 `PhotoPile` / `ImageGroupView`，见 P-152）：`--album-vh = min(0.9, 封面区宽 ÷ 宽高比 ÷ 封面区高)`，高度写成 `calc(100% * var(--album-vh))`。宽度继续由父级决定，只有那一个比例是量出来的。
+- ✅ 三件事定死之后再动：① **谁决定谁**只能有一个方向（这里是"叠宽由封面区宽决定、层高由宽高比决定"），反过来写就是把整叠缩一半；② 层宽走 `calc(100% * var(--pile-w))`（乘数，不是百分比字面量 —— `calc` 里混百分比字面量会让声明非法被静默丢掉，P-132）；③ 顺序是 `position:absolute` + `top:0`，别写 `bottom`（不同高度的层底不会齐，露出的边会错位）。
+- ✅ 验证口径：别只看截图（这个模块首屏被 Banner 盖住，图里根本看不到）。用 CDP 取 `getBoundingClientRect()`，一次打印**桩高 / 叠盒 / 每层盒 / 每层内联变量**，再拿"按公式应得的值"对比 —— 本轮就是靠这份数据当场定位到"第 0 张只有 51.6% 宽"。
+- 📎 案例：2026-10-03 首页「相册卡片」模块（`lib/albums/pile.ts` + `components/home/modules/AlbumCardsModule.tsx` + `globals.css` 的 `.home-album-cards__*`）。同轮顺带确认：抽出的几何与 `/albums` 列表卡**只写一处**（`pileLayer()`），两处只差一个 `shrink`。
+
+### P-154 「客户端是不是 App」只认一次判定：藏在最里层 `return null` 会留下空壳子（空格子 / 贴边空浮层）
+- ❌ 现象：首页要在 App 里藏掉「推荐应用」卡。最自然的写法是在卡片组件里 `if (appMode) return null` —— 内容确实没了，但**外面那层壳还在**：格点里的模块格子照旧占位（版式里多一个空盒子、还能接住点击），浮层更糟——`HomeFloat` 已经画好了一个 `position: fixed` 的贴边 `<aside>`，透明但**照样压住那块区域的点击**（同 P-135/P-136 那类"内容在、定位与交互全丢"的变种）。
+- ✅ 规则：**能决定"渲不渲染"的地方就是判定点，且必须全部走同一个函数**。本轮落地：`lib/client/detect.ts` 的 `isModuleHidden()`（含自建模板卡的 HTML 特征判定，因为模板建出来的浮层没有 builtinKey），三处调用——`HomeGrid`（`items.filter` 里，**在 `toAreas()` 分组之前**摘掉）、`HomeFloat`（同样在 map 之前）、`HomeModuleRenderer`（兜底）。任何一处漏了都会留下空壳子，而且是**静默**的。
+- ✅ 判定输入要一次取全：`appMode` 是服务端按 UA 算的（`app/page.tsx` 读 `headers().get("user-agent")`），逐层当 prop 传下去；**预览态（`preview`）必须优先**，否则后台画布/模块编辑页里站长看不到自己配的内容 —— 检验方法就是 `pnpm shot` 对首页截图，再对 `/admin/modules/<id>` 截图，两边的可见性必须不一致。
+- 📎 案例：2026-10-03 App 内不弹「推荐应用」+ 推送抑制的客户端标识（`lib/client/detect.ts` / `HomeGrid` / `HomeFloat` / `HomeModuleRenderer`；服务端契约见 docs/api-contracts.md 的 `/api/client/status`）。
+
+### P-155 归一化时「补默认协议」之前，先确认输入不是别的协议：`ftp://x` 会静默变成合法的 `https://ftp://x`
+- ❌ 现象：地址归一化只判 `startsWith("http://") || startsWith("https://")`，不满足就补前缀 → 输入 `ftp://bruccese.com` 被当成"没写协议"，拼成 `https://ftp://bruccese.com`。而 `URI()` 解析它时 **host 恰好非空**（是 `ftp`），于是校验全部通过、**静默存下一个永远打不开的地址**。这个 bug 是被单测当场抓出来的，不是靠肉眼看代码。
+- ✅ 规则：补协议前先判"已经带了协议"：`^[A-Za-z][A-Za-z0-9+.\-]*://`，命中就**原样交给下游校验**（别的协议自然被拒）。同类"补默认值"的归一化（补端口、补路径、补 www）都适用这条：**先证明输入不属于另一类，再补。**
+- ✅ 验证口径：把这类纯逻辑从 Android 代码里抽出来（`androidapp` 的 `AppUrl.kt`，无 Android 依赖）写 JVM 单测 —— `gradlew :app:testDebugUnitTest` 秒级返回，不需要模拟器；否则这种"看着合理、跑起来打不开"的 bug 只能靠真机手敲才发现。
+- 📎 案例：2026-10-03 Android 客户端「首启直达默认站点」改造（`AppUrl.normalize()` + `AppUrlTest`，共 6 条用例覆盖默认地址/迁移/归一化/UA）。
+
+### P-156 `GeckoSession.getDefaultUserAgent()` 是静态方法；实例上的 `getUserAgent()` 返回的是 `GeckoResult<String>`
+- ❌ 现象：要在 UA 后面追加 App 标识，写成 `GeckoSession.getUserAgent()`（当成静态用）→ 编译期直接 `Unresolved reference 'getUserAgent'`。查 AAR 才发现两个 API 长得几乎一样但完全不同：`public static String getDefaultUserAgent()` 与 `public GeckoResult<String> getUserAgent()`（后者要 `open()` 之后异步查内核）。
+- ✅ 规则：GeckoView 这类"同名不同形"的 API **一律 `javap` AAR 里的 classes.jar 实读再写**，别按印象补。取默认 UA 只用静态那个。
+- ✅ 附带：UA 覆盖要在 `GeckoSessionSettings.Builder().userAgentOverride(...)` 里、`open()` **之前**设好，否则网络栈第一次请求用的还是默认 UA。要验证"到底发出去的是什么"，别只看 logcat 里自己的日志 —— 起一个只回显 `user-agent` 的临时服务当靶子，用 `adb` 改 `shared_prefs/smartblog.xml` 让 App 指向它（改前必须 `am force-stop`，否则退出时内存里那份会覆盖回去），实测结果见 docs/android/architecture.md §2b。
+- 📎 案例：2026-10-03 SmartBlog UA 标记（`AppUrl.withSmartBlogTag()` ↔ `lib/client/detect.ts`）。
+
+### P-157 `response.json()` 会把网关的 HTML 错误页翻译成 `Unexpected token '<'`，用户与排障者都拿不到任何线索
+- ❌ 现象（2026-10-03 生产）：后台点「立即备份」，等了十几秒弹出 `Unexpected token '<', "<html> <h"... is not valid JSON`。刷新后**本地包在**、云端没有。前端只有这一句话：没有状态码、没有 URL、看不出是应用还是代理。
+- ✅ 根因：请求走 nginx。上游进程在响应前退出（本例是被 61 秒一次的重启循环打断，见 P-133），nginx 没拿到响应头，就回它**自己的 HTML 错误页**（`<html>\r\n<head><title>502 Bad Gateway</title>…`）。客户端 `await response.json()` 直接把这段 HTML 丢给 `JSON.parse`，于是报出来的"错误"是 HTML 的第一个字符。判据：报错前缀就是 `<html>`（不是 Next 错误页的 `<!DOCTYPE html>`）→ 是**网关**发的，不是应用；再去 `/var/log/nginx/error.log` 对时间点找 `upstream prematurely closed connection` / `upstream timed out`。
+- ✅ 规则：客户端读 JSON 只有一条路 —— `lib/client/http.ts` 的 `readJsonResponse()`：先 `text()` 再 `JSON.parse`，失败时抛「HTTP 状态 + 内容类型 + URL + 响应片段」，502/503/504 额外说明「反向代理没拿到响应，应用可能正在重启，先刷新确认结果再决定重试」。`adminJson()`、`fetchCsrfToken()`、备份/更新包两个 multipart 上传都必须走它，别再各写一次 `response.json()`。
+- ✅ 配套：**长活不要挂在一次请求上**（备份上云改后台队列，见 P-158）；后台的"刷新确认"比"盲目重试"安全——重试可能重复执行已经在服务端跑完的动作。
+- 📎 案例：`src/lib/client/http.ts` + `http.test.ts`（含 502 话术断言）。
+
+### P-158 备份上云挂在请求里：一次进程重启就变成「本地有包、云端没有」，而且没人知道
+- ❌ 现象（2026-10-03 生产）：手动备份返回 502，刷新后本地包 78,947,575 B 完好（列表里看得见、能下载），COS 里没有这个对象；`[myblog] 备份已完成` 这行日志也没写——进程是在**上传那一步**被杀的，连失败日志都来不及写。旧实现 `replicateBackupToCos()` 的结果只有一个 boolean，且"没配 COS"与"传失败"不可区分，UI 上没有任何提示，也没有任何补传入口。
+- ✅ 规则：
+  1. **请求只负责本地落盘**：`runBackup()` 打完包就把任务排进 `lib/backup/uploads.ts` 的队列并返回（`cosUploadQueue`），上传在响应之后跑。60–80MB 的包在这台机器上要几十秒，谁都不该陪着等；同一条规则适用于导入备份包。
+  2. **状态先落盘再上传**：`data/backup-uploads.json` 是唯一事实源（`queued`/`uploading`/`failed` + 次数 + 原因），60 秒 tick 与启动补偿按指数退避续传，连试 5 次停手。**只在内存里记"正在传"是错的**——进程重启正是这条链路最常见的打断方式。
+  3. **失败要看得见、能补救**：「位置」列写清 `本地 · 上传中…` / `本地 · 上云失败` / `本地 + COS` / `仅 COS`，只在本机的包给「上传到 COS / 重试上传」按钮（`POST /api/admin/backup/push`）。
+  4. **本地副本先别删**：轮转清理放过还在队列里的包（那是它上云前的唯一一份）；`failed` 的不挡清理（否则磁盘会被撑满）。
+  5. 文件被删 / COS 被关掉时**清掉记录**，不留永远传不完的幽灵。
+- 📎 案例：`lib/backup/uploads.ts` + `upload-view.ts` + `uploads.test.ts` / `uploads-io.test.ts` / `upload-view.test.ts`；方案见 [cos-storage-spec.md](cos-storage-spec.md) §5a。
+
+### P-159 Kotlin 注释里的 `/*` 会再开一层注释；反引号测试名不能带 `/`；JVM 单测里 `org.json` 是空桩
+- ❌ 现象（同一轮里三连踩）：
+  ① KDoc 里写了 `main/src/lib/feed/*`（想表达"这个目录下的文件"）—— **`/*` 在 Kotlin 块注释里又开了一层注释**，报 `Syntax error: Unclosed comment`，而且**报错行是文件末尾**（真正的问题在几十行之前）。
+  ② JUnit4 测试方法名写 `` fun `解析增量：/api/feed/updates 的载荷`() `` —— 反引号名里**不能带 `/`**：`Name contains illegal characters: /`。
+  ③ 单测一调 `JSONObject.optString()` 就 `Method optString in org.json.JSONObject not mocked` —— `android.jar` 里的 `org.json` 只有**桩**，JVM 单测跑的是空实现。
+- ✅ 规则：
+  ① 注释里永远别写 `/*`：通配路径写成 `lib/feed/ 目录`，或直接点文件 `` `lib/feed/updates.ts` ``。
+  ② 反引号测试名只用字母/数字/中文/空格/`_`，别放 `/ \ . [ ]`。
+  ③ 要解析 JSON 就加 `testImplementation("org.json:json:20240303")`（真实现，仅测试期、不进 APK）。**别用** `unitTests.isReturnDefaultValues = true` 糊过去——那会让 `JSONObject` 返回 `null`/`0` 这类假值，测试看着绿、实际什么都没验证。
+- ✅ 附带两条同类构建坑（同一轮踩到）：
+  - **改 `-PstartUrl` 后必须 `--no-build-cache --no-configuration-cache`**（或 `--rerun-tasks`）：Gradle 会拿旧缓存里那份 `BuildConfig` 重建 APK，**参数看着生效、装的却是旧地址**（实测 `pm clear` 后 App 进了 `https://bruccese.com` 而不是 dev server）。
+  - **手改 `shared_prefs/*.xml` 不牢靠**：App 进程活着时内存副本会在退出/被唤醒时覆盖回去，`sed` 还可能把引号吃掉（`name=" push_admin_mode value=	rue`）。要复位状态就用 `pm clear` + 构建期 `-PstartUrl`；真机上"管理员态"这类判定别靠改文件，宁可用界面操作走真实路径。
+  - GeckoView 的 `onLocationChange` **4 参数签名在 Kotlin 侧容易 `overrides nothing`**（不定型 `java.util.List<ContentPermission>`），且 `GeckoSession` **没有** `getUri()`（`javap` 实读）。要跟踪当前地址，走 `NavigationDelegate.onLoadRequest` 的 `request.uri`。
+- 📎 案例：2026-10-03 App 通知层（`PushRules.kt` + `PushRulesTest.kt` + `AppNotifier.kt`）。
+
+### P-160 「一叠照片」抽出看不见，八成不是动画没写，是**首帧就把终态写进了 DOM**，或者**整叠铺满画框把后面几张盖死了**
+- ❌ 现象（2026-10-05 用户报「手机相册预览没有展开动画」，电脑视图同样没有。两处**同时**中招，根因是两个不同的坑）：
+  - ① **首页「相册卡片」模块**：每一层的内联样式直接用了 `pileLayer()` 算出的**终态** `left`（`16.13% / 32.26% / 48.39%`）。逐帧实测首帧就是抽出后的位置、整段 `distinctPositions=2`（0 → 终值），**从头到尾没有补间** —— 打开页面看到的就是"已经铺开"的封面。
+  - ② **`/albums` 列表卡**：过渡确实在跑（逐帧 53~88 个中间位置），但 `pileLayer()` 让每张都宽 **100%**：叠放态所有张压在同一个左缘、第一张在最上面，于是**第一张把后面几张整张盖住**（再被 `overflow: hidden` 裁掉）—— 390px 三张截图（t=1.0s / 1.25s / 2.6s）**完全一致**，"抽"是一个看不见的动作。顺带 `transform` 不在 `transition` 里，倾斜是**一帧跳过去**的。
+- ✅ 规则：
+  1. **首帧 = 叠放态，只能由组件渲染**（SSR 就得是叠放态）。终态只能由**写入即过渡**的那一次写进 DOM：`useEffect`/`useLayoutEffect` → 提交起点 → `requestAnimationFrame` 里写终帧。**延迟到点直接写终值 = 瞬移，不是动画**；把终值写进首帧 = 连瞬移都没有。
+  2. **叠放态"看得见的那张"必须比画框窄**：同心叠放 + 第一张在最上面 ⇒ 第一张的宽度就是可见照片的宽度。它要铺满画框（100%），后面的张永远被盖住 —— 想要"整叠 = 一张满幅照片 + 抽出可见"是**几何上不可能**的。做法：让铺开后**最后一张的右缘正好落在 100%**（`pileStackWidth()`），左边那一格是整叠、右边那一格是抽出的行程。
+  3. **两处用同一个动作就得共用一份几何 + 一个执行器**（`lib/albums/pile.ts` 的 `pileSpread()` + `lib/albums/use-pile-spread.ts`）：各写一套必然漂移 —— 这次就是一边"首帧写终态"、另一边"整叠满幅"，两个坑还互相掩盖。
+  4. **过渡属性要覆盖所有会变的属性**（`left` **与** `transform`）：只写 `left` 的话，同一时刻写进去的倾斜是**瞬跳**的（看着像"滑到一半突然歪一下"）。
+  5. `prefers-reduced-motion` 要**直接给终态**：终态位置/角度作为**内联变量**（`--pile-left` / `--pile-rotate`）由组件写一遍、CSS 那边 `left: var(--pile-left, 0%) !important` 取用（内联 `left: 0%` 只有 `!important` 能盖掉，P-128 同类）；否则首帧是叠放态、水合后才跳到终态 —— 对关掉动效的人反而是一次跳动。
+- ✅ 验证口径（**只能逐帧**，看截图和量尺寸都证不了）：`pnpm pile:frames [路径]`（`scripts/pile-frames.mjs`，对着已在跑的 server）逐帧读 `getBoundingClientRect()`（相对一叠容器）+ 计算样式，直接给判定：**首帧叠放 / 第一张不动 / 逐张补间 / 顺序递增 / 终态递增 / 过渡属性**；`--width` 可重复（390 与 412 各跑一遍）、`--reduced-motion`（应变成"首帧即终态、每个层只有 1 个位置"）、`--block "*thumbs2*"`（二级缩略图全 404 时动画与节奏必须不变）。**别读内联 `style.left`**：那是声明值，触发瞬间就跳到终点。
+- 📎 案例：2026-10-05 相册封面「一叠照片」（`lib/albums/pile.ts` + `use-pile-spread.ts` + `components/album/AlbumCard.tsx` + `components/home/modules/AlbumCardsModule.tsx`）。证据：逐帧采样 390/412/1400 各一遍（第一张 `distinctLefts=1`，其余 53~94 个中间位置、按 70ms 递增）、390px 四阶段截图、rAF 冻结 3s（后台）期间内联 `left` 仍是全 `0%`、恢复后照常抽。
+
+### P-161 画框里跑的是**前台**：后台自己的类名规则会漏进预览
+- ❌ 现象（2026-10-06）：后台画布的模块几何与前台对不上 —— 文章卡模块整块高 **1874 vs 1868**（差 6px）。根因是 `admin.css` 里给**共用组件**写的规则：`.admin-workspace .pagination a/span { min-height: 44px }`（媒体库列表的触控区），而首页画布也在 `.admin-workspace` 里、画布里那个分页是**前台**的分页组件（38px / grid）→ 被抬成 44px / inline-flex。
+- ✅ 规则：
+  1. 后台给**共用组件**（`Pagination` / `PostCard` / `Widget` / `heo-*`）写的样式，选择器必须把画框排除掉：`.admin-workspace .pagination:not(.home-editor__device *)`。
+  2. 判断口径是**几何比对**，不是眼睛：`node scripts/home-layout-check.mjs --section s2` 逐模块比「预览 / 前台」的宽高（宽度必须一致，高度按视口各自一致），漏一条就会被点出来。
+- 📎 案例：`src/app/admin/admin.css` 的 `.admin-workspace .pagination`（两处）。
+
+### P-162 `calc(var(--cell-h) * var(--h-unit))` 是非法值 —— 后台画布的「固定高度」从来没生效过
+- ❌ 现象：模块高度改成像素口径（P-139）之后，`--cell-h` 本身就是 CSS 长度（`380px`），而画布还写着 `height: calc(var(--cell-h) * var(--h-unit))`（旧口径是「数字 × 1cqh」）。`calc()` 里**两个长度相乘**是无意义的 → 整条声明被丢弃 → 画布里"固定高度"既没落到盒子、更没送到内容（前台反而是对的，所以只在后台看得见）。
+- ✅ 规则：
+  1. 高度的口径只有一份：`lib/layout/viewport.ts` 的 `moduleHeightCss()`。画布**复用前台的同一套格子 CSS 变量与规则**，不要自己再算一遍（`--h-unit` 已随旧口径删除）。
+  2. 改口径时要 grep 全项目找旧口径的残留（`--h-unit` / `calc(--cell-h` / `dvh`），别只改一处。
+- 📎 案例：`src/app/admin/admin.css` 的 `.home-editor__module.is-fixed`（已删）。
+
+### P-163 画框要装回**前台的基础排版**：后台的 14px 字号会继承进预览
+- ❌ 现象：预览里"侧栏 widget"比前台矮 7~8px —— `.admin-workspace { font-size: var(--admin-body) }`（14px）被子孙继承，画布里所有**继承字号**的模块都比前台小一号 → 文字换行不同 → 自适应高度跟着差。
+- ✅ 规则：
+  1. 画框 = 前台视口的替身，要显式声明前台 `body` 那套基础排版（font-family / **font-size: 16px** / line-height 1.6 / color），别指望继承。
+  2. **`rem` 不吃这一套**（它永远按 `html` 算），所以别去改 `html` 的字号去对齐；只能挡继承。
+  3. 顺带：画框里滚动条的占位也必须是**设计 px**（`padding-right: 15px` + 隐藏真滚动条）—— 经典滚动条是 15 *视觉* px，画框是缩放过的，由它占位会让内容宽度随 zoom 变（0.5 时吃掉 30 设计 px），模块宽度直接对不上前台。
+- 📎 案例：`src/app/admin/admin.css` 的 `.home-editor__device`。
+
+### P-164 拖拽落定要**连同格顺序一起写**：只比 row/col/span 会把「同格中间插入」整个丢掉
+- ❌ 现象（2026-10-06 用户报「同格堆叠中的任意位置」）：落点模型明明算对了（实测 `{kind:"stack", index:2}`），HUD 却显示"第 1 位"、松手后顺序没变。两处都是同一个思路的漏洞：
+  - ① 把「落点规划」的结果贴回客户端状态时只 `mergeBox` 了**行列跨度与高度**，`sort` 没带过来 → 预览与落库的顺序都不动。
+  - ② `finishMove()` 用 `samePlacement(origin, planned)` 判「落回原位就什么都不做」→ 同格内上下挪一位时 row/col/colSpan **全都没变**，只有 `sort` 变了 → 直接被 `return` 丢掉。
+- ✅ 规则：
+  1. `sort`（同格堆叠顺序）是**两个视口共用**的一列（数据库里只有一份），合并计划时不能挂在 `mergeBox()` 里按视口分流。
+  2. 「什么都没变」必须**连 `sort` 一起比**（或直接比整份 entries），不能只看位置。
+  3. 服务端也要能收到它：`PUT /api/admin/home/layout` 的 item 带 `sort`，`saveHomeLayout()` 有 sort 时按 sort 排、没有再退回「payload 顺序」。
+- ✅ 验证口径：`node scripts/home-layout-check.mjs --section s4`（同格中间插入 → 列内顺序必须是 `7 → 8 → 6 → 9 → 10`）+ `--section s7`（保存刷新后同格顺序一致）。
+- 📎 案例：`components/admin/HomeLayoutEditor.tsx` 的 `displayEntries` / `finishMove`。
+
+### P-165 冻结的落点模型 vs `position: sticky` 的格子：画布必须关掉 sticky
+- ❌ 现象：往右侧 widget 列（窄堆叠格）拖东西时，落点会掉进**别的格子**。落点模型是「按下那一刻冻结的设计视口坐标」，而 sticky 的格子在滚动时 rect 会跟着钉住 → 模型里读到的坐标比布局位置偏 **1300+px**（实测：滚动 1201 时第一块 widget 的模型坐标是 1277，刚好等于 `scrollTop + 76`）。
+- ✅ 规则：`.home-editor__device .home-grid__area.is-sticky { position: static }` —— 画布里不需要"侧栏跟随滚动"这个观感，**几何一致 + 落点稳定**更重要；前台照旧 sticky（这条不改任何布局位置，只改滚动行为）。
+- 📎 案例：`src/app/admin/admin.css` + `HomeLayoutEditor.measureDropModel()`。
+
+### P-166 挂在格子外面的手柄「画得出来、点不到」（`overflow: hidden` 连命中测试一起裁掉）
+- ❌ 现象：宽度/高度拖拽手柄原本写 `right: -5px` / `bottom: -5px`（贴在格子外面）。固定高度的格子是 `overflow: hidden` → 外面那半截被裁掉，**渲染看不见、`elementFromPoint(中心)` 也返回别的元素或 null** → 手柄整个拖不动（实测 `colSpan` 纹丝不动，而 handler 里连一次 pointermove 都收不到）。
+- ✅ 规则：
+  1. 编辑辅助手柄一律落在**格子可见范围内**（`right: 0` / `bottom: 0`），不靠负偏移"贴边"。
+  2. 自查口径：`document.elementFromPoint(手柄中心)` 必须命中手柄本身（`scripts/home-layout-check.mjs` 的 s5 就带这一条）。
+- 📎 案例：`src/app/admin/admin.css` 的 `.home-editor__resize`。
+
+### P-167 Banner 的「负外边距叠压」只在它**独占那一格**时成立
+- ❌ 现象：把一个模块拖到首页大图上（并入同一格）之后，它和下一行的模块出现 **27px 纵向重叠** —— `.home-grid__area:has(.home-grid__cell--banner) { margin-bottom: calc(-48px - var(--grid-gap)) }` 是无条件拉的，而这时格子里已经有两块，整行被往上拽 64px，压进后面的格子。
+- ✅ 规则：叠压是**版式意图**，只对「Banner 单独占格」成立 —— 选择器加 `:not(.is-stack)`（同格堆叠时不再拉）。别用「禁止拖到 Banner 上」去躲：那样是把版式问题变成操作限制，用户仍然可能从别处造出同样的数据。
+- 📎 案例：`src/app/globals.css` 的 `.home-grid__area:has(.home-grid__cell--banner)`。
+
+### P-168 「侧面栏目」必须钉在**这些列里最后一格**上，否则下面同列的模块会滚上来压在它身上
+- ❌ 现象（2026-10-06 用户报）：分类 / 标签 / 最近发布（同一格、钉住跟随滚动）在划到页面底部时，和公告 / 站点（同样是侧栏那几列、但在**下面几行**）叠到一起。
+- 🔍 根因：`.home-grid__area.is-sticky` 的老判据只有「同格堆叠 + 宽度 ≤ 6 列」，**完全不看列里还有谁**。钉住的格子停在视口里不动，而它下面占着同样那几列的格子会一路滚上来 —— 两者必然重叠（`position: sticky` 的包含块是网格容器，钉住的元素不会被"挡"在行带里）。实测复现：`scrollY=2400 / 2666` 时出现 `86×121`、`288×128` 的相交对。
+- ✅ 规则：
+  1. **按列判定能不能贴**：`lib/home/grid-model.ts` 的 `resolvePinnable()` —— 后面只要还有一格的列与它相交，这一格就只能「固定（随页面滚）」，并给出 `sideBlockedBy` 让编辑界面解释原因。
+  2. **真正的侧面栏 = 把这些格子拖进同一格**（或点编辑界面里的「把下面这一列的模块并进来」，`mergeColumnBelow()`），让它成为这些列里的最后一格。这也是用户自己试出来的正确用法。
+  3. 手机档一律不启用侧面（`.home-grid:not([data-vp]) .home-grid__area.is-sticky { position: static }` + `[data-vp="mobile"]` 同款）：屏幕太窄，钉住只会挤在一起。
+  4. 栏位（`config.pin`：`auto` / `side` / `flow`）跟格点一起保存（`saveHomeLayout()` 写模块 `config`），不引数据库列也不要求用户点两次保存。
+- ✅ 验证口径：`node scripts/home-layout-check.mjs --no-seed --section s10`（前台首页从头滚到底，逐屏比对模块矩形，多出来的重叠必须为 0）。
+- 📎 案例：`src/lib/home/grid-model.ts`、`src/lib/home/drop.ts`、`src/components/admin/HomeLayoutEditor.tsx`、`src/app/admin/admin.css`。
+
+### P-169 顶栏进度条把「React 自建表单的提交」当成导航，于是永远跑不到 100%（卡在 76%）
+- ❌ 现象（2026-10-06 用户报）：点「发布瞬间」之后顶部那条 2px 蓝色进度条动了一下就**停在 70% 左右**，直到 8 秒兜底才消失。
+- 🔍 根因：`NavigationProgress` 在 `document` 的**捕获阶段**监听 `submit`，判据只有「`form.method === "get"` + 不是新窗口」。而后台所有发布/保存表单都是 React 自建表单（`onSubmit` 里 `preventDefault()` + fetch），`<form>` 没写 `method` 时 `form.method` **也是 `"get"`** → 被当成导航。捕获阶段跑在 React 的 root 容器之前，`event.defaultPrevented` 还是 `false`，区分不出来；而这些提交只走 `router.refresh()`（pathname 不变），`finish()` 要等 pathname/searchParams 变化 → 等不到。真正的原生 GET 表单（列表筛选、搜索）确实要导航，不能一刀切删掉判定。
+- ✅ 规则：`submit` 的监听挂**冒泡**阶段（React 的监听在 root 容器上，冒泡早于 `document`），并加 `if (event.defaultPrevented) return;` —— 到这一步被 React 接管的表单已经 `preventDefault` 过，原生导航表单还是 `false`。`click` 那条仍留在捕获阶段（`<Link>` 的点击也要先开进度条）。
+- ✅ 验证口径：真浏览器里 `form.requestSubmit()` 一个 React 表单 → `.nav-progress` **不得**出现 `is-on`；再对一个原生 GET 表单派发 `submit` → 必须出现 `is-on`。
+- 📎 案例：`src/components/layout/NavigationProgress.tsx`。
+
+### P-170 COS SDK 的 `putObject` 对 Buffer body 几乎不报进度：要真进度得给它一条**自计数的流**
+- ❌ 现象：上云那一步的进度条只会在「开始」和「结束」跳两下，中间一动不动 —— 用户看到的就是「卡在 55%」。
+- 🔍 根因：SDK 的简单上传把进度挂在请求对象的 `drain` 事件上（`sdk/base.js`：`sender.on('drain', …)`，用 `socket.bytesWritten - 头部长度` 反推）。**实测（同一 SDK 版本 + 4 MB Buffer body）只回调 2 次：0 与整长**，慢消费者也一样。
+- ✅ 规则：需要真实进度时，把 body 换成**自计数流**（`lib/storage/progress-stream.ts`）：流是按 socket 回压一段段被 SDK 读走的，同一实验里被读走 **64 次**（每次 64 KB），「已读字节」就是真实传输进度。两个必须知道的代价：
+  1. **SDK 对「流」body 不做自动重试**（`base.js` 里 `!(params.body && params.body.pipe)` 才重试）→ 调用方自己重试，且**每次重试都要重建流**（流是一次性的）。
+  2. 流 body 必须自带 `ContentLength`，否则会走到「服务端流式上传」的另一套语义。
+  反过来：不需要进度的上传（备份包、缩略图、双写）继续用 Buffer，保留 SDK 自带的重试。
+- ✅ 验证口径：本地起一个"慢消费者"HTTP 端点当靶子，用同一 SDK 版本跑 `putObject`，断言流被读走的次数 ≥3 且字节数单调递增（真桶不必参与）。
+- 📎 案例：`src/lib/storage/progress-stream.ts`、`src/lib/storage/cos.ts` 的 `CosDriver.put()`。
+
+### P-171 后台「点一下立刻保存」的三件事：令牌别多要一跳、别拿 props 当已存值、别等整页刷新
+- ❌ 现象（2026-10-06 用户报）：瞬间的「全局可见期」点档位后**经常不保存**，要过一会儿才有反应。
+- 🔍 根因（三条叠在一起）：
+  1. 每次写请求前都先 `GET /api/auth/csrf` 取令牌 —— 一个动作两个往返；公网延迟下这一跳就是"点了没反应"。
+  2. 面板拿 `props.initialDays`（服务端值）当"已保存值"比对，而那个值要等 `router.refresh()` 回来才变：**在那之前再点另一个档位，`next === savedDays` 会静默 `return`，这次点击根本没发请求**。
+  3. 并发 PUT 的到达顺序不保证 → 连点两下可能被前一个请求覆盖；而"已生效"的显示也要等整页 RSC 刷新。
+- ✅ 规则：
+  1. CSRF 令牌**优先复用 cookie**（`myblog.csrf` 本来就是非 HttpOnly、服务端就是拿它跟请求头比对的，同一会话内一直有效），只在 cookie 缺失或明确 `refresh` 时（登录 / 创建）才去服务端取；遇到 `CSRF_INVALID` 自动换成新令牌**重试一次**（`lib/client/admin.ts`）。
+  2. "已保存值"只认**服务端确认过的**状态（写成功后立刻更新本地 `confirmed`），不拿 props 当判据。
+  3. 保存**串行 + 合并**：正在写时新点击只更新"待写值"，写完再写最后一个；成功即更新显示，`router.refresh()` 只用来刷新其它区域、不挡着显示。
+- ✅ 验证口径：浏览器里点一下档位 → 断言的 PUT 在前 100ms 内发出、整个过程 **0 次** `/api/auth/csrf`、"当前生效"在 1.5s 内更新；连点两个档位 → 落库值是**最后一次**那个。
+- 📎 案例：`src/lib/client/csrf.ts`、`src/lib/client/admin.ts`、`src/components/admin/MomentVisibilityPanel.tsx`。
+
+### P-172 传完图还回源取一遍做预览：本机明明有文件，却让浏览器再下载一次原图
+- ❌ 现象（2026-10-06 用户报）：瞬间页面选完图片，预览要等一会儿才出来 —— 那张图是从服务器重新拉回来的。
+- 🔍 根因：上传走的是「先入库本地原图、发布时才上云」（P-056，`defer: true`），服务端返回的地址是站内中转 `/api/uploads/…`。预览直接用它 → 一张 3–5 MB 的原图再走一次网络，白花流量、也白占服务端带宽（慢网下要等几秒）。正文编辑器同理：插图后 `ImageEditor` 渲染的就是服务端地址。
+- ✅ 规则：上传成功时把「服务端地址 → 本机 `URL.createObjectURL(file)`」登记进 `lib/client/local-preview.ts`，预览处 `resolveLocalPreview(url) ?? url` 取值：
+  - 瞬间九宫格：`toGrid()` 里取，删除/发布/卸载时按登记键回收（谁创建谁回收，见 P-150）。
+  - 正文图：走 `imagePlugin({ imagePreviewHandler })`（`ImageEditor` 渲染前会 await 它）。**handler 必须定义在模块作用域**：`imagePlugin` 每次渲染都会把新函数 pub 进 realm，而预览 effect 依赖它，每次新建函数会让每个图片节点重跑 effect。
+  - **写进 markdown / 发出去的必须是服务端地址**（blob 只在显示层用），否则刷新即失效、读者也拿不到图。
+- ✅ 验证口径：真浏览器里插图/选图后断言 `<img src>` 以 `blob:` 开头、且期间**没有**对 `/api/uploads/media/` 的请求；再存一次草稿，断言请求体里是服务端地址、不含 `blob:`。
+- 📎 案例：`src/lib/client/local-preview.ts`、`src/components/admin/MomentCompose.tsx`、`src/components/admin/MdxEditorClient.tsx`、`src/components/admin/PostEditorForm.tsx`（封面）。
+
+### P-173 相册详情「一叠照片」：折叠态高度只看当前那张、比例只看标签、方向别加"看照片"的特例 —— 三个都会让图片「看不见」
+- ❌ 现象（2026-10-07 用户报）：①手机竖屏的相册详情**不是从上到下堆叠**；②**横过来的图点开没有展开动画**。
+- 🔍 根因（三条，都会表现成"看不到动作"）：
+  1. **折叠态高度只看当前那张**：堆叠会把后面几张整张往下推，按"当前那张"定高时，
+     366 宽下自然高 549 的竖图排在 244 高的横图底下 → 容器 266，后一张下缘 571 被 `overflow: hidden` 切掉一多半
+     （实测 `scroller 366×571` vs `容器 266`）；同理"点开后容器高差只有 15px"——**动画行程被切没了**，看着就是没动画。
+  2. **比例只看 `img` 标签**：入库时 `width`/`height` 可能被横版兜底（853×1280 的竖图写成 `width=1280 height=853`），
+     读标签算比例会把竖图当横图 → 横向展开时行高算错、图片被裁。
+  3. **方向被加了"看照片"的特例**（2026-10-06 试的一版，用户当场驳回）：无论写成"有横图就走横向"还是
+     "横图在竖屏也横着展开"，都等于把用户要的**竖屏版式**推翻 —— **竖屏就是竖屏，与照片方向无关**。
+- ✅ 规则：
+  - **方向只看视口**：竖屏 / ≤720px → 一律**竖向**（折叠态从上到下堆叠、展开一行一张往下）；
+    横屏 / 宽屏 → 横向版式（同心叠放、向右展开成一行）。**与照片横竖、与它在不在卷里都无关**。
+  - **堆叠高度按整叠最高那张定**，且各层的缩放是**统一**的（别逐层递减：缩放以中心为原点，逐层缩会把"每层露 22px"变成 17.2px）。
+  - **比例只认图片自己**：`naturalWidth/naturalHeight` → 量到的盒子 → `width`/`height` 属性 → 3:2。
+- ✅ 验证口径：`node scripts/pile-detail-check.mjs`（真浏览器、逐叠）：折叠态每层档位按**视觉盒**（走 `offsetTop` + 缩放补正）判、容器装得下最深那层；
+  展开动画**按帧判**（位移 ≥120px、补间层 ≥2 才算"看得见"，实测竖屏 1782px / 横屏 1579px），不按终态判 —— "算对了但看不见"就是这类坑的通病。
+  另：`getBoundingClientRect()` 已经含 transform，**不能**再乘一次 scale（会缩放算两遍）；Chrome 会把 `-0.00px` 序列化成 `0px`，
+  判定别写死小数位；堆叠是**自然重叠**的，别断言"下层整张在上一层之下"。
+- 📎 案例：`src/lib/albums/photo-pile.ts`（几何）、`src/components/album/PhotoPile.tsx`（量 + 写样式）、`scripts/pile-detail-check.mjs`（验收）。
+
+### P-174 `jsonData()` 的 `{ data }` 信封被当成对象用：新建相册后跳到 `/admin/albums/undefined`
+- ❌ 现象（2026-10-07 用户报）：后台新建相册成功，但**自动跳到一个不存在的页面**。
+- 🔍 根因：`lib/admin/http.ts` 的 `jsonData()` 一律把返回值包一层 `{ data }`，而 `AlbumManager` 的新建分支写成了
+  `const album = await adminJson<AdminAlbumView>(...)`（**没解信封**）→ `album.id === undefined` →
+  `router.push("/admin/albums/undefined")`。同族页面（`NewModuleButton` / `StaticPagesManager` / `AlbumVolumePanel`）
+  都是 `const { data } = await adminJson<{ data: { id: number } }>(...)`，只有这一处漏了。
+- ✅ 规则：**后台 API 的返回值一律 `{ data }`**。客户端类型写成 `adminJson<{ data: T }>` 并解出 `data` 再用
+  （`jsonPage()` 的 `{ data, total, page, pageSize }` 同理）。
+- ✅ 验证口径：新增/编辑页的跳转断言**拿到的是数字 id**（`Number.isFinite(id)`），不是 `undefined`/`NaN`；
+  或直接比对上一步 `POST` 响应体里确实有 `data.id`。
+- 📎 案例：`src/components/admin/AlbumManager.tsx`（新建分支）、`src/lib/admin/http.ts`。
+
+### P-175 在 `ResizeObserver` 回调里"先量后写尺寸"= 自激：整叠诡异地往下慢慢长 + 抽搐
+- ❌ 现象（2026-10-07 用户报）：相册详情竖屏堆叠「诡异地往下慢慢延申并且在抽搐」——文档高与容器高每 100ms 长 1px，卡片高度在两态间来回翻。
+- 🔍 根因：`PhotoPile` 的 `apply()` 既是 ResizeObserver 的回调，又在里面**写卡片高度**（给竖图限高）：
+  ```
+  write vh=624  fp=…244,366,366,244,244,366   ← 限高生效，量到 366
+  write vh=459  fp=…244,549,549,244,244,549   ← 下一轮又量到未限高的 549，写回高度 → 再回调…
+  ```
+  9 秒内 **3750 次写 / 56 次跳过**，两态无限震荡。**"指纹不变就不写"能挡掉重复写，挡不掉"写 → 量 → 又不一样"的循环**。
+- ✅ 规则：
+  1. **尺寸别在观察器回调里改**。能用 CSS 表达的限高就用 CSS：卡片加 `aspect-ratio: 1`（`.pile[data-capped="true"]` + `img { height:100%; object-fit:cover }`），盒子随宽度出高度，几何拿到的直接是限高后的 `offsetHeight`，不需要二次写。
+  2. 不得已要在回调里写时，写完的那一份状态必须**同时**作为下一轮测量的输入（否则"量的是 A、写的是 B"，永远收敛不了）。
+  3. 组件的 `apply()` 仍保留"指纹不变就不写"的静默写（见 `PhotoPile` 的 `lastFingerprintRef`）：文案同步不碰几何，避免无意义的重算。
+- ✅ 验证口径：**从 document start 起按帧采样**（`requestAnimationFrame` 记录 `document.scrollHeight`、各叠容器 `clientHeight`、各卡 `offsetHeight`）。
+  判据是「动画结束后 N 秒内这些值**一次都不变**」——只看"稳定后的 3 秒"会漏掉加载期的震荡（这次就是这么漏的）。
+- 📎 案例：`src/components/album/PhotoPile.tsx`（`useLayoutEffect` 设置 `aspect-ratio`）、`src/app/albums/albums.css`（`.pile[data-capped]`）、`src/lib/albums/photo-pile.ts`（`VERTICAL_HEIGHT_RATIO`）。
+
+### P-176 Android 三页轮播：改完子页宽度**当轮**就 `scrollTo`，会被"轨道只有几像素"夹回 0 —— 预览黑屏
+- ❌ 现象：点缩略图进预览，顶栏「1 / 3 / 完成(0)」都对，中间**全黑**（页面上只留一个小白点）。
+- 🔍 根因：三页窗口初始宽度是 **1px**（布局期才知道页宽）。`onSizeChanged()` 里把三页改成屏宽、`track.requestLayout()`，然后马上 `scroller.scrollTo(pageWidth, 0)` —— 但 `onSizeChanged` 与 `onLayout` 在**同一次**布局里先后发生，这一轮轨道还只有 3px 宽，
+  `scrollTo` 被 clamp 回 **0**（实测日志：`预览尺寸：1080 x 2091` / `预览归位：pageWidth=1080 轨道=3 实际 scrollX=0`）→ 停在左边那张**空页**上。
+  下一轮布局把页宽改成 1080 时，"待归位"标记已经被消费掉了，再也没人把滚动位置挪回中间。
+- ✅ 规则：**量够了才归位**。`onLayout` 里判 `track.width`（本次实现是 `< pageWidth * 2` 就 `track.requestLayout()` 再来一轮，并留一个尝试次数上限兜底），确认三页真的量成页宽后再 `scrollTo(pageWidth, 0)`。同类"子 View 尺寸要等下一轮布局才生效"的活都适用：**改布局参数与读几何不要放在同一次遍历里**。
+- ✅ 验证口径：`adb logcat -s SmartBlog:I` 必须出现 `轨道=3240 实际 scrollX=1080`（轨道 = 3 × 页宽）；截图上能看到照片，而不是黑屏。
+- 📎 案例：`androidapp/app/src/main/java/com/smartblog/app/PhotoPreviewView.kt`（`onSizeChanged` / `onLayout`）。
+
+### P-177 Kotlin 块注释**可嵌套**：注释里写 `*.jpg` 会让整文件报 `Unclosed comment` + 一串假"未解析引用"
+- ❌ 现象：一个新文件编译报 `Syntax error: Unclosed comment`（指向文件尾），同时其它文件里对它的引用**全部**变成 `Unresolved reference`（十几条，看着像"类找不到"）。
+- 🔍 根因：KDoc 里写了路径通配 `cacheDir/edited/*.jpg` —— 那个 `/*` 在 Kotlin 里会**开一个嵌套块注释**（Kotlin 与 C/Java 不同，块注释可以嵌套），于是注释再也合不上；文件没解析出来 → 里面所有声明都不存在 → 引用方集体报错。
+- ✅ 规则：注释里要写通配路径就绕开 `/*`（写 `edited/ 下的 jpg`，或 `x.jpg`），别让字符序列意外成对；遇到"一个文件语法错、别处一堆未解析"时**先修那个文件**，别去改引用方。
+- 📎 案例：`androidapp/app/src/main/java/com/smartblog/app/PhotoEditStore.kt`。
+
+### P-178 自定义字段叫 `background` / `foreground` 会与 `View.getBackground()/getForeground()` 撞名
+- ❌ 现象：`setTextColor(foreground)` / `setBackgroundColor(background)` 报「没有匹配的重载」——`foreground` 被当成 `Drawable`，而期望是 `Int`。
+- 🔍 根因：`View` 有 `getBackground(): Drawable?` / `getForeground(): Drawable?`，Kotlin 合成属性 `background` / `foreground` 与你声明的同名字段冲突；在子类里引用同名字段时解析到的是 **Drawable**，不是那个颜色 Int。
+- ✅ 规则：宿主配色字段别用这两个名字（本次改成 `bgColor` / `fgColor`）。同理别用 `tag`、`alpha`、`visibility` 这类 View 属性名装自己的数据。
+- 📎 案例：`PhotoEditorView.kt` / `PhotoPreviewView.kt`。
+
+### P-179 浮点误差会让 `coerceIn(min, max)` 拿到**空区间**并抛异常
+- ❌ 现象：`java.lang.IllegalArgumentException: Cannot coerce value to an empty range: maximum 0.19999999 is less than minimum 0.2` —— 由单测当场抓到（矩形按比例取最大内接框时 `right - width` 比 `left` 小了一点点）。
+- 🔍 根因：`coerceIn(a, b)` 要求 `a <= b`；几何计算里算出来的上界可能因浮点误差比下界小 1e-7。
+- ✅ 规则：几何裁切一律写成 `coerceIn(low, max(low, high))`（先把上界抬到不小于下界），别假设算出来的区间一定非空。裁剪框、等比缩放这类"夹回边界"的活都适用。
+- 📎 案例：`PhotoEditState.withAspect()`（纯逻辑，有单测）、`PhotoEditorView.fitAspectInRect()`。
+
+### P-180 「落笔即画」的画笔必须**同时**记进时间线：少一行 → 撤销回不去、"完成"还判定成"没编辑"
+- ❌ 现象：编辑器里明明画了一笔（画面上看得到），点「完成」退回预览**没有「已编辑」标记**，`cache/edited/` 里也没有文件，上传的还是原图；「撤销」也按不动。
+- 🔍 根因：涂鸦为了零延迟是"落笔直接画进当前位图"（`PhotoEditRenderer.drawDoodleStroke()`），但**忘了把这一笔 `state.add(EditOp.Doodle(...))`** —— 画面上有、时间线里没有。于是 `isDirty()` 为 false（`finishEditing()` 走了"没编辑"分支）、撤销无从回退，任何一次整张重渲染（旋转 / 裁剪 / 撤销）也会把它抹掉。旁边的马赛克分支写了 `add()`，两处代码长得几乎一样 —— 少一行，肉眼看代码很容易漏过去。
+- ✅ 规则：凡是"直接改位图 + 还想被撤销 / 重放"的操作，**画与记必须成对**（画完立刻 `add`）。验收也必须走"画一笔 → 完成 → 检查产物文件"，只截图看画面**不算数**（这次就是截图全对、产物是空的）。
+- ✅ 验证口径：`adb shell run-as com.smartblog.app ls -l cache/edited` 必须出现 `edited-<时间戳>.jpg`；测试页显示的文件名 / 字节数必须是编辑版（实测 `edited-1791640992256.jpg · 5888 B`，而不是原图 `pic2.jpg · 4115 B`）。
+- 📎 案例：`androidapp/app/src/main/java/com/smartblog/app/PhotoEditorView.kt` 的 `onPaintTouch()` ACTION_UP 分支。
+
+### P-181 ffmpeg-kit 已退役：坐标、ABI 与 Java API 形状全都不在原版文档里，**必须 javap 实读 AAR**
+- ❌ 事实：`com.arthenica:ffmpeg-kit-*`（含 `-min` / `-full` / `-gpl`）2025-04 退役并**从仓库下架**，照老文章写的坐标一定解析失败（`Could not find com.arthenica:ffmpeg-kit-full:6.0-2`）。原版文档里那套「LTS 版本」也不再维护，且**不支持 16 KB 页对齐**（新设备/新商店要求）。
+- ✅ 规则：
+  1. 用社区维护的 drop-in 包 **`dev.ffmpegkit-maintained:ffmpeg-kit-<variant>:8.1.x`**（Maven Central，SDK 35、16KB 对齐、同 `com.arthenica.ffmpegkit` 包名/API）。**只发布 `arm64-v8a` 与 `x86_64`**：`-PgvAbi=armeabi-v7a` 的构建要在 Gradle 里**条件跳过**该依赖（置 `BuildConfig.FFMPEG_ENABLED=false`、功能降级），否则构建直接失败。
+  2. **编码器按包名分档**：要 libx264 就得选 `*-gpl`（GPL-3.0 ⇒ **整个 App 按 GPL-3.0 分发**）；LGPL 档（`min` / `full`）没有 x264，只能用系统 MediaCodec 硬件编码。选之前先想清楚许可证，别等发版才发现。
+  3. **API 形状以 `javap classes.jar` 为准**（本次实测：`executeWithArgumentsAsync` 只吃 `String[]` 与 `FFmpegSessionCompleteCallback`/`LogCallback`/`StatisticsCallback`；**没有** `cancel(FFmpegSession)`，只有 `cancel()` / `cancel(long sessionId)`；`Statistics.getTime()` 是 `double` 毫秒）。Kotlin 里按记忆写 `executeWithArgumentsAsync(List<String>, …)` / `cancel(session)` 都会编译不过。
+  4. 参数用**参数数组**形式传（`String[]`），不要拼 shell 字符串；`-vf` 的表达式能避开就避开（filtergraph 里逗号要转义，少一层引号就静默变成两个滤镜）——缩放直接按 MediaStore 给的宽高算成 `scale=1920:-2` / `scale=-2:1920`，源比目标小就整个不写 `-vf`。
+- 🔎 取证方式：`ffmpeg-kit-*.aar` 解开后对 `classes.jar` 跑 `javap -classpath`；`.so` 里搜 `libx264` 字符串确认编码器真的在包里。
+- 📎 案例：2026-10 瞬间视频压缩（见 [moment-video-spec.md](moment-video-spec.md)）：`CompressPolicy.kt` + `VideoCompressor.kt`，AAR 实测 `jni/{arm64-v8a,x86_64}`、`libavcodec.so` 内含 `libx264`。
+
+### P-182 zod 对象一旦挂了 `refine` / `superRefine`，`.partial()` 就调不动：跨字段规则要抽成纯函数、基础对象单独留
+- ❌ 错误：瞬间原来只有 `momentWriteSchema`，PATCH 直接 `momentWriteSchema.partial()`。这次加了「文字或媒体至少一个」「视频 ≤ 1 个」两条**跨字段**规则，很自然地写成 `momentWriteSchema = base.superRefine(...)` —— 于是 `momentPatchSchema = momentWriteSchema.partial()` 立刻不成立（`ZodEffects` 上没有 `partial()`），编译期报错。
+- ✅ 规则：
+  1. **基础形状（字段级）与跨字段规则分层**：`momentBaseSchema`（纯 `z.object`，供 `.partial()`）+ `momentWriteSchema = base.superRefine(...)`（POST 用）+ `momentPatchSchema = base.partial()`。
+  2. **partial 场景的跨字段判断放到写库前**：PATCH 拿不到"另一边的现状"，由 `updateAdminMoment()` 把「入参 + 现有行」合并后调用**同一个纯函数**（`lib/moments/compose-rules.ts` 的 `momentContentError()`）。规则只写一处，POST / PATCH / 前端按钮禁用三边共用同一句话。
+  3. 文案与规则放在**不依赖 zod / prisma 的纯模块**里，client 组件才能引它而不用把整条校验链拖进浏览器包。
+- 📎 案例：2026-10 瞬间视频（`lib/validation/post.ts` + `lib/moments/compose-rules.ts` + `lib/moments/admin.ts`）。
+
+### P-183 「点压缩就闪退」不是 ffmpeg 编不动，是**依赖缺了一个类**：维护版 AAR 的 POM 里没有 `<dependencies>` 段
+- ❌ 现象：App 里选中视频、点「完成」，**进程直接消失**（用户口径「闪退」），界面上没有任何异常提示；`pidof com.smartblog.app` 为空、产物 0 字节。看起来非常像"HEVC 太大把内存搞爆了"，很容易往线程/内存/分辨率方向排查（我先走了这条弯路：加 `-threads 2`、加空间闸门，都没治好）。
+- 🔍 真因（`adb logcat -d -b crash` 一看就明白）：
+  ```
+  FATAL EXCEPTION: Thread-9
+  java.lang.NoClassDefFoundError: Failed resolution of: Lcom/arthenica/smartexception/java/Exceptions;
+      at com.arthenica.ffmpegkit.FFmpegKitConfig.<clinit>(FFmpegKitConfig.java:134)
+      at com.arthenica.ffmpegkit.FFmpegKit.executeWithArgumentsAsync(FFmpegKit.java:102)
+      at com.smartblog.app.VideoCompressor.runPass(VideoCompressor.kt:147)
+  ```
+  用的是社区维护的 drop-in AAR `dev.ffmpegkit-maintained:ffmpeg-kit-min-gpl:8.1.7`：它的 `classes.jar` 里只有 41 个 `com/arthenica/ffmpegkit/*` 类，**没有 `com/arthenica/smartexception/*`**，而它的 **POM 里根本没有 `<dependencies>` 段** —— 原厂 POM 那条 `com.arthenica:smart-exception-java` 没被声明，Gradle 自然也拉不到。于是 `FFmpegKitConfig` 静态初始化缺类 → 抛 `Error`（不是 `Exception`）→ 调它的工作线程没人接 → **进程死**。
+- ✅ 修法（两件都要做）：
+  1. **显式补依赖**：`implementation("com.arthenica:smart-exception-java:0.2.1")`（类的实现仍在 Maven Central，未随 Arthenica 一起下架；它又会带 `smart-exception-common`）。放进 `build.gradle.kts` 里 ffmpeg 那个 `if (ffmpegEnabled)` 块内。
+  2. **调用点接 `Throwable`**：`FFmpegKit.executeWithArgumentsAsync(...)` 外面包 `try { } catch (error: Throwable)`。`NoClassDefFoundError` / `ExceptionInInitializerError` / `UnsatisfiedLinkError` 都是 `Error`，**只接 Exception 等于没接**（`runCatching` 接 Throwable，但当时那句是裸调用）。接住之后最差是"这一遍没压成 → 交原文件"，绝不让 App 被带走。
+- ✅ 判据（下次遇到同类"闪退"直接照此定位）：`adb logcat -d -b crash` 找 `FATAL EXCEPTION` + `Caused by: ClassNotFoundException`；**crash buffer 空**才去怀疑内存/native。"`pidof` 为空 + 无产物"是进程级死亡，不是"编得慢"。
+- 📎 案例：2026-10-11 瞬间视频压缩。修复后同一条 34 秒 H.265 mkv：`开始压缩：2293457 字节` → **12 秒**后 `文件选择完成：1 个`，产物 `compress-*.mp4` 2029529 字节、`video/mp4`（页面确认收到），进程存活。
+
+### P-184 `adb push` 进相册的文件在 MediaStore 里是 **pending 行**：应用看不见，`_size`/`_duration` 还是 NULL
+- ❌ 现象：两个 mkvs `adb push /sdcard/Movies/` 之后 `ls` 看得见、`content query` 也查得到，但 App 的自有相册里**只显示 3 张旧图**、视频一个没有；而且视频行的 `_size`/`_duration` 全是 `NULL`（读出来是 0）。更隐蔽的后果：压缩判据拿到体积 0 → 判"不用压" → 大文件原样交给页面，站点只收 mp4/webm，上传必然失败（"选择时看着一切正常"的静默失败）。
+- 🔍 真因：`adb push` 只在文件系统里放了文件，MediaProvider 给它建的是**待提交（`is_pending=1`）**的行；**pending 行只有属主/shell 看得见**，普通应用查不到。实测：44 张图里 41 张、3 个视频全部 `is_pending=1`；App 侧日志 `相册载入：图片=3 视频=0 合计=3` 与此完全吻合。
+- ✅ 修法：让 MediaProvider 做一次真正的卷扫描把行提交掉：
+  ```powershell
+  adb shell content call --uri content://media/external/file --method scan_volume --arg external_primary
+  ```
+  跑完同一个查询就变成 `is_pending=0`、`_size`/`_duration` 也齐了（实测 3 个视频：2687561 / 2293457 / 237000852 字节，27.5s / 34.1s / 2521.2s）→ App 侧立刻变成 `图片=44 视频=3`。
+  ⚠️ 试过但**不管用**的两条路：`am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///…`（`result=0`，没人接）、`content call … --method scan_file --arg <path>`（返回 `Bundle[{…STREAM=null}]`，行建了但不提交）。别在这两条上耗时间。
+- ✅ 顺带的产品结论（已落进代码）：**别信 MediaStore 一定有值**。`MediaProbe.fillMissing()` 只在缺字段时才补（`AssetFileDescriptor.length` 补体积、`MediaMetadataRetriever` 补时长/宽高/码率），字段齐了就**一次 native 都不调** —— 大 H.265 文件上 `MediaMetadataRetriever` 本身就是最重的一步。
+- 📎 案例：2026-10-11 把 `D:\Screenrec\*.mkv` 导入模拟器相册；同一条知识写进了 [android/architecture.md](android/architecture.md) §6b-3。
+
+### P-185 从 adb 改 SharedPreferences 会被**别的进程用内存里的旧快照覆盖**（多进程 SharedPreferences）
+- ❌ 现象：为了让 App 指向 dev server，我 `force-stop` 后用 `run-as … sed -i` 改 `shared_prefs/smartblog.xml` 的 `site_url`，`cat` 回读**是对的**；但下次冷启动日志里却是 `进入站点：https://bruccese.com` —— 改动"自己变回去了"。
+- 🔍 真因：App 有多个进程（GeckoView 的 `:tab*` 子进程 + 通知层）。SharedPreferences 写入是"整文件序列化"，某个进程（这里是 `AppNotifier` 写 `push_last_result`）手里还握着**改之前的整份内存快照**，它一写就把编辑覆盖掉。不是权限问题，`cat` 回读也发现不了。
+- ✅ 规则：
+  1. 验证期要改站点地址，**别 sed 偏好文件**：要么走 App 内 UI（右下角 ⋮ →「修改网站地址」），要么用**构建期默认值** —— `gradlew :app:assembleDebug "-PstartUrl=http://10.0.2.2:3000"` 配 `adb shell pm clear com.smartblog.app`（清数据后 `site_url` 为空，首启就用 `BuildConfig.START_URL`）。这条最确定。
+  2. `pm clear` 会**收回运行时权限**，记得补：`adb shell pm grant com.smartblog.app android.permission.READ_EXTERNAL_STORAGE`（≤32 走这枚；33+ 是 `READ_MEDIA_IMAGES`/`READ_MEDIA_VIDEO`）。
+  3. 推广：**跨进程共享的配置文件不要用外部工具直接改**；要么走 App 自己的写入口，要么在 App 完全没在跑时改（做不到就按第 1 条）。
+- 📎 案例：2026-10-11 模拟器验证 dev 环境连接。
+
+### P-186 自绘「胶囊」按钮的选中态若是**构建期写死**的，点了另一项就必须重建那一栏——三行并排、只漏了一行
+- ❌ 现象（用户报的）：图片编辑器里点「模糊」，**高亮还停在「马赛克」** —— 实际画出来的是模糊（状态变了），但看上去像没选中，用起来像"点了没反应"。
+- 🔍 根因：`PhotoEditorView.chipRow()` 把选中态**在构建期**写进控件（文字色 + 背景 + 底色），创建之后不会自己更新。同一个文件里三处用法：
+  - 涂鸦颜色行 → 点击后调了 `rebuildSecondaryBar()` ✅
+  - 裁剪比例行 → 点击走 `surface.setCropAspect()`，而它内部调了 `rebuildSecondaryBar()` ✅
+  - **马赛克种类行 → 只改了 `mosaicKind`，没有重建** ❌（漏的那一处）
+  于是只有马赛克这一行的两种类型之间切换时高亮不动。这类 bug 的特点：**代码看着都对**（状态确实改了、绘制确实换了），只有"看屏幕"才发现。
+- ✅ 修法：改选中态的那次点击里补一次 `rebuildSecondaryBar()`；并且在 `chipRow()` 上写明契约——「任何会改变"哪一项选中"的 `onClick` 都必须自己重建二级栏；纯触发型按钮（旋转 / 取消裁剪 / 确定裁剪）不受此约束」。**重建不丢状态**：滑杆初值取自 `currentBrushWidth()`（读的还是 `mosaicWidth` 本身），实测笔宽位置不变。
+- ✅ 判据与验收：**点完立刻看高亮**（截图对比两张状态），别只验"功能生效"。本次验收就是两张截图：选中「马赛克」时蓝底在马赛克上、点「模糊」后蓝底移到模糊上、笔宽滑杆不动。
+- 📎 案例：2026-10-11 `androidapp/app/src/main/java/com/smartblog/app/PhotoEditorView.kt`（`Tool.MOSAIC` 分支 + `chipRow()` 的契约注释）。
+
+### P-187 GeckoView 的 `FilePrompt.capture` 是 **`int` 字段**、不是 `String`：靠"印象里的 API"写代码，编译期就炸
+- ❌ 现象：给宿主加「录音请求」判定时，按印象写成 `isVoiceRecordRequest(prompt.mimeTypes, prompt.capture)`，形参类型 `String?` —— `:app:compileDebugKotlin` 直接报 `Argument type mismatch: actual type is 'Int', but 'String?' was expected`。同一个项目的 `javap` 教训（P-156 / P-181）又踩了一次。
+- 🔍 真因：GeckoView 157 的 `GeckoSession.PromptDelegate.FilePrompt` 只有三个 public 字段：`type: int`、`mimeTypes: String[]`、**`capture: int`**；AAR 里**没有任何 `CAPTURE_*` 常量**，所以只能判"非 0 = HTML 里带了这个属性"。它也不是 getter（`getCapture()` 不存在）。
+- ✅ 规则：
+  1. 用宿主 API 之前**先 `javap` 实读 AAR**：`javap -cp <解出来的 classes.jar> 'org.mozilla.geckoview.GeckoSession$PromptDelegate$FilePrompt'`（AAR 是 zip，`Expand-Archive` 后里面有 `classes.jar`）。字段类型、常量、是字段还是方法，一次就能看清。
+  2. 认不出的语义（这里 capture 的枚举值）**别自己编**：退化成"非 0 即存在"这种保守判据，并把不确定性写进注释。
+- 📎 案例：2026-10-11 `androidapp/.../MediaKinds.kt` 的 `isVoiceRecordRequest(types, capture: Int)`；判定逻辑与站点常量 `VOICE_RECORD_MIME` 成对。
+
+### P-188 **音频-only 的 WebM / MP4 会被 `file-type` 判成 `video/*`**：上传录音必然 400，而且报的是"类型不匹配"
+- ❌ 现象：浏览器 `MediaRecorder` 录出来的是 `audio/webm;codecs=opus`（音频-only），Android 录的是 MPEG_4/AAC —— 两个都被 `handleUpload()` 拒掉 `MEDIA_KIND_MISMATCH`（"上传类型与文件内容不匹配"）。功能死在最后一步，前端只看到一句莫名其妙的错。
+- 🔍 真因（读 `file-type@22.0.2` 源码确认）：
+  - MP4 只按 `ftyp` **主品牌**判：`M4A ` → `audio/x-m4a`，其余（Android `MediaRecorder`/`MediaMuxer` 写 `isom`/`mp42`）→ **`video/mp4`**；
+  - WebM 只看 EBML DocType `webm`：**音频-only 的 WebM 照样是 `video/webm`**。
+  也就是说"容器扩展名/MIME 声明"根本救不了它 —— 只有看容器里的**轨道结构**才知道有没有视频。
+- ✅ 修法：`lib/upload/audio-container.ts` 两个**有界**解析器 —— MP4 走 box（`moov > trak > mdia > hdlr` 的 `soun`/`vide`），WebM 走 EBML（`Segment > Tracks > TrackEntry > TrackType`：1 = 视频、2 = 音频）。**只在调用方明确声明 `kind=audio` 时启用**，解析失败/截断/畸形一律返回 null 走原拒绝路径（失败关闭，不给"把视频伪装成音频"开后门）。
+- ✅ 判据：单测用合成夹具覆盖「纯音频 / 含视频轨 / 截断畸形」三类；**再加一条真文件证据**——Edge headless 假麦克风真录一段 WebM 走 `POST /api/upload`（`node scripts/voice-e2e-check.mjs` 第 3 步），跑通才算修复。
+- 📎 案例：2026-10-11 语音瞬间；同一条也解释了为什么 Safari 的 `audio/mp4` 录音此前从没被验过（媒体库当年只收过磁盘上的 `.m4a` 文件，主品牌就是 `M4A `）。
+
+### P-189 「按钮点不动」先查有没有挂监听：**画出来的按钮不会自己找活干**
+- ❌ 现象（用户报的）：App 里语音小窗的「取消」「停止」点了没反应。第一轮我按"0 宽"去修（见下），真机复测**还是点不动**。
+- 🔍 真因（两个叠在一起，只修一个都不行）：
+  1. **`VoiceRecorderView.kt` 里 5 个按钮一个都没 `setOnClickListener`** —— 全文件搜 `click` 零命中。按钮是纯装饰，布局再对也不会响应。
+  2. 顺带发现的布局坑：按钮用 `LinearLayout.LayoutParams(0, h, 1f)`（weight + 0 宽），但装它的行用 `card.addView(row)` 加进去 —— **不给 LayoutParams 时默认 `WRAP_CONTENT`**，父容器按 WRAP_CONTENT 量的时候加权子项只能分到 **0 宽**：按钮既看不见、也命中不到。修法是给行 `MATCH_PARENT`（`header` 那行同理，否则时间戳贴着标题而不是靠右）。
+- ✅ 规则：
+  1. 新增按钮必须在集中的 `wireActions()` 里接线（别散在各处），或者让构造 helper **强制传回调**；只画不接 = 摆件。
+  2. 「看得见」不等于「点得动」。验收必须**逐条点一遍**：`adb shell input tap` 之后看状态真的变了（我也用 `uiautomator dump` 看 bounds/clickable，但波形一直重绘时它拿不到 idle，别把它当唯一证据）。
+  3. 用 `width=0 + weight=1` 的按钮/输入框，父容器一律 `MATCH_PARENT`；`WRAP_CONTENT` 父容器 + 加权子项 = 0 尺寸。
+- 📎 案例：2026-10-11 `androidapp/.../VoiceRecorderView.kt`（接线在 `wireActions()`，行宽在 `noteActions()`）。
+
+### P-190 用户口径的"方向/手感"要在对话里当场钉成**常量 + 单测**，别靠描述词猜
+- ❌ 现象：语音波形的滚动方向，用户说了三次（"一行只显示十秒钟""整个波形向右滑动""也就是从右边开始长"），我前两版都实现反了（先是"越录越细"，再是"最新在左、往左滑"），每次都要重新编译 + 装机才知道错。
+- 🔍 真因：中文里"向右滑动"既能指"内容整体往右移"，也能指"新的一根从右边进来"——**这两种在固定窗口里是相反的**（最新贴右边 ⇒ 满了之后整条往左滑；最新贴左边 ⇒ 满了之后整条往右滑）。光靠读描述没法消歧，而"看一眼就知道"的验证成本被拖到编译+装机之后。
+- ✅ 规则：
+  1. 把口径写成**可测的算式**：最终口径是 `liveSlot(数组下标) = 数组下标`（窗口只保留最近 100 根，越靠数组头越旧），配 JVM/TS 单测断言"3 秒时占用槽位 0…29（从左往右长）""满窗后数组头被丢掉、同一槽位显示后一根（= 整条向左滚）"。方向错了单测当场红。
+  2. 两个平台同一套算式，注释里写清楚"**从左边开始长、满了从左边掉出去**"，并互相指认（`VoiceRecorderPolicy.liveSlot()` ↔ `liveSampleIndexFor()`）。
+  3. 拿不准就问一句，但**问之前先把两种可能各自的样子写出来**（谁贴哪边、谁从哪边出去），别问"你要哪种滚动"。
+- 📎 案例：2026-10-11 语音瞬间的实时波形。**2026-10-17 用户明确纠正为"从左边开始向右长、到右边后整条向左滚"**；旧版"最新贴右"已废弃，两端单测同步改成 0…29 与丢头断言。
+
+### P-191 `Permissions-Policy` 是顶层文档策略：漏页面、以及软导航继承旧策略，都会让麦克风"没权限且不弹窗"
+- ❌ 现象：网页端点录音，卡片直接显示"没拿到麦克风权限"，浏览器连权限弹窗都不弹；控制台 `Permissions policy violation: microphone is not allowed in this document`。用户去地址栏也找不到已拒绝记录。
+- 🔍 真因（两层）：①浏览器在 `getUserMedia()` 之前就按**响应头**拒绝，最初只在 `/admin/moments` 放 `microphone=(self)`，但 `/admin` 概览页也渲染同一个 `MomentCompose`；②`Permissions-Policy` 属于**顶层文档**，Next `<Link>` 软导航不换文档。从公共页（`microphone=()`）点进后台、或在后台从 `/admin/posts` 软导航到 `/admin/moments`，都会继续沿用进入时那份旧策略，后一个页面的响应头根本没生效。
+- ✅ 规则：整个 `/admin` 路径树放行 `microphone=(self)`，公共页面保持 `()`；前台进入后台的 Footer / Navbar 外观入口必须用 `<a>` 做**文档级跳转**。判定收口在 `lib/security/permissions-policy.ts` + 单测。验证不要只看 UI：先看响应头（`/admin/posts` 也必须是 `microphone=(self)`、`/moments` 必须关闭），再跑 dev server 点一次录音。
+- 📎 案例：2026-10-17 首修只按“渲染入口的页面”列白名单；2026-10-17c 按文档策略与软导航重新收口。
+
+### P-192 扩展名校验别逐字匹配：图床会把 WebP/AVIF 命名成 `.jpg`
+- ❌ 现象：从微博等图床下载的图片，扩展名 `.jpg`、大小正常，上传却报“格式不支持/扩展名不匹配”；文件名还很长（例如 `img-179219…f56b.jpg`），更像“文件名问题”。
+- 🔍 真因：服务端要求 `file-type` 嗅探到的扩展名与文件名后缀**逐字一致**。图床把 WebP/AVIF 内容命名为 `.jpg` 时必然 400；长文件名不是根因（只影响临时副本落盘）。
+- ✅ 修法：真实类型以魔数/容器为准；文件名后缀只要求**同属图片/视频/音频**（`lib/upload/file-name.ts` 的 `suppliedExtensionMatchesKind()`），跨媒体类型仍拒绝。客户端与 Android 临时副本同时把超长名压到 80 字符。验收必须用“WebP 字节 + `.jpg` 长文件名”真上传，断言 200 且入库 `image/webp`。
+- 📎 案例：2026-10-17；临时库实测 90+ 字符文件名返回 200。
+
+### P-193 视频首帧不能只写 `preload="metadata"`：浏览器可能只给时长不给画面
+- ❌ 现象：首页瞬间视频瓦片是纯黑块，用户以为没有封面。
+- 🔍 真因：`preload="metadata"` 只保证元信息；不 seek / 不播放时浏览器不保证解码并绘制首帧。直接给深色背景 + ▶ 就是“永远黑”。
+- ✅ 修法：`<video preload="metadata" src="….#t=0.1">`，在 `loadedmetadata` 时 seek 到 0.1s，`loadeddata/seeked` 后再淡入；加载前用渐变占位。播放器另做，关闭原生 `controls`，自绘播放/暂停、进度、音量；移动端可点目标至少 44×44。验收要读 `readyState / videoWidth / currentTime` 并截图，不能只看 DOM 里有没有 `<video>`。
+- 📎 案例：2026-10-17 `MomentVideoPlayer`；390×844 实测面板 374×411、全部按钮/滑杆高度 44。
+
+### P-194 封面与 Banner 不能共用一套 style：改 Banner 的纯色/混色会把列表封面一起改掉
+- ❌ 现象：文章编辑里给 Banner 切「纯色/混色」，列表卡封面也变成了色块；用户无法只改 Banner，删除封面也会牵扯 Banner。
+- 🔍 真因：`Post.bannerStyle/bannerColor` 同时被 `PostCard` 和 `PostHero` 读取——一个字段承担了两个独立展示面的配置。
+- ✅ 修法：拆成两套唯一判定：`coverStyle` + `coverColor/Color2`（列表卡）与 `bannerStyle` + `bannerImage` + `bannerColor/Color2`（详情顶图）；`PostCard` 只看 `resolveCoverVisual()`，`PostHero` 只看 `resolveBannerVisual()`。Banner 的 `cover` 模式只是“复用封面”，不是“覆盖封面”。Banner 删除后写随机渐变色，绝不留白。
+- 📎 案例：2026-10-17；迁移 `20261017120000_post_cover_banner_split` 把历史 `bannerStyle` 的展示复制成封面配置，旧文章外观不变。
+
+### P-195 后台「真预览」里的链接必须失活，否则拖拽/点选会把管理员带走
+- ❌ 现象：首页管理画布渲染真实文章卡后，点卡片会跳去前台文章页，正在编辑的布局丢失。
+- 🔍 真因：预览节点里的 `<a>` 仍是浏览器默认行为；画布只处理了拖拽手柄，没拦链接。
+- ✅ 修法：在画框层统一 `onClickCapture/onAuxClickCapture` 拦截 `<a>` 的默认跳转（同时 stopPropagation），拖拽手柄的 pointerdown 不受影响。不要给整个预览容器 `pointer-events:none`，那会把拖拽手柄一起关掉。
+- 📎 案例：2026-10-17 `HomeLayoutEditor` 画框。
+
+### P-196 手机底部设置 sheet：父高必须是确定的，`height:auto` 和 `height:0` 都会翻车
+- ❌ 现象：文章编辑手机视图切换封面/Banner 后，设置页像“白色消失”，或者整页下翻到空白区。
+- 🔍 真因：sheet 是 `max-height + flex` 结构。rail-body 用 `height:auto` 时，内容长短会把滚动位置甩到内容区外；只把 rail-body 改成 `height:0; flex:1` 而外层 rail 仍只有 `max-height`（父高 auto），flex 子项直接算成 0，设置内容整块消失。另：编辑器页的 `html/body` 在手机档是 `overflow:auto`，文件选择器把焦点还给 input 时会把外层 body 滚到 sheet 下方空白。
+- ✅ 修法：① 移动端 sheet 的 rail 写**确定高度** `height: min(86dvh, calc(100dvh - 56px))`（同时保留 max-height）；② rail-body 用 `height:0; min-height:0; flex:1 1 auto; overflow:auto; overscroll-behavior:contain`；③ `html:has(.post-workspace), html:has(.post-workspace) body` 锁 `height:100%; overflow:hidden; overflow:clip; overscroll-behavior:none`（`hidden` 只挡用户滚动，`clip` 连 `scrollIntoView`/代码滚动一起挡；旧浏览器退回 hidden），sheet 打开时再用内联 overflow 锁一次；④ 文件选择器/输入框的焦点只允许滚 rail-body，不能滚外层页面。
+- 📎 案例：2026-10-17 `admin.css` 的 `.post-workspace.is-sheet .post-workspace__rail` / `__rail-body`，以及 `PostEditorForm` 的 sheet 滚动锁。**2026-10-17e 补充**：sheet 高度与 rail-body 修好后，选择封面仍可能复发；那是外层 rail 被文件 input 的程序化滚动顶走，见 P-198，不要只反复改 sheet 高度。
+
+### P-197 Prisma 报 `The column ... does not exist`：先查迁移是否执行，不要改查询去绕
+- ❌ 现象：`pnpm dev` 打开首页/文章管理，Prisma 在 `post.findMany()` 处抛 `PrismaClientKnownRequestError`，例如 `The column main.Post.coverStyle does not exist in the current database`。
+- 🔍 真因：代码与 `schema.prisma` 已包含新列，但当前 `DATABASE_URL` 指向的 SQLite 库还没执行对应迁移。报错来自数据库，不是 TypeScript、缓存或 Prisma Client 版本；删 `.next`、重新 `prisma generate` 都不会补列。
+- ✅ 规则：先跑只读的 `pnpm prisma migrate status`，按缺失的迁移名执行 `pnpm prisma migrate deploy`，然后重启 dev server。迁移执行属于用户亲自完成的高成本操作；AI 只能用临时库验证，不能擅自改用户的 `main/data/blog.db`。不要用 `select` 动态跳过新字段来“修好”（写路径仍会炸，且会掩盖部署阻断）。
+- 📎 案例：2026-10-17c 开发库缺 `20261017120000_post_cover_banner_split` 的 `coverStyle/coverColor/coverColor2/bannerImage`。
+
+### P-198 `overflow:hidden/clip` 都挡不住 focus/scrollIntoView 的程序化滚动：固定 sheet 或 window 会被顶走
+- ❌ 现象：手机文章编辑器里点封面/Banner 的“选择图片”，原生文件选择器关闭后整个设置 sheet 往下/往上错位，露出白色空白，用户手动滚也回不到原位；桌面端则表现为整个 window 向下滚 49px。
+- 🔍 真因（两层）：①`.post-workspace__rail` 是固定高度 sheet，原来是 `overflow:hidden`。`hidden` 只挡用户滚动，不挡浏览器的程序化滚动：文件 input 被 focus / `scrollIntoView` 时，浏览器会同时滚 `rail-body` 和**外层 rail**。实测选封面后 `rail-body.scrollTop=915`（正常）但 `rail.scrollTop=37`；rail 自身 `overflow:hidden`，用户无法把这个 37px 手动滚回去。②桌面端即使 `html/body` 计算样式已是 `overflow:clip`，Chrome 仍可能让 `scrollIntoView()` 把 window 滚 49px（固定编辑器页不该有 window 滚动）。
+- ✅ 修法：①`.post-workspace__rail` 用 `overflow:hidden; overflow:clip`（`clip` 连程序化滚动也禁止，旧浏览器回退 hidden）；②`rail-body` 加 `overflow-anchor:none`，图片预览变高时不触发滚动锚定；③封面/Banner 不再直接暴露 `<input type=file>`，改为隐藏 input + 自绘“选择/更换图片”按钮；选完把焦点还给按钮并 `focus({preventScroll:true})`；④打开选择器前记录 `rail.scrollTop` / `rail-body.scrollTop`，上传结束后恢复，并把 window 明确恢复到 0；⑤`PostEditorForm` 挂载期间监听 window `scroll`，一旦被程序化滚走立即拉回 0，卸载时恢复进入编辑器前的位置。
+- 📎 案例：2026-10-17e。390×844 真文件选择器（CDP 拦截 `Page.fileChooserOpened`）实测：封面和 Banner 选完后 `rail.scrollTop=0`、`rail-body.scrollTop` 与选前一致、`window.scrollY=0`、焦点回到触发按钮。1440×900 桌面实测：选前/选后 `window.scrollY=0`、rail 0、railBody 942 不变；即使再对触发按钮执行 `scrollIntoView()`，window 仍被锁在 0。

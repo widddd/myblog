@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { CoverMedia } from "@/components/common/CoverMedia";
+import { PostCover } from "@/components/common/PostCover";
 import { postHref } from "@/lib/posts/path";
 import type { PostCardModel } from "@/lib/posts/types";
 
@@ -20,7 +20,7 @@ export function RecommendModule({
       {posts.slice(0, limit).map((post) => (
         <Link className="mini-card" href={postHref(post)} key={post.publicId}>
           {post.recommend ? <span className="mini-card__badge">荐</span> : null}
-          <CoverMedia alt={post.title} src={post.cover} title={post.title} />
+          <PostCover alt={post.title} post={post} />
           <div className="mini-card__title">{post.title}</div>
         </Link>
       ))}

@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { PauseIcon, PlayIcon } from "@radix-ui/react-icons";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AdminDialog } from "@/components/admin/AdminDialog";
+import { UploadAlbumSelect } from "@/components/admin/UploadAlbumSelect";
 import { useAdminConfirm } from "@/components/admin/useAdminConfirm";
 import { adminJson } from "@/lib/client/admin";
+import type { AlbumOption } from "@/lib/albums/types";
 import type { AdminUploadResult } from "@/lib/client/upload";
 import { formatBytes } from "@/lib/uploads/usage-format";
 import { formatClockDuration, formatDateTime } from "@/lib/utils/date";
@@ -72,6 +75,8 @@ function AudioFace({
   url: string;
 }) {
   const [seconds, setSeconds] = useState(duration);
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     if (seconds != null || !url) {
@@ -90,14 +95,42 @@ function AudioFace({
     };
   }, [seconds, url]);
 
+  /**
+   * 音频在媒体库里**要能听**（图片有预览、视频有 ▶，音频只有个 ♪ 说不过去）。
+   * 这里只挂一个极简播放键：卡片是网格里的一格，塞 `<audio controls>` 那套原生控件会撑爆版式。
+   */
   return (
     <div className="admin-media-card__audio">
-      <span aria-hidden className="admin-media-card__note">
-        ♪
-      </span>
+      <button
+        aria-label={playing ? "暂停音频" : "播放音频"}
+        className="admin-media-card__play"
+        onClick={() => {
+          const audio = audioRef.current;
+          if (!audio) {
+            return;
+          }
+          if (audio.paused) {
+            void audio.play().catch(() => undefined);
+          } else {
+            audio.pause();
+          }
+        }}
+        type="button"
+      >
+        {playing ? <PauseIcon /> : <PlayIcon />}
+      </button>
       <span>
         {seconds != null ? formatClockDuration(seconds) : "音频"}
       </span>
+      <audio
+        hidden
+        onEnded={() => setPlaying(false)}
+        onPause={() => setPlaying(false)}
+        onPlay={() => setPlaying(true)}
+        preload="metadata"
+        ref={audioRef}
+        src={url}
+      />
     </div>
   );
 }
@@ -105,9 +138,12 @@ function AudioFace({
 export function UploadCard({
   file,
   index = 0,
+  albums = [],
 }: {
   file: AdminUploadResult;
   index?: number;
+  /** 「相册 + 卷」下拉的选项（只有图片会渲染它；服务端取一次，别每张卡各查一遍） */
+  albums?: AlbumOption[];
 }) {
   const router = useRouter();
   const { confirm, dialog } = useAdminConfirm();
@@ -193,6 +229,9 @@ export function UploadCard({
       style={{ "--i": index } as React.CSSProperties}
     >
       <div className="admin-media-card__preview">{preview}</div>
+      {file.kind === "image" ? (
+        <UploadAlbumSelect albums={albums} file={file} />
+      ) : null}
       <p className="admin-muted">{formatBytes(file.size)}</p>
       <p className="admin-muted">{formatDateTime(file.createdAt)}</p>
       <div className="admin-media-card__actions">

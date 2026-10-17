@@ -1,3 +1,5 @@
+import { IMAGE_GROUP_CLASS } from "./image-group";
+
 export type TocDepth = 1 | 2 | 3 | 4 | 5 | 6;
 
 export type TocItem = {
@@ -30,6 +32,21 @@ export function headingDepth(tagName: string | undefined): TocDepth | null {
   return HEADING_DEPTH[tagName] ?? null;
 }
 
+/**
+ * 折叠组（`<details class="post-image-group">`）：默认是**收起**的。
+ * 组内标题如果进了目录，读者点一下会滚到一块看不见的地方——所以整棵子树都不收。
+ */
+function isFoldedGroup(node: TocTreeNode): boolean {
+  if (node.type !== "element" || node.tagName !== "details") {
+    return false;
+  }
+  const className = node.properties?.className;
+  if (Array.isArray(className)) {
+    return className.includes(IMAGE_GROUP_CLASS);
+  }
+  return className === IMAGE_GROUP_CLASS;
+}
+
 export function textOf(node: TocTreeNode): string {
   if (node.type === "text" && typeof node.value === "string") {
     return node.value;
@@ -53,6 +70,9 @@ export function collectTocItems(tree: TocTreeNode): TocItem[] {
   let fallback = 0;
 
   const visit = (node: TocTreeNode) => {
+    if (isFoldedGroup(node)) {
+      return;
+    }
     const depth = headingDepth(node.tagName);
     if (node.type === "element" && depth) {
       const text = textOf(node).trim();

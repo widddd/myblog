@@ -2,25 +2,19 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 
 import { AdminSection } from "@/components/admin/AdminSection";
+import { UsageMeter, UsageRow } from "@/components/admin/UsageMeter";
 import { adminJson } from "@/lib/client/admin";
 import { toDatetimeLocalValue } from "@/lib/home/uptime";
-import {
-  formatBytes,
-  usagePercent,
-  type LocalStorageUsage,
-} from "@/lib/uploads/usage-format";
+import type { LocalStorageUsage } from "@/lib/uploads/usage-format";
 
 type SettingsValues = {
   siteName: string;
   announcement: string;
   banner: string;
   pageSize: number;
-  backupPeriodDays: number;
-  backupKeep: number;
-  backupLocalMaxMB: number;
   localMediaMaxMB: number;
   uploadMaxSizeMB: number;
   uploadMaxImagesPerBatch: number;
@@ -28,9 +22,10 @@ type SettingsValues = {
   thumb2MaxPx: number;
   homeModuleOpacity: number;
   homeBackdropOpacity: number;
+  homeBadgeColor: string;
+  homeBadgeOpacity: number;
   siteUrl: string;
   siteStartedAt: string;
-  lastBackupAt: string | null;
   updateGithubRepo: string;
   cosBucket: string;
   cosRegion: string;
@@ -43,62 +38,6 @@ type SettingsValues = {
 
 function fileCount(count: number): string {
   return `${count} 个文件`;
-}
-
-function UsageMeter({
-  title,
-  usedBytes,
-  maxMB,
-  warn,
-  children,
-}: {
-  title: string;
-  usedBytes: number;
-  maxMB: number;
-  warn?: boolean;
-  children: ReactNode;
-}) {
-  const percent = usagePercent(usedBytes, maxMB);
-  const hot = warn || percent >= 90;
-  return (
-    <div className="admin-usage">
-      <div className="admin-usage__head">
-        <strong>{title}</strong>
-        <span className={hot ? "admin-usage__cap is-warn" : "admin-usage__cap"}>
-          {formatBytes(usedBytes)} / {maxMB} MB（{percent}%）
-        </span>
-      </div>
-      <div
-        aria-hidden
-        className={hot ? "admin-usage__bar is-warn" : "admin-usage__bar"}
-      >
-        <span style={{ width: `${percent}%` }} />
-      </div>
-      <ul className="admin-usage__list">{children}</ul>
-    </div>
-  );
-}
-
-function UsageRow({
-  label,
-  bytes,
-  extra,
-  file,
-}: {
-  label: string;
-  bytes: number;
-  extra?: string;
-  file?: boolean;
-}) {
-  return (
-    <li className={file ? "admin-usage__row is-file" : "admin-usage__row"}>
-      <span title={file ? label : undefined}>{label}</span>
-      <span>
-        {formatBytes(bytes)}
-        {extra ? ` · ${extra}` : ""}
-      </span>
-    </li>
-  );
 }
 
 export function SettingsForm({ initial }: { initial: SettingsValues }) {
@@ -128,10 +67,9 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             banner: values.banner,
             homeModuleOpacity: Number(values.homeModuleOpacity),
             homeBackdropOpacity: Number(values.homeBackdropOpacity),
+            homeBadgeColor: values.homeBadgeColor.trim(),
+            homeBadgeOpacity: Number(values.homeBadgeOpacity),
             pageSize: Number(values.pageSize),
-            backupPeriodDays: Number(values.backupPeriodDays),
-            backupKeep: Number(values.backupKeep),
-            backupLocalMaxMB: Number(values.backupLocalMaxMB),
             localMediaMaxMB: Number(values.localMediaMaxMB),
             uploadMaxSizeMB: Number(values.uploadMaxSizeMB),
             uploadMaxImagesPerBatch: Number(values.uploadMaxImagesPerBatch),
@@ -337,6 +275,54 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             value={values.homeBackdropOpacity}
           />
         </label>
+        <div className="admin-field">
+          <span className="admin-field__head">
+            首页徽标颜色
+            <button
+              className="admin-field__reset"
+              disabled={!values.homeBadgeColor}
+              onClick={() =>
+                setValues((current) => ({ ...current, homeBadgeColor: "" }))
+              }
+              type="button"
+            >
+              跟随主题
+            </button>
+          </span>
+          <div className="admin-color-row">
+            <input
+              aria-label="首页徽标颜色"
+              onChange={(event) =>
+                setValues((current) => ({
+                  ...current,
+                  homeBadgeColor: event.target.value,
+                }))
+              }
+              type="color"
+              value={values.homeBadgeColor || "#f59e0b"}
+            />
+            <span className="admin-muted">
+              {values.homeBadgeColor
+                ? "分类、标签和「瞬间」徽标使用这个颜色"
+                : "当前跟随站点主题色；点色块可改为自定义颜色"}
+            </span>
+          </div>
+        </div>
+        <label className="admin-field">
+          首页徽标底色不透明度（{values.homeBadgeOpacity}%）
+          <input
+            max={100}
+            min={0}
+            onChange={(event) =>
+              setValues((current) => ({
+                ...current,
+                homeBadgeOpacity: Number(event.target.value),
+              }))
+            }
+            type="range"
+            value={values.homeBadgeOpacity}
+          />
+        </label>
       </AdminSection>
       <AdminSection title="列表与上传">
         <label className="admin-field">
@@ -466,87 +452,9 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
           占用只统计本机缓存，不含 COS。新上传会同时写本地和 COS。一级缩略图走 COS；二级缩略图只留在本机，给首页瞬间瀑布用。原图保持原格式。超上限只删最早的本地副本，不删云端。已有图片可到{" "}
           <Link href="/admin/uploads">媒体库</Link> 重新生成一级或二级缩略图。
         </p>
-      </AdminSection>
-      <AdminSection title="自动备份">
         <p className="admin-muted">
-          按下面的天数自动备份数据库与本地图片。开启加密后
-          <strong>不会自动执行</strong>
-          ——加密备份需要你每次到「备份」页手动输入口令（口令不落盘，定时任务拿不到）。
-        </p>
-        <label className="admin-field">
-          每隔几天自动备份
-          <input
-            min={1}
-            max={365}
-            onChange={(event) =>
-              setValues((current) => ({
-                ...current,
-                backupPeriodDays: Number(event.target.value),
-              }))
-            }
-            type="number"
-            value={values.backupPeriodDays}
-          />
-        </label>
-        <label className="admin-field">
-          最多留几份
-          <input
-            min={1}
-            max={30}
-            onChange={(event) =>
-              setValues((current) => ({
-                ...current,
-                backupKeep: Number(event.target.value),
-              }))
-            }
-            type="number"
-            value={values.backupKeep}
-          />
-        </label>
-        <label className="admin-field">
-          本地备份总大小上限（MB）
-          <input
-            min={64}
-            max={10240}
-            onChange={(event) =>
-              setValues((current) => ({
-                ...current,
-                backupLocalMaxMB: Number(event.target.value),
-              }))
-            }
-            type="number"
-            value={values.backupLocalMaxMB}
-          />
-        </label>
-        <div className="admin-usage-toolbar">{renderScanButton()}</div>
-        {usage ? (
-          <UsageMeter
-            maxMB={Number(values.backupLocalMaxMB) || 0}
-            title="本地备份占用"
-            usedBytes={usage.backups.bytes}
-          >
-            <UsageRow
-              bytes={usage.backups.bytes}
-              extra={`${usage.backups.count} 份 / 最多 ${values.backupKeep} 份`}
-              label="合计"
-            />
-            {usage.backups.files.length === 0 ? (
-              <li className="admin-usage__empty">还没有本地备份包</li>
-            ) : (
-              usage.backups.files.map((file) => (
-                <UsageRow file key={file.name} bytes={file.size} label={file.name} />
-              ))
-            )}
-          </UsageMeter>
-        ) : (
-          <p className="admin-muted">
-            点「扫描本机占用」后显示各本地备份包体积。打开本页不会自动扫盘。
-          </p>
-        )}
-        <p className="admin-muted">
-          占用统计本机备份包（加密与非加密都算），不含 COS。上次备份：
-          {values.lastBackupAt ?? "尚未备份"}。本地超上限只删本机旧包，COS
-          上的副本还在。手动备份和恢复在 <Link href="/admin/backups">备份</Link> 页。
+          自动备份（每几天、几点几分、保留几份、本地备份占用）已移到{" "}
+          <Link href="/admin/backups">备份</Link> 页，跟手动备份、恢复放在一起。
         </p>
       </AdminSection>
       <AdminSection title="腾讯云 COS">

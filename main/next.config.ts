@@ -12,7 +12,10 @@ const nextConfig: NextConfig = {
   // 只匹配 Origin 的 hostname（不含协议与端口），* 恰好替换一段标签：192.168.2.* 可覆盖 .36 且抗 DHCP 漂移。
   // 仅 dev 生效，不影响生产构建；不用真机时删掉此块即可。
   // 10.0.2.2 是 Android 模拟器约定的宿主机回环地址（真机壳/模拟器都要能连 HMR）。
-  allowedDevOrigins: ["192.168.2.*", "*.ts.net", "10.0.2.2"],
+  // 127.0.0.1 必须有：`pnpm shot` / CDP 截图工具默认就用 127.0.0.1，而 localhost 不算同源 ——
+  // 缺了它页面照常渲染，但客户端 chunk 全被 403 拦掉、**整页不 hydrate**（交互全哑、附带的
+  // 副作用也不执行），看起来像"功能坏了"。见 docs/pitfalls.md P-138。
+  allowedDevOrigins: ["127.0.0.1", "192.168.2.*", "*.ts.net", "10.0.2.2"],
   images: {
     loader: "custom",
     loaderFile: "./src/lib/media/image-loader.ts",

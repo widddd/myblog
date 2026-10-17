@@ -13,10 +13,18 @@
 | title | String | |
 | content | String | MDX 正文（编辑器产出） |
 | excerpt | String? | 摘要（密码文对外不返回） |
-| cover | String? | 封面图 URL（列表卡与 `bannerStyle=cover` 的详情顶图） |
-| bannerStyle | String | `cover` / `solid` / `gradient`，默认 `cover` |
-| bannerColor | String? | 纯色或渐变起始色 `#RRGGBB` |
-| bannerColor2 | String? | 渐变结束色 `#RRGGBB` |
+| cover | String? | 列表卡封面图 URL |
+| coverStyle | String（默认 `image`） | 列表卡封面的独立形态：`image` / `solid` / `gradient` / `none`；**不再受 `bannerStyle` 影响** |
+| coverColor | String? | 封面纯色或渐变起始色 `#RRGGBB` |
+| coverColor2 | String? | 封面渐变结束色 `#RRGGBB` |
+| bannerStyle | String | `cover`（与封面一致）/ `image`（单独图）/ `solid` / `gradient`，默认 `cover` |
+| bannerImage | String? | Banner 单独上传的图；`bannerStyle=cover` 时不使用，避免重复上传 |
+| bannerColor | String? | Banner 纯色或渐变起始色 `#RRGGBB` |
+| bannerColor2 | String? | Banner 渐变结束色 `#RRGGBB` |
+| coverFocalX / coverFocalY | Int（默认 50） | 列表卡封面焦点（0–100 百分比，CSS `object-position`） |
+| bannerFocalX / bannerFocalY | Int（默认 50） | 文章详情 Banner 焦点（0–100 百分比） |
+
+> 封面/Banner 解耦迁移：`20261017120000_post_cover_banner_split`（把旧 `bannerStyle` 的形态与颜色复制成封面配置，并预填 `bannerImage=cover`；历史展示不变）。
 | passwordHash | String? | 有值即密码文章（bcrypt） |
 | status | String | `draft` / `scheduled` / `published` |
 | publishedAt | DateTime? | 定时发布时间；前台查询条件 `status=published AND publishedAt<=now` |
@@ -44,7 +52,9 @@ slug 唯一、name；Tag 通过 PostTag 与 Post 多对多。
 后台「清空数据」会连这份清单一起删（与分类/标签同级的内容词表）；`AdminUser.penName` 属账号，不在此列。
 
 ### Moment（瞬间）
-content（文本）、images（JSON：`[{key,thumb,width,height}]`）、createdAt。
+content（文本，**2026-10 起允许空串** —— 只发图片/视频也成立）、images（JSON：`[{key,thumb,width,height,kind?,mime?,duration?}]`）、createdAt。
+
+**媒体数组没有改表结构**（仍是 JSON 字符串），2026-10 只往里加字段：`kind: "image" | "video"`（**缺省 = 图片**，旧行零改动）、视频带 `mime` 与 `duration`，**视频没有 `thumb`**（站点不装 ffmpeg、不生成视频封面，见 [moment-video-spec.md](moment-video-spec.md)）。字段名仍叫 `images` 是为了不动库里的既有 JSON 与所有读写路径；判定统一走 `lib/moments/types.ts` 的 `momentMediaKind()`。跨字段规则（文字或媒体至少一个、视频 ≤ 1 个）在 `lib/moments/compose-rules.ts`。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -93,7 +103,7 @@ momentId + fingerprint（IP+UA 哈希）联合唯一，防重复点赞；公开 
 瞬间目标（`targetType='moment'`）**读与写两侧都过可见期**：`listApprovedComments()` 先用 `findVisibleMomentId()` 判定，不在可见期内返回空列表；提交评论 404。
 
 ### Setting（站点配置 KV）
-key 唯一、value（JSON string）。默认值单一事实源为 `main/src/lib/settings.ts`：`siteName=""`（创建站点时手填，禁止默认 MyBlog）、`announcement=""`、`banner=""`、`pageSize=10`、`backupPeriodDays=3`、`backupKeep=5`、`backupLocalMaxMB=512`、`localMediaMaxMB=512`、`uploadMaxSizeMB=10`、`uploadMaxImagesPerBatch=9`（手机相册/瞬间配图「一次最多选几张」，Android 客户端经 `GET /api/upload/limits` 取同一个值，换算法在 `lib/upload/limits.ts`）、`thumbMaxPx=480`、`thumb2MaxPx=320`、`momentVisibleDays=0`（瞬间全局可见期天数，0 = 永久公开，范围 0–3650；是可见范围组的天花板）、`homeModuleOpacity=32`、`homeBackdropOpacity=100`、`siteUrl=""`、`siteStartedAt=""`、`updateGithubRepo=""`、`adminAccent="graphite"`（6 套预设之一，单一事实源 `main/src/lib/admin/accents.ts`）、`dashboardCards`（7 个卡片键全 true，单一事实源 `main/src/lib/admin/dashboard-cards.ts`）、`lastBackupAt=null`、`cosBucket/cosRegion/cosSecretId/cosSecretKey/cosPublicBaseUrl` 默认空串。COS 五项与密钥**禁止**进入公开设置。`siteStartedAt` 是本地日期时间（可到秒），给首页 `uptime` 模块用，**要进** `getPublicSettings`；空则前台不显示运行时间。`backupEncrypt` **不**进默认表、不进设置表单：用户未在备份页手设时，COS 访问为 HTTPS 则默认关加密，否则默认开加密。`localMediaMaxMB` 只约束本地媒体缓存，与备份上限分开。`siteUrl` 给 sitemap/RSS/OG；空则回退 `SITE_URL` 环境变量，再回退 `http://localhost:3000`。只接受 `https` 或本机 `http://localhost` / `127.0.0.1`。
+key 唯一、value（JSON string）。默认值单一事实源为 `main/src/lib/settings.ts`：`siteName=""`（创建站点时手填，禁止默认 MyBlog）、`announcement=""`、`banner=""`、`pageSize=10`、`backupPeriodDays=3`、`backupAtTime="03:00"`（周期备份的时刻，**服务器本地时间** `HH:MM`；与 `backupPeriodDays` 一起决定到期：上次备份那天 + N 天的该时刻；判定/归一/区间在 `main/src/lib/backup/schedule.ts`）、`backupKeep=5`、`backupLocalMaxMB=512`、`localMediaMaxMB=512`、`uploadMaxSizeMB=10`、`uploadMaxImagesPerBatch=9`（手机相册/瞬间配图「一次最多选几张」，Android 客户端经 `GET /api/upload/limits` 取同一个值，换算法在 `lib/upload/limits.ts`）、`thumbMaxPx=480`、`thumb2MaxPx=320`、`momentVisibleDays=0`（瞬间全局可见期天数，0 = 永久公开，范围 0–3650；是可见范围组的天花板）、`homeModuleOpacity=32`、`homeBackdropOpacity=100`、`homeBadgeColor=""`（空 = 跟随主题色）、`homeBadgeOpacity=16`（首页分类/标签/瞬间徽标的底色不透明度）、`siteUrl=""`、`siteStartedAt=""`、`updateGithubRepo=""`、`adminAccent="graphite"`（6 套预设之一，单一事实源 `main/src/lib/admin/accents.ts`）、`dashboardCards`（7 个卡片键全 true，单一事实源 `main/src/lib/admin/dashboard-cards.ts`）、`lastBackupAt=null`、`cosBucket/cosRegion/cosSecretId/cosSecretKey/cosPublicBaseUrl` 默认空串。COS 五项与密钥**禁止**进入公开设置。`siteStartedAt` 是本地日期时间（可到秒），给首页 `uptime` 模块用，**要进** `getPublicSettings`；空则前台不显示运行时间。`backupEncrypt` **不**进默认表、不进设置表单：用户未在备份页手设时，COS 访问为 HTTPS 则默认关加密，否则默认开加密。`localMediaMaxMB` 只约束本地媒体缓存，与备份上限分开。`siteUrl` 给 sitemap/RSS/OG；空则回退 `SITE_URL` 环境变量，再回退 `http://localhost:3000`。只接受 `https` 或本机 `http://localhost` / `127.0.0.1`。
 
 ### AdminUser（单管理员）
 username 唯一、passwordHash（bcrypt cost 12）、mustChangeCredentials（历史首次登录保护，默认 true）、`penName`（默认笔名，可空）。投产用创建站点页或 `pnpm setup` 手设站点名称、用户名/密码并写 `mustChangeCredentials=false`。无管理员时前台与 `/admin` 引导到 `/admin/setup`，bootstrap 只告警。之后可在「设置 → 登录账号」再改（含笔名；改笔名会立即让所有"没单独填作者"的文章换署名 —— 写入侧显式 `revalidateTag(posts, { expire: 0 })`，见 P-089）。instrumentation 与 Prisma seed 复用同一幂等 bootstrap（不代建管理员）。
@@ -109,11 +119,40 @@ username 唯一、passwordHash（bcrypt cost 12）、mustChangeCredentials（历
 新备份的完整 DEK 不进包、不进库：本机 `data/backup-host-secret.json` 的主机半钥与包内 `half` XOR 后得到 DEK，再与本表做 `timingSafeEqual`。v1 旧包仍可能带明文 `key`，仅只读兼容。
 
 ### Upload（上传文件）
-hash（完整 SHA-256，同内容去重）、driver（`local` / `cos`，历史值 `oss` 当 `cos`）、key（原文件 POSIX 相对 key）、mime、原图 width/height/size、createdAt（媒体库默认按此倒序）、variants（JSON：thumb/thumb2/content 的 key、MIME、宽高与大小；音频可有 `duration` 秒）。新上传走 `images/original|thumbs|thumbs2/{hh}/{hash}.*` 与 `videos|audio/{ext}/{hh}/{hash}.{ext}`；`thumbs2` 只留本地。旧 `media/` 与 `images/{hash}-*` 仍可读。详见 [media-layout-spec.md](media-layout-spec.md)。
+hash（完整 SHA-256，同内容去重）、driver（`local` / `cos`，历史值 `oss` 当 `cos`）、key（原文件 POSIX 相对 key）、mime、原图 width/height/size、createdAt（媒体库默认按此倒序）、variants（JSON：thumb/thumb2/content 的 key、MIME、宽高与大小；音频可有 `duration` 秒）、**albumId（Int?，相册归属：单归属、可空 = 未分类）**、**volumeId（Int?，相册内的一"卷"：可空 = 该相册里的「未分类」，照样展示）**。新上传走 `images/original|thumbs|thumbs2/{hh}/{hash}.*` 与 `videos|audio/{ext}/{hh}/{hash}.{ext}`；`thumbs2` 只留本地。旧 `media/` 与 `images/{hash}-*` 仍可读。详见 [media-layout-spec.md](media-layout-spec.md)。
+
+`albumId` 的外键是 `Album.id`，`ON DELETE SET NULL`：**删相册只解绑不删文件**。`volumeId` 的外键是 `AlbumVolume.id`，同为 `SET NULL`：**删卷只解绑**，照片回到本相册的「未分类」。相册只收图片（`image/*`），归册 / 归卷的写入口与筛选口径见 [albums-spec.md](albums-spec.md)。属「清空数据」范围（登记在 `lib/data-clear/coverage.ts`，见 P-103）。
 
 M3 使用现有字段即可，未新增 schema 或迁移。后台删除文章/瞬间时会显式清理对应 `Comment` 行（schema 对评论没有 Post/Moment 外键）。
 
 M4 同样不改 schema：游客评论 `pending`，管理员回复 `approved`+`isAdmin`；拒绝待审=删除。公开列表不回显 email/ip。
+
+### Album（相册）
+| 字段 | 说明 |
+|---|---|
+| slug | String @unique，`/albums/{slug}` 的地址段。允许中文（`slugify` 的中文兜底），只禁空白 / 斜杠 / 会破坏路径的字符；去重靠 `lib/albums/slug.ts` 的 `uniqueAlbumSlug()`（撞名加 `-2`） |
+| title | String，相册名（≤60 字） |
+| description | String 默认 `''`，相册说明（≤200 字） |
+| coverId | Int?，封面（只能指向**本相册里**的一张图）；为空时前台用第一张。图片被移出/移走时写侧会把封面清空，读侧还会再校验一次归属 |
+| enabled | Boolean 默认 true。关掉 = 列表不出现、详情 404、文章灯箱的「查看相册」按钮消失 |
+| sort | Int 默认 0，越小越靠前（相册列表与首页模块取数都按 `sort → createdAt`） |
+| createdAt / updatedAt | 时间戳 |
+
+相册里的照片 = `Upload.albumId = 本相册` 且 `mime` 是 `image/*` 的那些，按 `createdAt` **倒序**（新的在前，暂不做导演排序）。
+图片顺序、封面、张数都由 `lib/albums/query.ts` 算好；三档图片地址（二级 = 网格与首页预览 / 一级 = 展开态 / 原图 = 灯箱）复用瞬间那套 URL 口径，见 [albums-spec.md](albums-spec.md) §3.3。
+属「清空数据」范围（登记在 `lib/data-clear/coverage.ts`）。
+
+### AlbumVolume（相册里的一"卷"）
+| 字段 | 说明 |
+|---|---|
+| albumId | Int，所属相册；外键 `ON DELETE CASCADE`（删相册连带删卷） |
+| title | String 默认 `''`，卷名（自由文本，上限 60 字；**日期可以直接写进名字**，例如「2026-03-28 · 樱花季」）。**允许空串**：空卷名 = **这一卷不作为独立分组**（照片并入前台最前那组「不属于任何卷」）。后台新建时留空则自动给「第 N 卷」（友好默认），想得到空卷名请走「改名清空」 |
+| sort | Int 默认 0，详情页按 `sort → id` 排（后台可上移 / 下移重排） |
+| createdAt / updatedAt | 时间戳 |
+
+**分组与组头**（2026-10-03 用户口径）：对外相册页**先渲染「不属于任何卷」那一组**（= 没归卷的散图 + **空卷名卷里的照片**，合成一组），组头**只显示张数**（`N 张`，**不出现「未分类」字样**）；有名字的卷按 `sort → id` 跟在后面，组头显示 `title`（**自由文本，不强制日期** —— 想标日期就写进名字里）。**没有自动日期这条回落**：`PublicAlbumVolume.dateText` 与 `volumeDateText()` 已删除，整册区间 `album.dateText` 只给相册头图元信息用；日期不落库，没有需要同步的冗余字段。**空卷名只影响"是否单独成组"**，不改 `Upload.volumeId` 的归属（不变量照旧），把它改回有名字即恢复成独立分组。
+**不变量：`Upload.volumeId` 指向的卷必须属于这张图所在的相册**——数据库没有跨列约束，只能由 `lib/albums/admin.ts` 的写入口守：换相册清零卷、归卷校验同册、删卷只解绑（照片回到**后台口径**的「未分类」= 前台最前那组）。
+详情页按卷展示（每卷一叠、可展开、横屏向右 / 竖屏向下），没建过卷的相册 = 所有照片落在最前那一叠（「不属于任何卷」，前台不写「未分类」三个字、组头只有张数）、不留空组头。版式定稿见 [albums-spec.md](albums-spec.md) 与 `demo/album-page`。
 
 ### HomeModule（首页模块目录）
 | 字段 | 说明 |
@@ -121,7 +160,7 @@ M4 同样不改 schema：游客评论 `pending`，管理员回复 `approved`+`is
 | slug | String @unique。内置固定为 key，自建为 `custom-<slugify(name)>` |
 | name | 显示名 |
 | kind | `builtin` / `custom` |
-| builtinKey | `banner`/`welcome`/`recommend`/`moments`/`posts`/`announcement`/`site`/`categories`/`tags`/`recent`/`uptime`，仅 builtin |
+| builtinKey | `banner`/`welcome`/`recommend`/`moments`/`posts`/`albums`/`announcement`/`site`/`categories`/`tags`/`recent`/`uptime`/`popup`/`app-promo`，仅 builtin |
 | html / css / js | 仅 custom，各上限 32KB，只有管理员能写且不过 sanitize（pitfalls P-034） |
 | blocks | JSON `HomeBlock[]`，仅 custom；读取时按已知 type 过滤 |
 | config | JSON 实例配置；读取时与 `lib/home/builtins.ts` 的默认值合并 |

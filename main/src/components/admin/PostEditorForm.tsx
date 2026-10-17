@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeftIcon, GearIcon, InfoCircledIcon } from "@radix-ui/react-icons";
@@ -9,6 +9,7 @@ import { AnimatePresence, m } from "motion/react";
 import { EditorLoader } from "@/components/admin/EditorLoader";
 import { EditorPreview } from "@/components/admin/EditorPreview";
 import { adminJson } from "@/lib/client/admin";
+import { registerLocalPreview, releaseLocalPreview } from "@/lib/client/local-preview";
 import {
   editorImageUrl,
   finalizeAdminUploads,
@@ -16,7 +17,12 @@ import {
   uploadAdminFile,
   UploadCancelledError,
 } from "@/lib/client/upload";
-import { bannerFill } from "@/lib/posts/banner";
+import {
+  focalPosition,
+  randomBannerGradient,
+  resolveBannerVisual,
+  resolveCoverVisual,
+} from "@/lib/posts/banner";
 import type { AdminPostView } from "@/lib/posts/admin-types";
 import { AUTHOR_NAME_MAX } from "@/lib/posts/author";
 import {
@@ -99,6 +105,55 @@ function SettingsFold({
   );
 }
 
+/**
+ * 图片焦点控制：两个 0–100 滑杆，分别控制横向 / 纵向裁切位置。
+ * 预览本身是 `object-fit: cover`，所以调完能直接看到列表卡片 / Banner 会裁到哪里。
+ */
+function FocalControls({
+  label,
+  x,
+  y,
+  onChangeX,
+  onChangeY,
+}: {
+  label: string;
+  x: number;
+  y: number;
+  onChangeX: (value: number) => void;
+  onChangeY: (value: number) => void;
+}) {
+  return (
+    <div className="admin-focal-controls">
+      <label className="admin-focal-control">
+        <span>
+          左右位置 <em>{x}%</em>
+        </span>
+        <input
+          aria-label={`${label}左右位置`}
+          max={100}
+          min={0}
+          onChange={(event) => onChangeX(Number(event.target.value))}
+          type="range"
+          value={x}
+        />
+      </label>
+      <label className="admin-focal-control">
+        <span>
+          上下位置 <em>{y}%</em>
+        </span>
+        <input
+          aria-label={`${label}上下位置`}
+          max={100}
+          min={0}
+          onChange={(event) => onChangeY(Number(event.target.value))}
+          type="range"
+          value={y}
+        />
+      </label>
+    </div>
+  );
+}
+
 export function PostEditorForm({
   mode,
   post,
@@ -116,15 +171,49 @@ export function PostEditorForm({
   );
   const [excerpt, setExcerpt] = useState(post?.excerpt ?? "");
   const [cover, setCover] = useState(post?.cover ?? "");
+  /**
+   * 封面的**本机预览地址**（blob）。`cover` 永远是服务端地址（保存/发布要它），
+   * 两者分开存：显示优先用本机那份，省掉"刚选完就回源拉一遍原图"
+   * （见 lib/client/local-preview.ts）。
+   */
+  const [coverPreview, setCoverPreview] = useState("");
+  const coverSrc = coverPreview || cover;
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const coverTriggerRef = useRef<HTMLButtonElement>(null);
+  /** 列表卡封面**自己的**形态与颜色，不再跟 bannerStyle 联动 */
+  const [coverStyle, setCoverStyle] = useState(
+    post?.coverStyle ?? (post?.cover ? "image" : "none"),
+  );
+  const [coverColor, setCoverColor] = useState(post?.coverColor ?? "#4db8e8");
+  const [coverColor2, setCoverColor2] = useState(post?.coverColor2 ?? "#7b6cff");
+  /** 列表卡片封面焦点：0–100 百分比（50/50 = 居中） */
+  const [coverFocalX, setCoverFocalX] = useState(post?.coverFocalX ?? 50);
+  const [coverFocalY, setCoverFocalY] = useState(post?.coverFocalY ?? 50);
+  /** 文章详情 Banner：与封面完全独立，可另传图片 */
+  const [bannerImage, setBannerImage] = useState(post?.bannerImage ?? "");
+  const [bannerImagePreview, setBannerImagePreview] = useState("");
+  const bannerImageSrc = bannerImagePreview || bannerImage;
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+  const bannerTriggerRef = useRef<HTMLButtonElement>(null);
+  /** 手机底部 sheet 的滚动锚点：文件选择器打开/关闭时，外层 rail 不能被焦点滚动带走。 */
+  const railRef = useRef<HTMLElement>(null);
+  const railBodyRef = useRef<HTMLDivElement>(null);
+  const pickerScrollRef = useRef<{ rail: number; body: number; windowY: number } | null>(null);
   const [bannerStyle, setBannerStyle] = useState(
-    post?.bannerStyle === "solid" || post?.bannerStyle === "gradient"
+    post?.bannerStyle === "cover" ||
+      post?.bannerStyle === "image" ||
+      post?.bannerStyle === "solid" ||
+      post?.bannerStyle === "gradient"
       ? post.bannerStyle
-      : "cover",
+      : "gradient",
   );
   const [bannerColor, setBannerColor] = useState(post?.bannerColor ?? "#4db8e8");
   const [bannerColor2, setBannerColor2] = useState(
     post?.bannerColor2 ?? "#7b6cff",
   );
+  /** 文章详情 Banner 焦点：与列表卡片分开保存 */
+  const [bannerFocalX, setBannerFocalX] = useState(post?.bannerFocalX ?? 50);
+  const [bannerFocalY, setBannerFocalY] = useState(post?.bannerFocalY ?? 50);
   const [editorKey, setEditorKey] = useState(0);
   const [status, setStatus] = useState(post?.status ?? "draft");
   const [publishedAt, setPublishedAt] = useState(
@@ -170,6 +259,23 @@ export function PostEditorForm({
     () => normalizePostContent(post?.content ?? "# 新文章\n\n"),
     [post?.content],
   );
+  const coverVisual = resolveCoverVisual(
+    coverStyle,
+    coverSrc,
+    coverColor,
+    coverColor2,
+  );
+  const bannerVisual = resolveBannerVisual({
+    bannerStyle,
+    bannerImage: bannerImageSrc,
+    bannerColor,
+    bannerColor2,
+    coverStyle,
+    cover: coverSrc,
+    coverColor,
+    coverColor2,
+  });
+  const bannerNeedsImage = bannerStyle === "image" && !bannerImageSrc;
 
   useEffect(() => {
     if (!sheetOpen) {
@@ -184,8 +290,95 @@ export function PostEditorForm({
     return () => document.removeEventListener("keydown", onKey);
   }, [sheetOpen]);
 
+  // 手机设置 sheet 是模态：锁住页面滚动，否则选择封面时文件选择器把焦点还给 input，
+  // 浏览器会把外层 body 滚到 sheet 下方的空白区，看起来像整页白掉。
+  useEffect(() => {
+    if (!sheetOpen) {
+      return;
+    }
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+    };
+  }, [sheetOpen]);
+
+  /**
+   * 桌面/手机都锁住 window 的滚动。
+   *
+   * `html, body { overflow: clip }` 能挡普通滚动，但 Chrome 在
+   * `scrollIntoView()` / 文件选择器把按钮拉进视口时仍可能滚 window（实测 +49px），
+   * 而且 editor 本身是固定视口，window 本来就不该动。这里在 scroll 回调里把
+   * 非零位置拉回 0；卸载时恢复进入编辑器前的位置，避免影响返回列表。
+   */
+  useEffect(() => {
+    const previousX = window.scrollX;
+    const previousY = window.scrollY;
+    const pinWindow = () => {
+      if (window.scrollX !== 0 || window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+    pinWindow();
+    window.addEventListener("scroll", pinWindow, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", pinWindow);
+      window.scrollTo(previousX, previousY);
+    };
+  }, []);
+
   function closeSettingsSheet() {
     setSheetOpen(false);
+  }
+
+  /**
+   * 文件选择器会把 input 滚进视口，浏览器会连**外层 sheet 容器**一起滚动；
+   * `overflow:hidden` 只挡用户滚动，不挡程序化滚动，所以要在打开前记下两层位置，
+   * 选完后恢复。`rail-body` 才是唯一允许滚动的容器，`rail` 本身保持 0。
+   */
+  function rememberSheetScroll() {
+    pickerScrollRef.current = {
+      rail: railRef.current?.scrollTop ?? 0,
+      body: railBodyRef.current?.scrollTop ?? 0,
+      // 编辑器是固定视口，window 的正确位置就是 0；这里明确存 0，避免把异常滚动位置带回来。
+      windowY: 0,
+    };
+  }
+
+  function restoreSheetScroll() {
+    const saved = pickerScrollRef.current;
+    if (!saved) {
+      return;
+    }
+    if (railRef.current) {
+      railRef.current.scrollTop = saved.rail;
+    }
+    if (railBodyRef.current) {
+      railBodyRef.current.scrollTop = saved.body;
+    }
+    if (window.scrollX !== 0 || window.scrollY !== 0) {
+      window.scrollTo(0, saved.windowY);
+    }
+  }
+
+  function openCoverPicker() {
+    rememberSheetScroll();
+    coverInputRef.current?.click();
+  }
+
+  function openBannerPicker() {
+    rememberSheetScroll();
+    bannerInputRef.current?.click();
+  }
+
+  /** 选完文件后把焦点还给触发按钮，避免浏览器把焦点留在文件 input 上继续滚页面。 */
+  function restorePickerFocus(trigger: HTMLButtonElement | null) {
+    requestAnimationFrame(() => trigger?.focus({ preventScroll: true }));
   }
 
   function openSettingsSheet() {
@@ -350,13 +543,89 @@ export function PostEditorForm({
       const uploaded = await uploadAdminFile(file, "image", undefined, {
         defer: true,
       });
-      setCover(editorImageUrl(uploaded));
+      const url = editorImageUrl(uploaded);
+      // 换封面时把上一张的本机预览回收掉（谁创建谁回收）；与 Banner 共用同一张时不能误回收
+      if (cover !== bannerImage) {
+        releaseLocalPreview(cover);
+      }
+      setCoverPreview(registerLocalPreview(file, url) ?? "");
+      setCover(url);
+      setCoverStyle("image");
     } catch (caught) {
       if (caught instanceof UploadCancelledError) {
         return;
       }
       setError(caught instanceof Error ? caught.message : "封面上传失败");
+    } finally {
+      requestAnimationFrame(() => {
+        restoreSheetScroll();
+        pickerScrollRef.current = null;
+      });
     }
+  }
+
+  async function handleBannerImage(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+    try {
+      const uploaded = await uploadAdminFile(file, "image", undefined, {
+        defer: true,
+      });
+      const url = editorImageUrl(uploaded);
+      if (bannerImage !== cover) {
+        releaseLocalPreview(bannerImage);
+      }
+      setBannerImagePreview(registerLocalPreview(file, url) ?? "");
+      setBannerImage(url);
+      setBannerStyle("image");
+    } catch (caught) {
+      if (caught instanceof UploadCancelledError) {
+        return;
+      }
+      setError(caught instanceof Error ? caught.message : "Banner 上传失败");
+    } finally {
+      requestAnimationFrame(() => {
+        restoreSheetScroll();
+        pickerScrollRef.current = null;
+      });
+    }
+  }
+
+  function handleRemoveCover() {
+    if (cover !== bannerImage) {
+      releaseLocalPreview(cover);
+    }
+    setCoverPreview("");
+    setCover("");
+    setCoverStyle("none");
+    if (coverInputRef.current) {
+      coverInputRef.current.value = "";
+    }
+  }
+
+  function handleRemoveBanner() {
+    if (bannerImage !== cover) {
+      releaseLocalPreview(bannerImage);
+    }
+    setBannerImagePreview("");
+    setBannerImage("");
+    if (bannerInputRef.current) {
+      bannerInputRef.current.value = "";
+    }
+    // 删除 Banner 不留下白顶：落一张随机混色，仍可继续改成纯色或换图。
+    const next = randomBannerGradient();
+    setBannerColor(next.color);
+    setBannerColor2(next.color2);
+    setBannerStyle("gradient");
+  }
+
+  function handleCoverStyleChange(next: "image" | "solid" | "gradient" | "none") {
+    if (next === "none") {
+      handleRemoveCover();
+      return;
+    }
+    setCoverStyle(next);
   }
 
   async function handleMarkdownFile(file: File | undefined) {
@@ -392,16 +661,30 @@ export function PostEditorForm({
     setSavingAs(nextStatus);
     try {
       let nextCover = cover;
+      let nextBannerImage = bannerImage;
       if (publishing) {
-        const hashes = collectMediaHashes(content, cover);
+        const hashes = collectMediaHashes(content, cover, bannerImage);
         const finalized = await finalizeAdminUploads(hashes);
         const coverHash = firstMediaHash(cover);
-        const match = coverHash
+        const coverMatch = coverHash
           ? finalized.find((item) => item.hash === coverHash)
           : undefined;
-        if (match) {
-          nextCover = editorImageUrl(match);
+        if (coverMatch) {
+          nextCover = editorImageUrl(coverMatch);
+          // 发布后封面已经有对外的 COS / 站内地址，本机 blob 预览可以收了
+          releaseLocalPreview(cover);
+          setCoverPreview("");
           setCover(nextCover);
+        }
+        const bannerHash = firstMediaHash(bannerImage);
+        const bannerMatch = bannerHash
+          ? finalized.find((item) => item.hash === bannerHash)
+          : undefined;
+        if (bannerMatch) {
+          nextBannerImage = editorImageUrl(bannerMatch);
+          releaseLocalPreview(bannerImage);
+          setBannerImagePreview("");
+          setBannerImage(nextBannerImage);
         }
       }
 
@@ -412,9 +695,17 @@ export function PostEditorForm({
         content,
         excerpt: excerpt || null,
         cover: nextCover || null,
+        coverStyle,
+        coverColor: coverStyle === "solid" || coverStyle === "gradient" ? coverColor : null,
+        coverColor2: coverStyle === "gradient" ? coverColor2 : null,
         bannerStyle,
-        bannerColor: bannerStyle === "cover" ? null : bannerColor,
+        bannerImage: nextBannerImage || null,
+        bannerColor: bannerStyle === "solid" || bannerStyle === "gradient" ? bannerColor : null,
         bannerColor2: bannerStyle === "gradient" ? bannerColor2 : null,
+        coverFocalX,
+        coverFocalY,
+        bannerFocalX,
+        bannerFocalY,
         status: nextStatus,
         publishedAt: publishedAt || null,
         pinned,
@@ -473,6 +764,7 @@ export function PostEditorForm({
         aria-labelledby={sheetOpen ? "post-settings-title" : undefined}
         aria-modal={sheetOpen || undefined}
         className={cn("post-workspace__rail", !settingsOpen && "is-collapsed")}
+        ref={railRef}
         role={sheetOpen ? "dialog" : undefined}
       >
         <div className="post-workspace__rail-head">
@@ -495,7 +787,7 @@ export function PostEditorForm({
             </span>
           </button>
         </div>
-        <div className="post-workspace__rail-body">
+        <div className="post-workspace__rail-body" ref={railBodyRef}>
           <SettingsFold
             onToggle={() => toggleFold("publish")}
             open={folds.publish}
@@ -716,81 +1008,290 @@ export function PostEditorForm({
             open={folds.cover}
             title="封面与 Banner"
           >
-            <div className="admin-field">
-              封面
-              {cover ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img alt="封面预览" className="admin-cover-preview" src={cover} />
-              ) : null}
-              <input
-                accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
-                onChange={(event) => void handleCover(event.target.files?.[0])}
-                type="file"
-              />
-            </div>
-            {bannerStyle === "cover" && !cover ? (
-              <p className="admin-muted">
-                还没选封面图 → 卡片按「无封面」处理：细条样式，只显示标题和文章开头一小段。
-                想用色块就切「纯色 / 混色」——那是封面，不算无封面。
-              </p>
-            ) : null}
-            <div className="admin-chip-row" role="radiogroup" aria-label="顶 Banner">
-              {(
-                [
-                  ["cover", "封面图"],
-                  ["solid", "纯色"],
-                  ["gradient", "混色"],
-                ] as const
-              ).map(([value, label]) => (
-                <label
-                  className={cn("admin-chip", bannerStyle === value && "is-on")}
-                  key={value}
-                >
-                  <input
-                    checked={bannerStyle === value}
-                    name="bannerStyle"
-                    onChange={() => setBannerStyle(value)}
-                    type="radio"
-                    value={value}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            {bannerStyle !== "cover" ? (
-              <div className="admin-field-row">
-                <label className="admin-field">
-                  {bannerStyle === "gradient" ? "起始色" : "颜色"}
-                  <input
-                    onChange={(event) => setBannerColor(event.target.value)}
-                    type="color"
-                    value={bannerColor}
-                  />
-                </label>
-                {bannerStyle === "gradient" ? (
-                  <label className="admin-field">
-                    结束色
+            <section className="admin-media-editor">
+              <div className="admin-media-editor__head">
+                <strong>封面</strong>
+                <span className="admin-muted">列表卡片：图片或纯色/混色，独立于 Banner</span>
+              </div>
+              <div className="admin-chip-row" role="radiogroup" aria-label="封面形态">
+                {(
+                  [
+                    ["image", "图片"],
+                    ["solid", "纯色"],
+                    ["gradient", "混色"],
+                    ["none", "无封面"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <label
+                    className={cn("admin-chip", coverStyle === value && "is-on")}
+                    key={value}
+                  >
                     <input
-                      onChange={(event) => setBannerColor2(event.target.value)}
+                      checked={coverStyle === value}
+                      name="coverStyle"
+                      onChange={() => handleCoverStyleChange(value)}
+                      type="radio"
+                      value={value}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              {coverStyle === "image" ? (
+                <div className="admin-cover-editor">
+                  {coverVisual.kind === "image" ? (
+                    <div className="admin-cover-preview">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        alt="封面预览"
+                        className="admin-cover-preview__img"
+                        src={coverSrc}
+                        style={{
+                          objectPosition: focalPosition(coverFocalX, coverFocalY),
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <span className="admin-cover-empty">还没有封面图</span>
+                  )}
+                  <div className="admin-cover-actions">
+                    <input
+                      accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                      aria-hidden="true"
+                      hidden
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.currentTarget.value = "";
+                        restorePickerFocus(coverTriggerRef.current);
+                        void handleCover(file);
+                      }}
+                      ref={coverInputRef}
+                      tabIndex={-1}
+                      type="file"
+                    />
+                    <button
+                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                      onClick={openCoverPicker}
+                      ref={coverTriggerRef}
+                      type="button"
+                    >
+                      {coverVisual.kind === "image" ? "更换封面图" : "选择封面图"}
+                    </button>
+                    <button
+                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                      onClick={handleRemoveCover}
+                      type="button"
+                    >
+                      删除封面
+                    </button>
+                  </div>
+                  {coverVisual.kind === "image" ? (
+                    <FocalControls
+                      label="列表封面"
+                      onChangeX={setCoverFocalX}
+                      onChangeY={setCoverFocalY}
+                      x={coverFocalX}
+                      y={coverFocalY}
+                    />
+                  ) : null}
+                </div>
+              ) : coverStyle === "solid" || coverStyle === "gradient" ? (
+                <div className="admin-cover-editor">
+                  <div
+                    aria-hidden="true"
+                    className="admin-cover-preview"
+                    style={{
+                      background:
+                        coverVisual.kind === "fill"
+                          ? coverVisual.background
+                          : "var(--admin-surface-2)",
+                    }}
+                  />
+                  <div className="admin-field-row">
+                    <label className="admin-field">
+                      {coverStyle === "gradient" ? "起始色" : "颜色"}
+                      <input
+                        onChange={(event) => setCoverColor(event.target.value)}
+                        type="color"
+                        value={coverColor}
+                      />
+                    </label>
+                    {coverStyle === "gradient" ? (
+                      <label className="admin-field">
+                        结束色
+                        <input
+                          onChange={(event) => setCoverColor2(event.target.value)}
+                          type="color"
+                          value={coverColor2}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                  <div className="admin-cover-actions">
+                    <button
+                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                      onClick={handleRemoveCover}
+                      type="button"
+                    >
+                      删除封面
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="admin-muted">
+                  当前没有封面：列表里走细条卡，只显示标题和文章开头。
+                </p>
+              )}
+            </section>
+
+            <section className="admin-media-editor">
+              <div className="admin-media-editor__head">
+                <strong>Banner</strong>
+                <span className="admin-muted">文章详情顶图，可以单独设置，也可以直接复用封面</span>
+              </div>
+              <div className="admin-chip-row" role="radiogroup" aria-label="Banner 形态">
+                {(
+                  [
+                    ["cover", "与封面一致"],
+                    ["image", "单独图片"],
+                    ["solid", "纯色"],
+                    ["gradient", "混色"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <label
+                    className={cn("admin-chip", bannerStyle === value && "is-on")}
+                    key={value}
+                  >
+                    <input
+                      checked={bannerStyle === value}
+                      name="bannerStyle"
+                      onChange={() => setBannerStyle(value)}
+                      type="radio"
+                      value={value}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              {bannerStyle === "cover" ? (
+                <p className="admin-muted">
+                  复用封面的图片或配色，不用重复上传；封面换成纯色/混色时 Banner 也跟着换。
+                </p>
+              ) : null}
+
+              {bannerStyle === "image" ? (
+                <div className="admin-cover-editor">
+                  {bannerVisual.kind === "image" && !bannerNeedsImage ? (
+                    <div className="admin-banner-preview admin-banner-preview--editor">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        alt="Banner 预览"
+                        className="admin-banner-preview__image"
+                        src={bannerVisual.src}
+                        style={{
+                          objectPosition: focalPosition(bannerFocalX, bannerFocalY),
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <span className="admin-cover-empty">还没有 Banner 图</span>
+                  )}
+                  <div className="admin-cover-actions">
+                    <input
+                      accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                      aria-hidden="true"
+                      hidden
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.currentTarget.value = "";
+                        restorePickerFocus(bannerTriggerRef.current);
+                        void handleBannerImage(file);
+                      }}
+                      ref={bannerInputRef}
+                      tabIndex={-1}
+                      type="file"
+                    />
+                    <button
+                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                      onClick={openBannerPicker}
+                      ref={bannerTriggerRef}
+                      type="button"
+                    >
+                      {bannerVisual.kind === "image" && !bannerNeedsImage
+                        ? "更换 Banner 图"
+                        : "选择 Banner 图"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {bannerStyle === "solid" || bannerStyle === "gradient" ? (
+                <div className="admin-field-row">
+                  <label className="admin-field">
+                    {bannerStyle === "gradient" ? "起始色" : "颜色"}
+                    <input
+                      onChange={(event) => setBannerColor(event.target.value)}
                       type="color"
-                      value={bannerColor2}
+                      value={bannerColor}
                     />
                   </label>
+                  {bannerStyle === "gradient" ? (
+                    <label className="admin-field">
+                      结束色
+                      <input
+                        onChange={(event) => setBannerColor2(event.target.value)}
+                        type="color"
+                        value={bannerColor2}
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div
+                aria-hidden="true"
+                className="admin-banner-preview"
+                style={{
+                  background:
+                    !bannerNeedsImage && bannerVisual.kind === "fill"
+                      ? bannerVisual.background
+                      : "var(--admin-surface-2)",
+                }}
+              >
+                {!bannerNeedsImage && bannerVisual.kind === "image" ? (
+                  // 与前台 CoverMedia 同口径：object-fit + object-position，不用 background。
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    alt=""
+                    className="admin-banner-preview__image"
+                    src={bannerVisual.src}
+                    style={{ objectPosition: focalPosition(bannerFocalX, bannerFocalY) }}
+                  />
                 ) : null}
               </div>
-            ) : null}
-            <div
-              aria-hidden="true"
-              className="admin-banner-preview"
-              style={{
-                background:
-                  bannerStyle === "cover"
-                    ? cover
-                      ? `center / cover url("${cover}")`
-                      : "var(--heo-secondbg)"
-                    : bannerFill(bannerStyle, bannerColor, bannerColor2),
-              }}
-            />
+
+              {!bannerNeedsImage && bannerVisual.kind === "image" ? (
+                <FocalControls
+                  label="Banner"
+                  onChangeX={setBannerFocalX}
+                  onChangeY={setBannerFocalY}
+                  x={bannerFocalX}
+                  y={bannerFocalY}
+                />
+              ) : null}
+
+              <div className="admin-cover-actions">
+                <button
+                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                  onClick={handleRemoveBanner}
+                  type="button"
+                >
+                  删除 Banner（恢复随机混色）
+                </button>
+              </div>
+            </section>
           </SettingsFold>
 
           <SettingsFold

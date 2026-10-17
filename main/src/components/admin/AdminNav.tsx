@@ -3,6 +3,7 @@
 import {
   ArchiveIcon,
   BoxIcon,
+  CameraIcon,
   ChatBubbleIcon,
   DashboardIcon,
   DotsHorizontalIcon,
@@ -61,6 +62,7 @@ const RAIL_GROUPS: NavGroup[] = [
       { href: "/admin/modules", label: "模块管理", icon: BoxIcon },
       { href: "/admin/pages", label: "静态页面", icon: ReaderIcon },
       { href: "/admin/uploads", label: "媒体库", icon: ImageIcon },
+      { href: "/admin/albums", label: "相册", icon: CameraIcon },
     ],
   },
   {
@@ -85,6 +87,7 @@ const MORE: NavItem[] = [
   { href: "/admin/modules", label: "模块管理", icon: BoxIcon },
   { href: "/admin/pages", label: "静态页面", icon: ReaderIcon },
   { href: "/admin/uploads", label: "媒体库", icon: ImageIcon },
+  { href: "/admin/albums", label: "相册", icon: CameraIcon },
   { href: "/admin/backups", label: "备份", icon: ArchiveIcon },
   { href: "/admin/updates", label: "更新", icon: ReloadIcon },
   { href: "/admin/settings", label: "设置", icon: GearIcon },

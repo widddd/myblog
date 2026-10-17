@@ -27,6 +27,7 @@
 | `android/architecture.md` | Android 宿主结构：视图分层、站点地址存储、返回键语义、深浅色跟随、Android 侧已知坑 | AI | 改 Android 宿主交互前必读 |
 | `android/build.md` | Android 工具链与构建：版本组合的三条硬约束、ABI、构建/安装、模拟器、体积 | AI | 动 Android 构建链前必读 |
 | `android/debug.md` | Android 联调排障：三个证据源（dev 日志 / logcat / 截图）、症状→根因判据表 | AI | 联调或排障 Android 客户端时读 |
+| `android/photo-edit-spec.md` | **Android 相册预览与图片编辑 Spec**：预览（滑动 / 缩放 / 勾选）、编辑器四件套（涂鸦 / 两种马赛克 / 裁剪 / 旋转 + 撤销重做）、编辑产物落盘与上传口径、通知深链只落 origin、验收标准 | AI + 用户 | 改 Android 相册、预览或图片编辑器前必读 |
 | `geckoview-client-spec.md` | 自带内核客户端立项依据：旧系统 WebView 探针实测数据（为何只有 GeckoView 可行）、方案、验收口径、风险与审批栏 | AI + 用户 | 动 Android 内核/宿主形态或换设备前必读 |
 | `collaboration-workflow.md` | 任务隔离、操作授权、Spec 流程 | AI + 用户 | 协作规则调整时 |
 | `agents-maintenance.md` | 文档分层、触发同步更新、健康度自检 | AI | **每次交付前必读** |
@@ -46,13 +47,19 @@
 | [../changelog/committed/5ac1f1b-0.1.1/ADMIN-REWRITE-CHANGELOG.md](../changelog/committed/5ac1f1b-0.1.1/ADMIN-REWRITE-CHANGELOG.md) | 第三轮后台重写的改动清单：按可提交分组的文件级说明、验证证据、未完成项、约束（已随 `5ac1f1b` 发行 0.1.1 提交） | AI | 写提交说明或发行说明前必读 |
 | [../changelog/committed/5ac1f1b-0.1.1/CARD-AND-LOGIN-CHANGELOG.md](../changelog/committed/5ac1f1b-0.1.1/CARD-AND-LOGIN-CHANGELOG.md) | 无封面细条卡与「有没有封面」判定、登录后卡住的修复清单（已随 `5ac1f1b` 发行 0.1.1 提交） | AI | 写提交说明或发行说明前必读 |
 | [../changelog/committed/0.1.2/RELEASE-0.1.2-CHANGELOG.md](../changelog/committed/0.1.2/RELEASE-0.1.2-CHANGELOG.md) | **发行 0.1.2 的完整说明**（= commit message 正文）：静态页面 / 瞬间可见范围与发布区改版 / Android 客户端 SmartBlog / 上传上限单一事实源 / 数据清理覆盖 / Halo 导入 / 灯箱 COS 直连 / 部署修复；含陷阱归属表（P-093~P-119）与发版前修正（已随 0.1.2 发行提交） | AI | 写提交说明或发行说明前必读 |
-| [../changelog/committed/0.1.2/](../changelog/committed/0.1.2/) | 0.1.2 的其余 14 份批次清单（静态页面、瞬间可见范围、瞬间发布区改版、Android 客户端、上传上限、数据清理覆盖、概览卡片与回头路、后台竖屏导航、首装阻断、Halo 导入、部署踩坑、灯箱直连、体检机制与脚本）：按「可提交分组」写的文件级说明 + 验证证据 + 需要用户执行项（已随 0.1.2 发行提交）。`changelog/pending/` 目前为空 | AI | 写提交说明或发行说明前必读 |
+| [../changelog/committed/0.1.2/](../changelog/committed/0.1.2/) | 0.1.2 的其余 14 份批次清单（静态页面、瞬间可见范围、瞬间发布区改版、Android 客户端、上传上限、数据清理覆盖、概览卡片与回头路、后台竖屏导航、首装阻断、Halo 导入、部署踩坑、灯箱直连、体检机制与脚本）：按「可提交分组」写的文件级说明 + 验证证据 + 需要用户执行项（已随 0.1.2 发行提交）。 | AI | 写提交说明或发行说明前必读 |
+| [../changelog/committed/0.2.0/](../changelog/committed/0.2.0/) | **发行 0.2.0 的 29 份批次清单**（= commit message 与发行说明的素材）：相册板块与分卷、文章图片折叠组、首页模块化（穿插瞬间卡 / 覆盖层模块 / 模块编辑器 / 首页管理重写 / 相册卡片）、瞬间视频与语音、Android 客户端 SmartBlog 0.1.3（自绘表单控件 / 相册预览与图片编辑 / 视频压缩 / 消息提醒）、备份上云与周期备份、可选 COS、录音权限与波形、封面焦点、编辑器选择器滚动、代码量统计、线上部署记录（已随 0.2.0 发行提交）。 | AI | 写提交说明或发行说明前必读 |
 | `linux-deploy-spec.md` | Linux 精简安装：更新包首装一次，以后只换包 | AI + 用户 | 部署或发版流程前必读 |
 | `backup-encryption-spec.md` | 拆分密钥备份：主机半钥 + 包内半钥、scrypt、`pnpm setup` | AI + 用户 | 改备份加密或投产初始化前必读 |
-| `home-modules-spec.md` | M8 首页模块化：格点模型、内置 11 模块、自定义代码边界、后台画布 | AI + 用户 | 改首页结构或首页模块前必读 |
-| `responsive-layout-spec.md` | 双视口自适应：盒子决定内容、电脑/手机两套几何、走手机套含横屏 | AI + 用户 | 改首页格点、内页侧栏或瞬间页高度前必读 |
+| `home-modules-spec.md` | 首页模块化：格点模型、内置 13 模块、自定义代码边界、后台画布、**模块编辑器（模板 + 基本样式 + 可编辑内置模块，§6c）** | AI + 用户 | 改首页结构或首页模块前必读 |
+| `module-html-guide.md` | **站长写模块 HTML/CSS/JS 的指南**：三分钟上手、三层结构（模块 / 积木 / 代码）、可用 CSS 变量（`--mod-*` 与 `--heo-*`）、可复用类名、覆盖层怎么工作、导入文件、13 个坑、发布前自检、常见问答 | AI + 用户 | 写/改模块代码前读；改模块编辑器后同步 |
+| `responsive-layout-spec.md` | 双视口自适应：盒子决定内容、电脑/手机两套几何、走手机套含横屏；**后台画框 = 设计视口真尺寸 + `data-vp` 一档吃全** | AI + 用户 | 改首页格点、内页侧栏或瞬间页高度前必读 |
+| `home-layout-editor-spec.md` | **首页管理重写**：共用格点模型、三选一落点（并入同格 / 放空列 / 新起一行）、冻结几何快照、边缘自动滚动、像素高度与双视口独立、保存闭环 | AI + 用户 | 改后台首页画布、拖拽交互或首页几何前必读 |
 | `moments-home-spec.md` | 瞬间首页模块、二级缩略图、朋友圈宫格展开 | AI + 用户 | 改瞬间展示或首页瞬间模块前必读 |
+| `moment-video-spec.md` | **瞬间发视频 + 不发文字、App 相册选视频、媒体库上传下拉、App 内置 ffmpeg 压缩**：媒体 JSON 加 `kind`（不迁移）、跨字段规则（文字或媒体至少一个 / 视频 ≤ 1）、accept 与「弹自有相册还是系统选择器」的契约、压缩阈值（>4Mbps 或 >50MB）与目标参数、验收与实施结果 | AI + 用户 | 改瞬间媒体、媒体库上传入口、Android 相册或压缩前必读 |
+| `moment-audio-spec.md` | **瞬间发语音**：网页置顶录音卡片（实时波形 / 计时 / 停止即上传）、App 原生录音小窗（弹入动画 + 停止后裁剪 + 试听）、语音 ≤ 5 条且单条 ≤ 5 分钟、媒体库图片/视频/音频分区、**音频-only 容器判定**（不做的话 WebM/M4A 会被 `file-type` 判成 video 而 400）、`VOICE_RECORD_MIME` 的 accept 契约、验收与实施结果 | AI + 用户 | 改语音瞬间、麦克风权限、媒体库类型分区或上传类型判定前必读 |
 | `moment-visibility-spec.md` | 瞬间可见范围：全局可见期（Setting `momentVisibleDays`）+ 可见范围组，生效天数 = min(全局, 组)；**开发库 2026-09-30 已应用迁移，生产首次部署前需执行一次** | AI + 用户 | 改瞬间对外可见性、可见期查询条件前必读 |
+| `albums-spec.md` | **相册板块**：相册数据模型与后台管理、媒体库按相册分类、文章图片折叠组（`<ImageGroup>` → 原生 `<details>`）、灯箱跳相册、对外相册页（极简版，版式待 demo）、**首页相册模块**（缓慢滚动预览）、一/二级缩略图三档口径 | AI + 用户 | 改相册、媒体库分类、首页相册模块或文章折叠组前必读 |
 | `cos-storage-spec.md` | 腾讯云 COS：加密备份上云、媒体双写、访客 thumb 走 COS | AI + 用户 | 改存储驱动、上传或备份上云前必读 |
 | `media-layout-spec.md` | 本地媒体限额、目录对齐、缩略图定位、文章 publicId URL | AI + 用户 | 改上传路径、缩略图或文章地址前必读 |
 | `halo-import-spec.md` | **Halo 备份导入**：`decoded/` → 文章/瞬间/自定义页面 + 图片；映射规则、图片落盘、幂等、已知取舍、隔离环境验收记录 | AI + 用户 | 从 Halo 迁移或复用导入脚本前必读 |

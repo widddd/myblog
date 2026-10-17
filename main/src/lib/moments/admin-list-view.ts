@@ -10,7 +10,10 @@ import { formatDateTimeSeconds } from "@/lib/utils/date";
 export type AdminMomentListItem = {
   id: number;
   content: string;
-  imageCount: number;
+  /** 图片 + 视频的条数（语音单独计数，见 docs/moment-audio-spec.md） */
+  mediaCount: number;
+  /** 语音条数 */
+  audioCount: number;
   /** 精确到秒的发布时间文案 */
   createdAtText: string;
   /** 生效可见期短语，例如「3 天（三天可见组）」 */
@@ -35,7 +38,8 @@ export function buildAdminMomentListItems(
   return moments.map((moment) => ({
     id: moment.id,
     content: moment.content,
-    imageCount: moment.images.length,
+    mediaCount: moment.images.filter((media) => media.kind !== "audio").length,
+    audioCount: moment.images.filter((media) => media.kind === "audio").length,
     createdAtText: formatDateTimeSeconds(moment.createdAt),
     visibilityText: moment.visibilityText,
     expiresAtText: moment.visibility.expiresAt

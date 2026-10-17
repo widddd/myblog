@@ -1,5 +1,6 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 
+import { albumHref } from "@/lib/albums/path";
 import { PUBLIC_CACHE_TAGS } from "@/lib/cache/public";
 import { postHref } from "@/lib/posts/path";
 
@@ -16,6 +17,7 @@ export function revalidatePublicContent(
   revalidatePath("/categories");
   revalidatePath("/tags");
   revalidatePath("/moments");
+  revalidatePath("/albums");
   revalidatePath("/search");
   revalidatePath("/sitemap.xml");
   revalidatePath("/rss.xml");
@@ -38,5 +40,20 @@ export function revalidatePublicContent(
         slug: target.slug ?? "article",
       }),
     );
+  }
+}
+
+/**
+ * 相册写入后的刷新（相册 CRUD、媒体归册、删媒体都调它）。
+ *
+ * 必须用 `expire: 0` 而不是 `"max"`：相册页在 `cachedPublic` 里，而「哪张图属于哪个相册」
+ * 是 `Upload.albumId` 这个**跨表**字段；`revalidateTag(tag, "max")` 是 SWR，
+ * 第一次请求仍然会把旧值发出去（见 P-089）。
+ */
+export function revalidateAlbumContent(slug?: string) {
+  revalidateTag(PUBLIC_CACHE_TAGS.albums, { expire: 0 });
+  revalidatePath("/albums");
+  if (slug) {
+    revalidatePath(albumHref(slug));
   }
 }

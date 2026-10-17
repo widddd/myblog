@@ -22,7 +22,7 @@
 | 落盘 | `main/data/backups/myblog-YYYYMMDD-HHMMSS.tar.gz`；先写 `.tmp-*` 再 rename |
 | 滚动 | `backupKeep`（默认 5）；按文件名新→旧切 slice |
 | 互斥 | `globalThis.myblogBackupRunning`；冲突 409 |
-| 周期 | `lastBackupAt + backupPeriodDays`（默认 3 天）；启动检查 + 3600s interval |
+| 周期 | `lastBackupAt + backupPeriodDays`（默认 3 天）；启动检查 + 3600s interval。**2026-10 已改**：时刻精确到分钟（Setting `backupAtTime`，判定搬到 `lib/backup/schedule.ts`，调度器改走 60s tick + 启动补跑），本节其余内容仍是当时的设计记录 |
 | 管理 API | `POST /run` 同步执行；`GET /list`；`GET /download/[file]`；`DELETE /[file]` |
 | 文件名 | 白名单 `^myblog-\d{8}-\d{6}\.tar\.gz$` + `path.resolve` 仍须落在 backups 目录内 |
 
@@ -31,7 +31,7 @@
 ### 3. 影响面分析
 
 - **涉及模块**：`lib/backup/*`、`lib/scheduler/backup.ts`、`lib/storage`（补 listKeys/openReadStream）、后台 backups 页、AdminWorkspace/写文章布局、首页 Banner CSS
-- **新增/变更配置字段**：无新 Setting key；`backupPeriodDays` / `backupKeep` / `lastBackupAt` 沿用 M1 默认值
+- **新增/变更配置字段**：无新 Setting key；`backupPeriodDays` / `backupKeep` / `lastBackupAt` 沿用 M1 默认值（**2026-10 起**周期备份另有 `backupAtTime`，见 [module.md](ai/module.md) 的 `lib/backup/schedule.ts`）
 - **是否破坏红线**：否。备份走 `.backup()`；uploads 走 StorageDriver；无 Redis；archiver 已在 package.json
 - **是否新增依赖**：无
 

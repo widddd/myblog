@@ -118,10 +118,31 @@ export function formatClockDuration(seconds: number): string {
   return `${minutes}:${pad2(rest)}`;
 }
 
+/** 整数千分位（不依赖 locale，前后端渲染一致）：12345 → "12,345" */
+export function formatCount(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+  return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 export function formatArchiveMonth(value: Date | string): string {
   const date = toDate(value);
   if (!date) {
     return "未注明日期";
   }
   return `${date.getFullYear()} 年 ${pad2(date.getMonth() + 1)} 月`;
+}
+
+/** 相册卷组头的日期：`3 月 28 日`（跨年补年份，避免「1 月 1 日」分不清哪年）。 */
+export function formatMonthDay(value: Date | string, now = new Date()): string {
+  const date = toDate(value);
+  if (!date) {
+    return "未注明日期";
+  }
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return date.getFullYear() === now.getFullYear()
+    ? `${month} 月 ${day} 日`
+    : `${date.getFullYear()} 年 ${month} 月 ${day} 日`;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { adminJson } from "@/lib/client/admin";
 import type { MomentVisibilityPanelData } from "@/lib/moments/compose-types";
@@ -23,23 +23,50 @@ function modeOf(days: number): Mode {
   return PRESET_DAYS.includes(days) ? "preset" : "custom";
 }
 
+type SettingsPayload = {
+  data?: { momentVisibleDays?: number };
+  momentVisibleDays?: number;
+};
+
 /**
  * 全局可见期：改哪个档位就立刻保存（抽屉里没有"保存"按钮的位置，
  * 也符合"点一下立刻生效"的预期），保存结果显示在下方一行小字里。
+ *
+ * 三条实现约束（2026-10 修「点一下没保存 / 过一会儿才生效」时定下来的）：
+ * 1. **保存判定只跟"服务端已确认值"比**（`confirmed`）。以前拿 `props.initialDays` 比，
+ *    而那个值要等 `router.refresh()` 回来才变 —— 在那之前再点一下别的档位，
+ *    `next === savedDays` 会**静默 return**，这一次点击根本没发请求。
+ * 2. **保存串行 + 合并**：正在写的时候新的点击只更新"待写值"，写完了再写最后那一个。
+ *    并发 PUT 的到达顺序不保证，最后一个点击可能被前一个请求覆盖。
+ * 3. **成功即更新本地显示**，不等 `router.refresh()`（刷整页要跑一次服务端渲染，
+ *    就是用户感觉到的"过一段时间才有效果"）。refresh 仍然发，只是不再挡着显示。
  */
 export function MomentVisibilityPanel({ data }: { data: MomentVisibilityPanelData }) {
   const router = useRouter();
-  const savedDays = normalizeVisibilityDays(data.initialDays);
-  const [mode, setMode] = useState<Mode>(() => modeOf(savedDays));
+  const serverDays = normalizeVisibilityDays(data.initialDays);
+  const [mode, setMode] = useState<Mode>(() => modeOf(serverDays));
   const [preset, setPreset] = useState(() =>
-    modeOf(savedDays) === "preset" ? savedDays : 7,
+    modeOf(serverDays) === "preset" ? serverDays : 7,
   );
   const [custom, setCustom] = useState(() =>
-    modeOf(savedDays) === "custom" ? String(savedDays) : "45",
+    modeOf(serverDays) === "custom" ? String(serverDays) : "45",
   );
+  const [confirmed, setConfirmed] = useState(serverDays);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  /** 待写的目标值（串行队列里只有最后一个有意义）；null = 没有待写 */
+  const queuedRef = useRef<number | null>(null);
+  const inflightRef = useRef(false);
+
+  // 服务端数据回来了（router.refresh 之后）：没有待写/在写的目标时才跟随服务端，
+  // 否则会把用户刚点的那一下覆盖回旧值
+  useEffect(() => {
+    if (inflightRef.current || queuedRef.current !== null) {
+      return;
+    }
+    setConfirmed(serverDays);
+  }, [serverDays]);
 
   const customDays = Number.parseInt(custom, 10);
   const customValid =
@@ -54,35 +81,62 @@ export function MomentVisibilityPanel({ data }: { data: MomentVisibilityPanelDat
     if (mode === "preset") {
       return preset;
     }
-    return customValid ? customDays : savedDays;
-  }, [customDays, customValid, mode, preset, savedDays]);
+    return customValid ? customDays : confirmed;
+  }, [confirmed, customDays, customValid, mode, preset]);
 
-  const dirty = days !== savedDays;
+  const dirty = days !== confirmed;
   const unlimited = days === MOMENT_VISIBILITY_UNLIMITED;
   const preview = data.previewLabels[String(days)] ?? "";
+  const currentLabel = momentVisibilityDaysLabel(confirmed);
 
-  async function save(next: number) {
-    setError("");
-    setNotice("");
-    if (next === savedDays) {
+  function enqueue(next: number) {
+    const target = normalizeVisibilityDays(next);
+    if (
+      target === confirmed &&
+      queuedRef.current === null &&
+      !inflightRef.current
+    ) {
       return;
     }
+    setError("");
+    setNotice("");
+    queuedRef.current = target;
+    void pump();
+  }
+
+  async function pump() {
+    if (inflightRef.current) {
+      // 正在写：等它结束后 finally 里会再调用一次 pump
+      return;
+    }
+    const target = queuedRef.current;
+    if (target === null) {
+      return;
+    }
+    queuedRef.current = null;
+    inflightRef.current = true;
     setSaving(true);
     try {
-      const payload = await adminJson<{ momentVisibleDays?: number }>(
-        "/api/admin/settings",
-        {
-          method: "PUT",
-          body: JSON.stringify({ momentVisibleDays: next }),
-        },
+      const payload = await adminJson<SettingsPayload>("/api/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({ momentVisibleDays: target }),
+      });
+      const saved = normalizeVisibilityDays(
+        payload.data?.momentVisibleDays ?? payload.momentVisibleDays ?? target,
       );
-      normalizeVisibilityDays(payload.momentVisibleDays ?? next);
-      setNotice(`已保存：${momentVisibilityDaysLabel(next)}，前台立即生效`);
-      router.refresh();
+      setConfirmed(saved);
+      if (queuedRef.current === null) {
+        setNotice(`已保存：${momentVisibilityDaysLabel(saved)}，前台立即生效`);
+        router.refresh();
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "保存失败");
     } finally {
-      setSaving(false);
+      inflightRef.current = false;
+      setSaving(queuedRef.current !== null);
+      if (queuedRef.current !== null) {
+        void pump();
+      }
     }
   }
 
@@ -95,7 +149,7 @@ export function MomentVisibilityPanel({ data }: { data: MomentVisibilityPanelDat
 
       <div className="admin-field">
         <span>全局可见期</span>
-        <span className="admin-muted">当前生效：{data.currentLabel}</span>
+        <span className="admin-muted">当前生效：{currentLabel}</span>
         <div className="admin-chip-row" role="radiogroup" aria-label="全局可见期">
           <label className={mode === "unlimited" ? "admin-chip is-on" : "admin-chip"}>
             <input
@@ -103,7 +157,7 @@ export function MomentVisibilityPanel({ data }: { data: MomentVisibilityPanelDat
               name="momentVisibilityMode"
               onChange={() => {
                 setMode("unlimited");
-                void save(MOMENT_VISIBILITY_UNLIMITED);
+                enqueue(MOMENT_VISIBILITY_UNLIMITED);
               }}
               type="radio"
             />
@@ -115,7 +169,7 @@ export function MomentVisibilityPanel({ data }: { data: MomentVisibilityPanelDat
               name="momentVisibilityMode"
               onChange={() => {
                 setMode("preset");
-                void save(preset);
+                enqueue(preset);
               }}
               type="radio"
             />
@@ -144,7 +198,7 @@ export function MomentVisibilityPanel({ data }: { data: MomentVisibilityPanelDat
                   name="momentVisibilityPreset"
                   onChange={() => {
                     setPreset(value);
-                    void save(value);
+                    enqueue(value);
                   }}
                   type="radio"
                 />
@@ -170,7 +224,7 @@ export function MomentVisibilityPanel({ data }: { data: MomentVisibilityPanelDat
             <button
               className="admin-btn admin-btn--sm"
               disabled={saving || !customValid || !dirty}
-              onClick={() => void save(customDays)}
+              onClick={() => enqueue(customDays)}
               type="button"
             >
               {saving ? "保存中…" : "应用"}

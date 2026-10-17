@@ -1,4 +1,4 @@
-﻿package com.smartblog.app
+package com.smartblog.app
 
 import android.Manifest
 import android.app.AlertDialog
@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -28,7 +27,10 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
+import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,7 +44,6 @@ import org.mozilla.geckoview.GeckoView
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
-import java.net.URI
 import java.net.URL
 import org.json.JSONObject
 
@@ -53,20 +54,37 @@ import org.json.JSONObject
  * GeckoView + androidx.activity（见 docs/android/build.md 的依赖取舍）。
  *
  * 三件事在这里定：
- *  1. **站点地址是用户数据，不是编译期常量**。首次启动必须填一次（存 SharedPreferences），
- *     `BuildConfig.START_URL` 只当输入框的预填值；之后随时能从右下角菜单改。
+ *  1. **首次启动直接进默认站点**（`AppUrl.DEFAULT_SITE_URL`，用户决策 2026-10-03），
+ *     不再弹"请输入网站地址"；`BuildConfig.START_URL` 是构建期覆盖手段（模拟器开发用），
+ *     地址仍可从右下角 ⋮ →「修改网站地址」随时改 —— 规则全在 `AppUrl.kt`（纯逻辑，有单测）。
  *  2. **刷新**在同一处入口。
  *  3. 页面自身没有地址栏，所以返回键语义要在这里兜住（能后退就后退，否则退出）。
  */
 class MainActivity : ComponentActivity() {
 
     companion object {
-        private const val PREFS_NAME = "smartblog"
-        private const val KEY_SITE_URL = "site_url"
+        internal const val PREFS_NAME = "smartblog"
+
+        /**
+         * 站点地址（站点地址与通知设置共用这一个偏好文件）。
+         * `internal` 而不是 private：`AppNotifier` / `PushSettings` 要读同一个文件
+         * —— 一个 App 只有一份"我的站点 + 我的设置"，分文件只会让"清数据"少清一半。
+         */
+        internal const val KEY_SITE_URL = "site_url"
         private const val LOG_TAG = "SmartBlog"
 
         /** 服务端没给上限时的兜底值；正常由 GET /api/upload/limits 决定 */
         private const val DEFAULT_MAX_IMAGES = 9
+
+        /**
+         * 站点单文件上限的兜底值（10MB）。
+         * 与 `lib/upload/limits.ts` 的 `resolveUploadMaxBytes()` 默认值同口径：取不到接口时
+         * 视频压缩就往 10MB 以内压，总比不压强（真值仍由 `/api/upload/limits` 的 `maxBytes` 覆盖）。
+         */
+        private const val DEFAULT_MAX_BYTES = 10L * 1024 * 1024
+
+        /** 服务端报上来的单文件上限只认到这个量级；再大说明接口被人改了，宁可不认 */
+        private const val MAX_SERVER_BYTES = 200L * 1024 * 1024
 
         /** 开屏：至少显示这么久（免得一闪而过），最多挡这么久（页面起不来也不卡死） */
         private const val SPLASH_MIN_MS = 1200L
@@ -77,6 +95,10 @@ class MainActivity : ComponentActivity() {
         private const val MENU_BACK = 0
         private const val MENU_RELOAD = 1
         private const val MENU_EDIT_URL = 2
+        private const val MENU_NOTIFY_SETTINGS = 3
+        private const val MENU_NOTIFY_TOGGLE = 4
+        private const val MENU_NOTIFY_BACKGROUND = 5
+        private const val MENU_NOTIFY_STATUS = 6
 
         @Volatile
         private var runtime: GeckoRuntime? = null
@@ -128,10 +150,29 @@ class MainActivity : ComponentActivity() {
     private var splashShownAt = 0L
     private var splashPendingHide = false
 
+    /**
+     * 通知权限（Android 13+）。请求结果不弹任何提示：拒绝就是"不提醒"，
+     * 用户想开可以去系统设置，或从 ⋮ →「消息提醒」再看一遍状态。
+     */
+    private val notificationPermissionRequest = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        Log.i(LOG_TAG, "通知权限：${if (granted) "已授权" else "被拒绝"}")
+    }
+
     /** 开屏期间攒下的明文警告（撤掉开屏后再弹，见 maybeWarnInsecure） */
     private var pendingInsecureWarning: String? = null
     private var albumPicker: AlbumPickerView? = null
+
+    /**
+     * 正开着的（原生）录音小窗。与相册并列的一层原生 UI：
+     * 站点在 App 模式下把麦克风按钮做成"录音 accept"，宿主接手后弹它（见 docs/moment-audio-spec.md §2.5）。
+     */
+    private var voiceRecorder: VoiceRecorderView? = null
     private var maxImagesPerBatch = DEFAULT_MAX_IMAGES
+
+    /** 站点单文件上限（非图片类；视频压缩的目标体积），来自 `GET /api/upload/limits` 的 `maxBytes` */
+    private var uploadMaxBytes = DEFAULT_MAX_BYTES
     private var limitsFetched = false
 
     private lateinit var container: FrameLayout
@@ -145,6 +186,9 @@ class MainActivity : ComponentActivity() {
 
     /** 地址页是否处于「修改」模式：true 时返回键=取消退出该页；false（首次填写）时返回键=关掉 App。 */
     private var editingExisting = false
+
+    /** 正挂着的表单选择器（下拉框/日期/时间）；系统切深浅色时要靠它重画 */
+    private var activeFormPrompts: FormPrompts? = null
 
     /**
      * GeckoSession 上没有 canGoBack()（javap 实测只有 goBack / gotoHistoryIndex / isOpen），
@@ -161,11 +205,23 @@ class MainActivity : ComponentActivity() {
         // 开屏先挂上；之后无论走「首启表单」还是「加载站点」，都由 hideSplash() 撤掉
         showSplash()
 
+        // 通知层：建渠道（幂等）+ 首次启动时请一次通知权限（用户拒绝也不影响别处，
+        // 只是不弹通知；见 AppNotifier.canPostNotifications 的宽容处理）
+        AppNotifier.ensureChannels(this)
+        requestNotificationPermissionOnFirstRun()
+
+        // 点通知进来（冷启动）：深链**只决定这一次打开哪一页**，落盘只落站点 origin ——
+        // 以前把文章地址整条写进 site_url，之后每次启动都停在那篇文章（用户报过的 bug）。
+        val deepLink = handleDeepLink(intent)
+
         onBackPressedDispatcher.addCallback(
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
                     when {
+                        // 相册 / 预览 / 编辑器是叠在网页上的原生层：返回键先逐层退，
+                        // 不能穿透到后面的网页（旧版相册开着按返回会去操作看不见的页面）
+                        albumPicker?.handleBack() == true -> Unit
                         setupView != null && editingExisting -> hideSiteForm()
                         // 首次不填地址就等于没有可访问的站点，直接退出而不是停在空页面
                         setupView != null -> finish()
@@ -179,13 +235,98 @@ class MainActivity : ComponentActivity() {
         // ⚠️ 必须 post 到下一帧再做：ensureSession() 是同步的重活（加载 libxul，秒级），
         // 在 onCreate 里直接建会把**第一帧整个堵在它后面**，开屏根本没机会画到屏幕上。
         container.post {
-            val saved = prefs.getString(KEY_SITE_URL, null)
-            if (saved.isNullOrBlank()) {
-                showSiteForm(editing = false)
+            // 首次启动不再进地址表单：没有存过地址就用默认站点（规则见 AppUrl.kt）。
+            // 存过的地址里，历史默认值会被一次性重写成当前默认；用户自己填过的不动。
+            val saved = AppUrl.resolveStoredUrl(prefs.getString(KEY_SITE_URL, null))
+            val target = deepLink ?: saved ?: AppUrl.initialSiteUrl()
+            if (deepLink != null) {
+                AppUrl.originOf(deepLink)?.let { origin ->
+                    prefs.edit().putString(KEY_SITE_URL, origin).apply()
+                }
             } else {
-                loadSite(saved)
+                // 写回归一化后的地址：历史默认值由此一次性迁移掉（下次启动不会再走一遍）
+                prefs.edit().putString(KEY_SITE_URL, target).apply()
             }
+            Log.i(LOG_TAG, "进入站点：$target")
+            loadSite(target)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // App 已经在跑时点通知：**不重建会话**，直接把当前页换过去
+        handleDeepLink(intent)?.let { url ->
+            // ⚠️ 深链只影响本次会话；落盘只写站点 origin（写全文 = 下次启动永远停在那一页）
+            AppUrl.originOf(url)?.let { origin ->
+                prefs.edit().putString(KEY_SITE_URL, origin).apply()
+            }
+            hideSiteForm()
+            loadSite(url)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        AppNotifier.onForegroundChanged(this, isForeground = true)
+    }
+
+    /**
+     * App 被切到后台（或锁屏）：正在录的那条立刻停并作废。
+     *
+     * 理由：本项目刻意不申请 `FOREGROUND_SERVICE`（见 docs/android/push-plan.md 的「不要什么权限」），
+     * 没有前台服务的后台录音既会被系统掐，也不该悄悄录 —— 交给用户"重新录一次"比交一条半截的好。
+     */
+    override fun onPause() {
+        super.onPause()
+        voiceRecorder?.onHostPause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        AppNotifier.onForegroundChanged(this, isForeground = false)
+    }
+
+    override fun onDestroy() {
+        // 兜底：Activity 走了，录音器与试听器不能留着（否则麦克风被占着、下次录不了）
+        closeVoiceRecorder()
+        super.onDestroy()
+    }
+
+    /**
+     * 点通知进来的那条链接（`ACTION_VIEW` + `data`）。
+     *
+     * 冷启动时它**必须顶掉保存的地址**：用户可能在 App 里把地址改成了局域网地址，
+     * 而通知带的是当时那个站点的绝对地址 —— 按通知走才是用户的意图。
+     */
+    private fun handleDeepLink(intent: Intent?): String? {
+        if (intent == null || intent.action != Intent.ACTION_VIEW) {
+            return null
+        }
+        val data = intent.data?.toString() ?: return null
+        val url = AppUrl.normalize(data) ?: return null
+        Log.i(LOG_TAG, "通知落地：$url")
+        return url
+    }
+
+    /**
+     * Android 13+ 首次启动请一次通知权限。
+     *
+     * 只在「用户没做过选择」时请求（`shouldShowRequestPermissionRationale` 为 false 且未授权）：
+     * 之后不再反复弹 —— 用户想开自己去系统设置开，App 不做纠缠。
+     */
+    private fun requestNotificationPermissionOnFirstRun() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+        val permission = Manifest.permission.POST_NOTIFICATIONS
+        if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+        if (shouldShowRequestPermissionRationale(permission)) {
+            return
+        }
+        notificationPermissionRequest.launch(permission)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -195,6 +336,8 @@ class MainActivity : ComponentActivity() {
         if (setupView != null) {
             showSiteForm(editing = editingExisting, preset = setupInput?.text?.toString())
         }
+        // 正开着的下拉框/日期时间选择器同理：按新配色重画（选择状态不丢）
+        activeFormPrompts?.applyTheme()
     }
 
     // ---------------------------------------------------------------- Web 视图
@@ -202,12 +345,23 @@ class MainActivity : ComponentActivity() {
     private fun ensureSession(): GeckoSession {
         session?.let { return it }
 
+        // 站点靠 UA 里的这个标记认出"这一发来自 App"（推荐应用卡不弹、推送抑制都依赖它，
+        // 服务端判定见 main/src/lib/client/detect.ts）。追加式，不改内核默认 UA 的前半段。
+        // ⚠️ 取默认 UA 用**静态**的 `GeckoSession.getDefaultUserAgent()`；
+        // 实例上的 `getUserAgent()` 是另一个东西（返回 `GeckoResult<String>`，异步查内核），别拿它当字符串用。
+        val appUserAgent = AppUrl.withSmartBlogTag(
+            GeckoSession.getDefaultUserAgent(),
+            BuildConfig.VERSION_NAME,
+        )
+
         val created = GeckoSession(
             GeckoSessionSettings.Builder()
                 .contextId("main")
+                .userAgentOverride(appUserAgent)
                 .build(),
         )
         created.open(runtime(this))
+        Log.i(LOG_TAG, "会话 UA：${created.settings.userAgentOverride}")
 
         created.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStop(session: GeckoSession, success: Boolean) {
@@ -241,14 +395,68 @@ class MainActivity : ComponentActivity() {
                 val result = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
                 val pending = PendingFilePrompt(prompt, result)
                 pendingFilePrompt = pending
+                // 「这一组 accept 要不要交给自有相册」是纯逻辑（MediaKinds.kt，有 JVM 单测）：
+                // 纯图片 / 纯视频 / 图片+视频 → 相册；带音频或扩展名（导入 Markdown、更新包）→ 系统选择器
+                val albumMedia = albumMediaForTypes(prompt.mimeTypes)
                 when {
-                    // 纯图片 accept → 自有全屏相册（读系统相册，选几张由服务端上限决定）
-                    isImageOnlyAccept(prompt) && hasPhotoPermission() -> showAlbumPicker(pending)
-                    // 有权限流程可走：先要权限，拒绝就退回系统选择器
-                    isImageOnlyAccept(prompt) -> photoPermissionRequest.launch(photoPermission)
-                    // 视频/音频/任意文件/混合媒体：保持原样走系统选择器
+                    // 录音：站点在 App 模式下给麦克风按钮挂录音标记（或 capture + 纯音频 accept）。
+                    // 走的还是同一条文件 prompt 通道 —— 录完（或裁剪完）把文件 confirm 回页面，
+                    // 页面用现成的上传链路入库，宿主不碰 cookie、也不自己上传。
+                    isVoiceRecordRequest(prompt.mimeTypes, prompt.capture) ->
+                        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                            PackageManager.PERMISSION_GRANTED
+                        ) {
+                            showVoiceRecorder(pending)
+                        } else {
+                            recordPermissionRequest.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    albumMedia != null && hasMediaPermissions(albumMedia) ->
+                        showAlbumPicker(pending, albumMedia)
+                    // 权限还没给：要一次；拒绝就退回系统选择器 —— 绝不让用户传不了文件
+                    albumMedia != null ->
+                        mediaPermissionRequest.launch(permissionsFor(albumMedia).toTypedArray())
                     else -> launchSystemPicker(prompt)
                 }
+                return result
+            }
+
+            /**
+             * `<select>`：**Gecko 自己弹不出下拉框**，它把用户点开控件的动作变成 prompt 交给宿主
+             * （Gecko 源码 `modules/GeckoViewPrompt.sys.mjs` 的 `_handleSelect` → `{type:"choice"}`）。
+             * 宿主不接管时 prompt 一直悬着 —— 页面上那个框看着是好的，点下去什么都不发生，
+             * 这就是"下拉框不正常"的真身（跟 CSS/布局无关，别去改站点样式）。
+             */
+            override fun onChoicePrompt(
+                session: GeckoSession,
+                prompt: GeckoSession.PromptDelegate.ChoicePrompt,
+            ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse> {
+                Log.i(
+                    LOG_TAG,
+                    "onChoicePrompt type=${prompt.type} 选项=${prompt.choices?.size ?: 0}",
+                )
+                if (isFinishing || isDestroyed) {
+                    return GeckoResult.fromValue(prompt.dismiss())
+                }
+                val result = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                trackPrompt(prompt).showChoice(prompt, result)
+                return result
+            }
+
+            /**
+             * `<input type="date|time|datetime-local|month|week">` 同理：Gecko 用的是
+             * "把选择器交给宿主"的模型（`_handleDateTime` → `{type:"datetime"}`），
+             * 宿主不接管时点上去没有任何反应 —— 这就是"选择时间不正常"的真身。
+             */
+            override fun onDateTimePrompt(
+                session: GeckoSession,
+                prompt: GeckoSession.PromptDelegate.DateTimePrompt,
+            ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse> {
+                Log.i(LOG_TAG, "onDateTimePrompt type=${prompt.type} 值=${prompt.defaultValue}")
+                if (isFinishing || isDestroyed) {
+                    return GeckoResult.fromValue(prompt.dismiss())
+                }
+                val result = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                trackPrompt(prompt).showDateTime(prompt, result)
                 return result
             }
         }
@@ -258,10 +466,30 @@ class MainActivity : ComponentActivity() {
                 canGoBack = value
             }
 
+            /**
+             * 页面地址变化 → 更新「这个 App 是不是登录着后台」。
+             *
+             * 这是通知层管理员抑制的**唯一信号源**：GeckoView 157 没有 cookie API
+             * （`myblog.session` 是 HttpOnly，宿主读不到），只能按"看到了 /admin 页"来判。
+             * 规则与理由见 `PushRules.adminStateAfterNavigation`（有单测）。
+             *
+             * ⚠️ **不要在这里写 `override fun onLocationChange(...)`**：AAR `javap` 显示它是
+             * 4 参数（`GeckoSession, String, List<ContentPermission>, Boolean`），但其中一个
+             * 平台的 `java.util.List` 与 NPE 注解形态猜不中就报 `'onLocationChange' overrides
+             * nothing`（本轮踩过一次，浪费两轮编译）。`GeckoSession` 上也**没有** `getUri()`
+             * （javap 实读：只有静态 `getDefaultUserAgent()`），所以走这两个回调：
+             *  - `onLoadRequest`：每次导航开始时（覆盖用户在页面里的点击）；
+             *  - `onPageStop`：加载结束时（302 跳转的最终地址由上一次 load 请求代表）。
+             */
+            private fun trackAdminState(url: String?) {
+                AppNotifier.onNavigation(this@MainActivity, url)
+            }
+
             override fun onLoadRequest(
                 session: GeckoSession,
                 request: GeckoSession.NavigationDelegate.LoadRequest,
             ): GeckoResult<AllowOrDeny?>? {
+                trackAdminState(request.uri)
                 maybeWarnInsecure(request.uri)
                 return GeckoResult.allow()
             }
@@ -337,6 +565,17 @@ class MainActivity : ComponentActivity() {
         popup.menu.add(0, MENU_BACK, 0, "返回上一页").isEnabled = canGoBack
         popup.menu.add(0, MENU_RELOAD, 1, "刷新")
         popup.menu.add(0, MENU_EDIT_URL, 2, "修改网站地址")
+        popup.menu.add(0, MENU_NOTIFY_SETTINGS, 3, "消息提醒")
+        // 下面三条给"临时改一下"用：真正常用的是设置页，这里放最常用的两个开关
+        val notifyOn = AppNotifier.enabled(this)
+        popup.menu.add(0, MENU_NOTIFY_TOGGLE, 4, if (notifyOn) "关闭消息提醒" else "开启消息提醒")
+        popup.menu.add(0, MENU_NOTIFY_BACKGROUND, 5, "后台也提醒").apply {
+            isCheckable = true
+            isChecked = PushSettings.load(this@MainActivity).background
+            isEnabled = notifyOn
+        }
+        // 状态行：只读，用来回答"为什么没提醒"（管理员态 / 缺权限 / 上次同步结果）
+        popup.menu.add(0, MENU_NOTIFY_STATUS, 6, notificationStatusLine()).apply { isEnabled = false }
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 MENU_BACK -> {
@@ -356,57 +595,73 @@ class MainActivity : ComponentActivity() {
                     true
                 }
 
+                MENU_NOTIFY_SETTINGS -> {
+                    showSiteForm(editing = true)
+                    true
+                }
+
+                MENU_NOTIFY_TOGGLE -> {
+                    setNotificationsEnabled(!notifyOn)
+                    true
+                }
+
+                MENU_NOTIFY_BACKGROUND -> {
+                    setBackgroundNotifications(!PushSettings.load(this).background)
+                    true
+                }
+
                 else -> false
             }
         }
         popup.show()
     }
 
+    /** 状态行文案：一眼看出当前的提醒状态（点击无效，只是信息）。 */
+    private fun notificationStatusLine(): String {
+        val state = PushSettings.load(this)
+        return when {
+            !state.enabled -> "提醒：已关闭"
+            state.admin -> "提醒：已登录后台（不推送）"
+            !AppNotifier.canPostNotifications(this) -> "提醒：没有系统通知权限"
+            !state.background -> "提醒：仅 App 打开时 · ${PushSettings.lastResult(this)}"
+            else -> "提醒：前台 + 后台 · ${PushSettings.lastResult(this)}"
+        }
+    }
+
+    /** 开关通知：开的时候顺手把权限一起要了（用户点了"开启"，这时候问最自然）。 */
+    private fun setNotificationsEnabled(enabled: Boolean) {
+        AppNotifier.setEnabled(this, enabled)
+        val hint = when {
+            !enabled -> "已关闭消息提醒"
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED -> {
+                notificationPermissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
+                "已开启；请在系统弹窗里允许通知"
+            }
+
+            else -> "已开启消息提醒"
+        }
+        Toast.makeText(this, hint, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun setBackgroundNotifications(enabled: Boolean) {
+        AppNotifier.setBackground(this, enabled)
+        Toast.makeText(
+            this,
+            if (enabled) "后台也会巡检（间隔由系统决定，可能十几分钟一次）" else "只在 App 打开时提醒",
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
     // ---------------------------------------------------------------- 地址表单
 
-    private data class Palette(
-        val background: Int,
-        val title: Int,
-        val hint: Int,
-        val fieldBg: Int,
-        val fieldText: Int,
-        val primary: Int,
-        val onPrimary: Int,
-        val ghost: Int,
-    )
-
-    private fun isNightMode(): Boolean =
-        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-            Configuration.UI_MODE_NIGHT_YES
-
-    /** 黑/白两套，跟随系统深浅色（用户明确要求"黑色或白色（跟随系统）"）。 */
-    private fun palette(): Palette =
-        if (isNightMode()) {
-            Palette(
-                background = Color.parseColor("#0E1013"),
-                title = Color.parseColor("#F4F5F7"),
-                hint = Color.parseColor("#8C939C"),
-                fieldBg = Color.parseColor("#1B1E23"),
-                fieldText = Color.parseColor("#F4F5F7"),
-                primary = Color.parseColor("#4C9BF5"),
-                onPrimary = Color.parseColor("#0B1119"),
-                ghost = Color.parseColor("#9BA2AB"),
-            )
-        } else {
-            Palette(
-                background = Color.parseColor("#FFFFFF"),
-                title = Color.parseColor("#14171B"),
-                hint = Color.parseColor("#6B7280"),
-                fieldBg = Color.parseColor("#F3F4F6"),
-                fieldText = Color.parseColor("#14171B"),
-                primary = Color.parseColor("#2C7BE5"),
-                onPrimary = Color.parseColor("#FFFFFF"),
-                ghost = Color.parseColor("#4B5563"),
-            )
-        }
+    // 配色与控件样式统一在 HostUi.kt（单一事实源）：这里的地址表单、下拉框/日期时间弹层、
+    // 自有相册、开屏都从那一份 palette 与按钮规范取值，改一处四处一起变。
 
     private fun showSiteForm(editing: Boolean, preset: String? = null) {
-        // 首启没有页面要加载，onPageStop 不会来 —— 这里必须自己撤掉开屏
+        // 页面已经加载过时 onPageStop 早已发生，这里是空操作；保留是为了防御
+        // 「表单比首屏先出现」的极端时序（比如以后再加首启引导页）
         hideSplash()
         val carried = preset ?: setupInput?.text?.toString()
         setupView?.let { container.removeView(it) }
@@ -416,25 +671,15 @@ class MainActivity : ComponentActivity() {
         menuButton?.visibility = View.GONE
         editingExisting = editing
 
-        val p = palette()
+        val p = hostPalette(this)
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(28), dp(28), dp(28), dp(28))
         }
 
+        column.addView(hostText(this, "修改网站地址", 21f, p.title, bold = true))
         column.addView(
-            TextView(this).apply {
-                text = "请输入网站地址"
-                setTextColor(p.title)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 21f)
-                typeface = Typeface.DEFAULT_BOLD
-            },
-        )
-        column.addView(
-            TextView(this).apply {
-                text = "填好后点「确认」访问；以后可从右下角菜单随时修改。"
-                setTextColor(p.hint)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            hostText(this, "改完点「确认」；留空或填错不会改动现有地址。", 13f, p.hint).apply {
                 setPadding(0, dp(8), 0, dp(18))
             },
         )
@@ -443,16 +688,16 @@ class MainActivity : ComponentActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_GO
             isSingleLine = true
-            hint = "http://192.168.1.10:3000"
+            hint = AppUrl.DEFAULT_SITE_URL
             setTextColor(p.fieldText)
             setHintTextColor(p.hint)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(p.fieldBg)
-            }
-            val initial = carried ?: BuildConfig.START_URL
+            background = rounded(this@MainActivity, p.fieldBg, 10)
+            // 预填当前地址：表单只在「修改」时打开，预填就是既有值
+            val initial = carried
+                ?: AppUrl.resolveStoredUrl(prefs.getString(KEY_SITE_URL, null))
+                ?: AppUrl.initialSiteUrl()
             setText(initial)
             setSelection(initial.length)
         }
@@ -464,25 +709,16 @@ class MainActivity : ComponentActivity() {
             visibility = View.GONE
         }
 
-        val confirm = Button(this).apply {
-            text = "确认"
-            isAllCaps = false
-            setTextColor(p.onPrimary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(p.primary)
+        val confirm = hostPrimaryButton(this, p, "确认").apply {
+            layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
+                topMargin = dp(18)
             }
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48),
-            ).apply { topMargin = dp(18) }
         }
 
         val submit = View.OnClickListener {
-            val url = normalizeSiteUrl(input.text.toString())
+            val url = AppUrl.normalize(input.text.toString())
             if (url == null) {
-                error.text = "地址无效。示例：http://192.168.1.10:3000 或 https://blog.example.com"
+                error.text = "地址无效。示例：https://bruccese.com 或 http://192.168.1.10:3000"
                 error.visibility = View.VISIBLE
             } else {
                 prefs.edit().putString(KEY_SITE_URL, url).apply()
@@ -506,23 +742,34 @@ class MainActivity : ComponentActivity() {
 
         if (editing) {
             column.addView(
-                Button(this).apply {
-                    text = "取消"
-                    isAllCaps = false
-                    setTextColor(p.ghost)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                    background = GradientDrawable().apply {
-                        cornerRadius = dp(10).toFloat()
-                        setColor(Color.TRANSPARENT)
+                hostGhostButton(this, p, "取消").apply {
+                    layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
+                        topMargin = dp(4)
                     }
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(44),
-                    ).apply { topMargin = dp(4) }
                     setOnClickListener { hideSiteForm() }
                 },
             )
         }
+
+        // 通知设置与地址在同一屏（都是"这个 App 自己的设置"）：控件多，所以外层套一个
+        // ScrollView —— 小屏/横屏/大字号时确认按钮不会被挤出屏幕
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(
+                column,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+        column.addView(
+            buildNotifySettingsView(p),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(22) },
+        )
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(p.background)
@@ -532,7 +779,7 @@ class MainActivity : ComponentActivity() {
             isFocusableInTouchMode = true
         }
         root.addView(
-            column,
+            scroll,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -551,6 +798,53 @@ class MainActivity : ComponentActivity() {
         root.requestFocus()
     }
 
+    /**
+     * 「消息提醒」设置块：两个开关（提醒 / 后台也提醒）+ 状态行。
+     *
+     * 状态行是这个功能"可解释"的关键 —— 用户看到"没弹通知"时，能一眼看出是关闭了、
+     * 没给权限、还是「已登录后台所以不推」。文案与 `notificationStatusLine()` 同一口径。
+     */
+    private fun buildNotifySettingsView(p: Palette): View {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(hostText(this, "消息提醒", 15f, p.title, bold = true))
+        box.addView(
+            hostText(
+                this,
+                "站点有新的文章或瞬间时，用系统通知告诉你（不是邮件/短信，全部在本机）。",
+                12.5f,
+                p.hint,
+            ).apply { setPadding(0, dp(6), 0, dp(4)) },
+        )
+
+        val enabledSwitch = Switch(this).apply {
+            isChecked = AppNotifier.enabled(this@MainActivity)
+            setTextColor(p.title)
+            text = "有新内容时提醒我"
+            setOnCheckedChangeListener { _, checked -> setNotificationsEnabled(checked) }
+        }
+        val backgroundSwitch = Switch(this).apply {
+            isChecked = PushSettings.load(this@MainActivity).background
+            setTextColor(p.title)
+            text = "后台也提醒（间隔由系统决定，可能十几分钟一次）"
+            isEnabled = AppNotifier.enabled(this@MainActivity)
+            setOnCheckedChangeListener { _, checked -> setBackgroundNotifications(checked) }
+        }
+        // 关掉主开关时，后台开关也要跟着置灰（否则用户会以为关掉了还在后台跑）
+        enabledSwitch.setOnCheckedChangeListener { _, checked ->
+            setNotificationsEnabled(checked)
+            backgroundSwitch.isEnabled = checked
+        }
+
+        box.addView(enabledSwitch)
+        box.addView(backgroundSwitch)
+        box.addView(
+            hostText(this, notificationStatusLine(), 12f, p.hint).apply {
+                setPadding(0, dp(8), 0, 0)
+            },
+        )
+        return box
+    }
+
     private fun hideSiteForm() {
         setupView?.let { container.removeView(it) }
         setupView = null
@@ -559,33 +853,8 @@ class MainActivity : ComponentActivity() {
         menuButton?.visibility = View.VISIBLE
     }
 
-    /** 没写协议时按 http:// 补；只接受 http/https，且必须有主机名。末尾斜杠归一掉。 */
-    private fun normalizeSiteUrl(raw: String): String? {
-        val text = raw.trim()
-        if (text.isEmpty()) {
-            return null
-        }
-        val lower = text.lowercase()
-        val withScheme =
-            if (lower.startsWith("http://") || lower.startsWith("https://")) {
-                text
-            } else {
-                "http://$text"
-            }
-        return try {
-            val parsed = URI(withScheme)
-            val scheme = parsed.scheme?.lowercase()
-            if (scheme != "http" && scheme != "https") {
-                return null
-            }
-            if (parsed.host.isNullOrBlank()) {
-                return null
-            }
-            withScheme.trimEnd('/')
-        } catch (error: Exception) {
-            null
-        }
-    }
+    // 地址归一化搬去 AppUrl.normalize()（纯逻辑 + 单测）：默认补 https、去末尾斜杠、
+    // 只接受 http/https 且必须有主机名。别在这里再写一份平行实现。
 
     // ---------------------------------------------------------------- 其它
 
@@ -605,9 +874,9 @@ class MainActivity : ComponentActivity() {
         if ("file".equals(uri.scheme, ignoreCase = true)) return uri
         val dir = File(cacheDir, PICKED_DIR)
         if (!dir.exists() && !dir.mkdirs()) return null
-        // 文件名要原样保留：站点拿它当媒体显示名，加时间戳前缀会把用户看到的文件名弄脏
-        val name = (displayName(uri) ?: "picked-${System.currentTimeMillis()}")
-            .replace(Regex("[^A-Za-z0-9._-]+"), "_")
+        // 原文件名尽量保留，但超长/带非法字符的名字要压短：站点最终用内容 hash 存媒体，
+        // 原名不参与寻址；反过来，超长名在部分系统上会让临时副本落盘失败。
+        val name = PickedFileName.sanitize(displayName(uri))
         val target = File(dir, name)
         return try {
             contentResolver.openInputStream(uri)?.use { input ->
@@ -630,21 +899,68 @@ class MainActivity : ComponentActivity() {
                 if (index >= 0) cursor.getString(index) else null
             }
         }
-    }.getOrNull()    /** 相册权限：Android 13 起拆成了 READ_MEDIA_IMAGES，之前是 READ_EXTERNAL_STORAGE */
-    private val photoPermission =
+    }.getOrNull()
+
+    /**
+     * 相册权限：Android 13 起图片与视频是**两枚**（READ_MEDIA_IMAGES / READ_MEDIA_VIDEO），
+     * 13 之前共用 READ_EXTERNAL_STORAGE。按本次 accept 允许的媒体去要，多要一枚都是打扰。
+     */
+    private val imagesPermission =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_IMAGES
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
 
-    /** 拒绝授权就退回系统选择器 —— 宁可用得别扭，也不能让用户传不了图 */
-    private val photoPermissionRequest = registerForActivityResult(
+    private val videosPermission =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+
+    /** 这次相册要读哪些媒体 → 需要哪几枚权限（≤32 两枚是同一个，去重）。 */
+    private fun permissionsFor(media: AlbumMedia): List<String> =
+        buildList {
+            if (media.images) add(imagesPermission)
+            if (media.videos) add(videosPermission)
+        }.distinct()
+
+    private fun hasMediaPermissions(media: AlbumMedia): Boolean =
+        permissionsFor(media).all {
+            checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+        }
+
+    /** 拒绝授权就退回系统选择器 —— 宁可用得别扭，也不能让用户传不了文件 */
+    private val mediaPermissionRequest = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        val pending = pendingFilePrompt ?: return@registerForActivityResult
+        val media = albumMediaForTypes(pending.prompt.mimeTypes)
+        if (media != null && hasMediaPermissions(media)) {
+            showAlbumPicker(pending, media)
+        } else {
+            launchSystemPicker(pending.prompt)
+        }
+    }
+
+    /**
+     * 录音权限（`RECORD_AUDIO`）。站点点麦克风时先要这一枚；拒绝就取消这一次请求
+     * （页面收到 dismiss，不会一直悬着 —— 用户想再试可以再点一次）。
+     */
+    private val recordPermissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         val pending = pendingFilePrompt ?: return@registerForActivityResult
-        if (granted) showAlbumPicker(pending) else launchSystemPicker(pending.prompt)
-    }    /** 取出选择器返回的全部 URI（多选走 clipData，单选走 data）。 */
+        if (granted) {
+            showVoiceRecorder(pending)
+        } else {
+            Log.i(LOG_TAG, "录音权限被拒绝，已取消这次录音")
+            dismissPending()
+        }
+    }
+
+    /** 取出选择器返回的全部 URI（多选走 clipData，单选走 data）。 */
     private fun pickedUris(resultCode: Int, data: Intent?): List<Uri> {
         if (resultCode != RESULT_OK || data == null) return emptyList()
         val clip = data.clipData
@@ -681,7 +997,7 @@ class MainActivity : ComponentActivity() {
             layoutParams = FrameLayout.LayoutParams(size, size).apply { gravity = Gravity.CENTER }
         }
         val root = FrameLayout(this).apply {
-            setBackgroundColor(palette().background)
+            setBackgroundColor(hostPalette(this@MainActivity).background)
             addView(logo)
         }
         splashView = root
@@ -732,17 +1048,18 @@ class MainActivity : ComponentActivity() {
 
     // ---------------------------------------------------------------- 上传上限（来自服务端）
 
-    /** 取「一次能选几张」。取不到就用兜底值——**绝不能因为取不到就不让选图**。 */
+    /**
+     * 取「一次能选几个」与「单文件上限」。取不到就用兜底值——**绝不能因为取不到就不让选文件**，
+     * 也不能因为取不到就把所有视频都按 10MB 压（宁可压得保守一点）。
+     */
     private fun refreshUploadLimits() {
         if (limitsFetched) return
         limitsFetched = true
         val saved = prefs.getString(KEY_SITE_URL, null) ?: return
         // 只取 origin（scheme://host:port）：站点地址可能是某个具体页面（如 /admin），
-        // 直接往后拼路径会 404（踩过：拼成 …/_album-test.html/api/upload/limits）
-        val origin = runCatching {
-            val parsed = URI(saved)
-            "${parsed.scheme}://${parsed.authority}"
-        }.getOrNull()?.takeIf { it.startsWith("http") } ?: return
+        // 直接往后拼路径会 404（踩过：拼成 …/_album-test.html/api/upload/limits）。
+        // 口径与通知层共用 AppUrl.originOf（单一事实源）。
+        val origin = AppUrl.originOf(saved) ?: return
         Thread {
             runCatching {
                 val connection = (URL("$origin/api/upload/limits").openConnection() as HttpURLConnection).apply {
@@ -751,38 +1068,42 @@ class MainActivity : ComponentActivity() {
                 }
                 connection.inputStream.bufferedReader().use { it.readText() }
             }.onSuccess { body ->
-                val value = runCatching {
-                    JSONObject(body).optInt("maxImages", DEFAULT_MAX_IMAGES)
-                }.getOrDefault(DEFAULT_MAX_IMAGES)
+                val json = runCatching { JSONObject(body) }.getOrNull()
+                val value = json?.optInt("maxImages", DEFAULT_MAX_IMAGES) ?: DEFAULT_MAX_IMAGES
                 if (value in 1..99) {
                     maxImagesPerBatch = value
-                    Log.i(LOG_TAG, "服务端上传上限：一次 $value 张")
+                    Log.i(LOG_TAG, "服务端上传上限：一次 $value 个")
+                }
+                // maxBytes = 非图片类的单文件上限（视频/音频）；视频压缩拿它当目标体积
+                val bytes = json?.optLong("maxBytes", DEFAULT_MAX_BYTES) ?: DEFAULT_MAX_BYTES
+                if (bytes in 1..MAX_SERVER_BYTES) {
+                    uploadMaxBytes = bytes
+                    Log.i(LOG_TAG, "服务端单文件上限：$bytes 字节")
                 }
             }.onFailure {
-                Log.w(LOG_TAG, "取上传上限失败，用兜底 $DEFAULT_MAX_IMAGES", it)
+                Log.w(LOG_TAG, "取上传上限失败，用兜底 $DEFAULT_MAX_IMAGES / $DEFAULT_MAX_BYTES 字节", it)
             }
         }.start()
     }
 
     // ---------------------------------------------------------------- 相册视图
 
-    /** 纯图片 accept 才用自有相册；混合媒体（图+视频+音频，如上传工具栏）仍走系统选择器 */
-    private fun isImageOnlyAccept(prompt: GeckoSession.PromptDelegate.FilePrompt): Boolean {
-        val types = prompt.mimeTypes ?: return false
-        if (types.isEmpty()) return false
-        return types.all { it.trim().lowercase().startsWith("image/") }
-    }
-
-    private fun hasPhotoPermission(): Boolean =
-        checkSelfPermission(photoPermission) == PackageManager.PERMISSION_GRANTED
-
-    private fun showAlbumPicker(pending: PendingFilePrompt) {
-        val palette = palette()
+    private fun showAlbumPicker(pending: PendingFilePrompt, kinds: AlbumMedia) {
+        val palette = hostPalette(this)
+        // 上一次会话留下的编辑产物 / 压缩产物只活到 confirmPending 交完为止：新会话开始先清干净
+        // （shutdown() 不能清 —— closeAlbumPicker() 在 confirmPending() 之前跑）
+        PhotoFiles.clearEditedDir(this)
+        VideoCompressor.clearCache(this)
         val multiple =
             pending.prompt.type == GeckoSession.PromptDelegate.FilePrompt.Type.MULTIPLE
         val picker = AlbumPickerView(
             host = this,
             maxCount = if (multiple) maxImagesPerBatch else 1,
+            kinds = kinds,
+            // 站点单文件上限：压缩的目标体积（取不到就用兜底 10MB，见 refreshUploadLimits）
+            serverMaxBytes = uploadMaxBytes,
+            // armeabi-v7a 构建里没有 ffmpeg 包（见 docs/android/build.md），勾选框会自己置灰
+            compressorAvailable = BuildConfig.FFMPEG_ENABLED,
             bgColor = palette.background,
             fgColor = palette.title,
             subColor = palette.hint,
@@ -818,6 +1139,40 @@ class MainActivity : ComponentActivity() {
         webView?.visibility = View.VISIBLE
         menuButton?.visibility = View.VISIBLE
     }
+
+    // ---------------------------------------------------------------- 录音（原生小窗）
+
+    /**
+     * 弹原生录音界面。录完（或裁剪完）的文件走 [confirmPending] —— 与相册、系统选择器**同一条收口**，
+     * 所以"文件怎么回给页面"这件事只有一份实现。
+     */
+    private fun showVoiceRecorder(pending: PendingFilePrompt) {
+        AudioRecorder.clearOutputDir(this)
+        val view = VoiceRecorderView(
+            activity = this,
+            // 站点单文件上限也能压住录音时长：上限调成 1MB 时只让录 62 秒（见 VoiceRecorderPolicy）
+            maxRecordMs = VoiceRecorderPolicy.maxRecordMs(uploadMaxBytes),
+            onFinished = { file ->
+                closeVoiceRecorder()
+                confirmPending(listOf(Uri.fromFile(file)))
+            },
+            onCancelled = {
+                closeVoiceRecorder()
+                dismissPending()
+            },
+        )
+        voiceRecorder = view
+        Log.i(LOG_TAG, "打开原生录音界面（上限 ${maxRecordMs()}ms）")
+        view.show()
+    }
+
+    private fun closeVoiceRecorder() {
+        val view = voiceRecorder ?: return
+        voiceRecorder = null
+        view.shutdown()
+    }
+
+    private fun maxRecordMs(): Long = VoiceRecorderPolicy.maxRecordMs(uploadMaxBytes)
 
     /** 回退到系统选择器（没相册权限、或本来就不是图片） */
     private fun launchSystemPicker(prompt: GeckoSession.PromptDelegate.FilePrompt) {
@@ -867,7 +1222,29 @@ class MainActivity : ComponentActivity() {
             pending.result.complete(pending.prompt.dismiss())
         }
     }
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    /**
+     * 挂上 prompt 实例回调：**页面自己把这个 prompt 收掉时，宿主弹着的选择器要跟着关**
+     * （`<select>` 的 blur、datetime 的 `MozCloseDateTimePicker` 都会走到这里），
+     * 否则页面上控件已经不在了，手里还压着一个能点"确定"的卡片。
+     * 顺带把它登记成 `activeFormPrompts` —— 系统切深浅色时靠它把开着的选择器重画成新配色。
+     */
+    private fun trackPrompt(
+        prompt: GeckoSession.PromptDelegate.BasePrompt,
+    ): FormPrompts {
+        val form = FormPrompts(this)
+        prompt.setDelegate(
+            object : GeckoSession.PromptDelegate.PromptInstanceDelegate {
+                override fun onPromptDismiss(prompt: GeckoSession.PromptDelegate.BasePrompt) {
+                    form.closeOpenDialog()
+                }
+            },
+        )
+        activeFormPrompts = form
+        return form
+    }
+
+    private fun dp(value: Int): Int = dp(this, value)
 
     /**
      * 明文 HTTP 时弹一次警告（同一次会话只弹一次）。

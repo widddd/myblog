@@ -60,6 +60,7 @@ python -c "import subprocess; open(r'$env:TEMP\gv.png','wb').write(subprocess.ru
 |---|---|---|
 | 登录按钮"点了没反应"（实际是原生 GET 提交）+ 首页背景图不显示 | 宿主地址不在 `allowedDevOrigins` → HMR ws 被 403 → dev 客户端降级 → **页面根本没 hydrate** | [docs/pitfalls.md](../pitfalls.md) **P-110** |
 | **点上传没反应**（系统选择器不弹、页面一直等） | 宿主没实现 `PromptDelegate.onFilePrompt` | [architecture.md](architecture.md) §6b |
+| **点下拉框 / 日期时间输入没反应**（框看着正常，只有焦点圈；`<select>`、`<input type="date|time|datetime-local">` 全是这一类） | 宿主没实现 `PromptDelegate.onChoicePrompt` / `onDateTimePrompt` —— Gecko 把这两类控件的弹层交给宿主，不接管就只有焦点。**不是站点样式问题** | [architecture.md](architecture.md) §6c |
 | 选择器弹了、文件也选中了，**页面仍显示「未选择」** | `content://` 没转 `file://`（Gecko 内容进程拿不到 App 的 URI 授权，报 `NS_ERROR_FILE_UNRECOGNIZED_PATH`） | [architecture.md](architecture.md) §6b |
 | 点了「确认」后页面一片白，但 dev server 有 `GET / 200`、React 也启动了 | 视图可见性在 `GeckoView` **创建之前**被设置 → 视图停在 `GONE`（页面其实加载好了） | [architecture.md](architecture.md) §7 |
 | 装了 app 一启动就退出 | ABI 与设备不匹配（SIGILL） | build.md §3 |

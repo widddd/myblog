@@ -43,6 +43,15 @@ import {
 } from "@/lib/backup/host-secret";
 import { readPendingRestore } from "@/lib/backup/restore";
 import { deleteBackupKeyHash, listBackupKeyHashes, saveBackupKeyHash } from "@/lib/backup/secrets";
+import {
+  clearBackupUpload,
+  cosBackupKey,
+  getBackupUploads,
+  isBackupUploadPending,
+  queueBackupCosUpload,
+  type BackupUploadEntry,
+  type BackupUploadQueueResult,
+} from "@/lib/backup/uploads";
 import { getSqliteHandle } from "@/lib/db";
 import { currentBackupRelease } from "@/lib/release";
 import { getSetting, setSetting } from "@/lib/settings";
@@ -53,6 +62,12 @@ export type BackupRecord = BackupFileInfo &
   BackupManifestView & {
     local: boolean;
     cos: boolean;
+    /**
+     * 后台上传 COS 的进度（只有本地包会有）。三种值：
+     * 没有这个字段 = 不在队列里（云端已有副本，或没配 COS）；
+     * `queued` / `uploading` = 正在传；`failed` = 传失败，稍后自动重试或等管理员手动点。
+     */
+    cosUpload?: BackupUploadEntry;
   };
 
 export type { BackupFileInfo };
@@ -66,10 +81,6 @@ const globalForBackup = globalThis as typeof globalThis & {
 
 export function isBackupRunning(): boolean {
   return Boolean(globalForBackup.myblogBackupRunning);
-}
-
-function cosBackupKey(name: string) {
-  return `${COS_BACKUP_PREFIX}${name}`;
 }
 
 async function deleteCosBackup(name: string) {
@@ -99,6 +110,7 @@ export async function deleteBackup(name: string): Promise<void> {
     await deleteBackupFile(name);
   }
   await deleteCosBackup(name);
+  await clearBackupUpload(name);
   await deleteBackupKeyHash(name);
   await deleteBackupManifest(name);
 }
@@ -127,23 +139,6 @@ async function listCosBackupNames(): Promise<Set<string>> {
   return names;
 }
 
-export async function replicateBackupToCos(name: string, filePath: string): Promise<boolean> {
-  const cos = await loadCosSettings();
-  if (!cos) {
-    return false;
-  }
-  try {
-    await getDriver("cos").putFile(cosBackupKey(name), filePath);
-    return true;
-  } catch (error) {
-    logger.error("备份上传 COS 失败", {
-      name,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false;
-  }
-}
-
 export async function listBackupRecords(): Promise<BackupRecord[]> {
   const peekDir = path.join(os.tmpdir(), `myblog-backup-peek-${randomUUID()}`);
   try {
@@ -155,6 +150,7 @@ export async function listBackupRecords(): Promise<BackupRecord[]> {
     ]);
     const localMap = new Map(localFiles.map((file) => [file.name, file]));
     const names = new Set([...localMap.keys(), ...cosNames]);
+    const uploads = await getBackupUploads(localMap.keys());
     const records: BackupRecord[] = [];
 
     for (const name of names) {
@@ -194,6 +190,7 @@ export async function listBackupRecords(): Promise<BackupRecord[]> {
           ...manifest,
           local: true,
           cos: cosNames.has(name),
+          ...(uploads[name] ? { cosUpload: uploads[name] } : {}),
         });
         continue;
       }
@@ -277,11 +274,18 @@ async function pruneLocalBackups(): Promise<void> {
   const maxMb = Number(await getSetting<number>("backupLocalMaxMB")) || 512;
   const maxBytes = Math.max(64, maxMb) * 1024 * 1024;
   const pending = await readPendingRestore();
+  // 「还在往 COS 传」的包不许被轮转删掉：本地副本是它上云前的唯一一份。
+  const uploads = await getBackupUploads();
+  const protectedNames = new Set(
+    Object.entries(uploads)
+      .filter(([, entry]) => isBackupUploadPending(entry))
+      .map(([name]) => name),
+  );
 
   const byCount = await listBackups();
   const prunable = byCount.filter((file) => !isImportBackupFileName(file.name));
   for (const extra of prunable.slice(Math.max(1, keep))) {
-    if (pending?.name === extra.name) {
+    if (pending?.name === extra.name || protectedNames.has(extra.name)) {
       continue;
     }
     try {
@@ -304,7 +308,7 @@ async function pruneLocalBackups(): Promise<void> {
     if (total <= maxBytes || remainingCreated.length <= 1) {
       break;
     }
-    if (pending?.name === file.name) {
+    if (pending?.name === file.name || protectedNames.has(file.name)) {
       continue;
     }
     try {
@@ -370,7 +374,11 @@ async function packArchive(
 }
 
 export type BackupRunResult = BackupRecord & {
-  cosUploaded: boolean;
+  /**
+   * 上云口径：`queued` = 已排进后台上传队列（请求不等它），`skipped` = 没配 COS。
+   * 想确认到底传没传上去看 `listBackupRecords()` 的 `cos` / `cosUpload`。
+   */
+  cosUploadQueue: BackupUploadQueueResult;
 };
 
 export async function runBackup(passphrase?: string): Promise<BackupRunResult> {
@@ -450,7 +458,9 @@ export async function runBackup(passphrase?: string): Promise<BackupRunResult> {
     const finishedAt = new Date().toISOString();
     await setSetting("lastBackupAt", finishedAt);
 
-    const cosUploaded = await replicateBackupToCos(name, finalPath);
+    // 先把本地包排进后台上传队列就返回：上传要几十秒，不能让用户和网关陪着等
+    //（2026-10-03 生产上就是这么被「进程重启 + 网关 502」腰斩的）。
+    const cosUploadQueue = await queueBackupCosUpload(name, finalPath);
     await pruneLocalBackups();
 
     const metadata = await stat(finalPath);
@@ -458,7 +468,7 @@ export async function runBackup(passphrase?: string): Promise<BackupRunResult> {
       name,
       size: metadata.size,
       encrypted: encrypt,
-      cosUploaded,
+      cosUploadQueue,
     });
     return {
       name,
@@ -470,8 +480,9 @@ export async function runBackup(passphrase?: string): Promise<BackupRunResult> {
       version: release.version,
       releaseLabel: release.label,
       local: true,
-      cos: cosUploaded,
-      cosUploaded,
+      // 这一刻还没传完（甚至在传），列表会在上传结束后自己变成「本地 + COS」
+      cos: false,
+      cosUploadQueue,
     };
   } catch (error) {
     await unlink(stagingPath).catch(() => undefined);

@@ -111,3 +111,39 @@ test("MDX sanitizer preserves safe Audio props and drops http sources", () => {
   assert.match(serialized, /https:\/\/cdn\.example\.com\/a\.mp3/);
   assert.doesNotMatch(serialized, /onerror|http:\/\/evil\.example/);
 });
+
+test("折叠组：details/summary 只放行 className，其它属性一律剥掉", () => {
+  const tree = {
+    type: "root",
+    children: [
+      {
+        type: "element",
+        tagName: "details",
+        properties: {
+          className: ["post-image-group"],
+          onClick: "alert(1)",
+          style: "color:red",
+        },
+        children: [
+          {
+            type: "element",
+            tagName: "summary",
+            properties: { className: ["fold-head"], onClick: "alert(2)" },
+            children: [{ type: "text", value: "花期 · 2 张" }],
+          },
+        ],
+      },
+    ],
+  };
+
+  const sanitize = rehypeSanitize(sanitizeSchema) as unknown as (
+    value: typeof tree,
+  ) => typeof tree;
+  const serialized = JSON.stringify(sanitize(tree));
+
+  assert.match(serialized, /"tagName":"details"/);
+  assert.match(serialized, /"tagName":"summary"/);
+  assert.match(serialized, /post-image-group/);
+  assert.match(serialized, /花期 · 2 张/);
+  assert.doesNotMatch(serialized, /onClick|onclick|alert\(|color:red/);
+});

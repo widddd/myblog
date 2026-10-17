@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  状态栏小图标：Android 把它的**非透明像素当蒙版**染色，所以这里只用纯白填充、不带渐变
+  （状态栏是白底时系统会自动处理对比度）。
+  几何 **逐条取自 `ic_launcher_foreground.xml` / `splash_logo.xml`**（同一组「和自己对话」气泡：
+  回声气泡 + 主气泡 + 尾巴），只把透明度拉满、去掉渐变色底 —— 改 App 图标时这里要跟着改。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 回声气泡：另一个「我」 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M37.8,28.8 H49.3 A7.9,7.9 0 0 1 57.2,36.7 V43 A7.9,7.9 0 0 1 49.3,50.9 H37.8 A7.9,7.9 0 0 1 29.9,43 V36.7 A7.9,7.9 0 0 1 37.8,28.8 Z" />
+
+    <!-- 主气泡：你 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54.6,45.6 H68.2 A10,10 0 0 1 78.2,55.6 V62.9 A10,10 0 0 1 68.2,72.9 H54.6 A10,10 0 0 1 44.6,62.9 V55.6 A10,10 0 0 1 54.6,45.6 Z" />
+
+    <!-- 尾巴：话从嘴里出来，又指回自己 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M53,70.8 L44.6,82.4 L63.5,72.9 Z" />
+</vector>

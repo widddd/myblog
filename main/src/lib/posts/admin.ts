@@ -36,9 +36,17 @@ function toAdminPost(
     content: row.content,
     excerpt: row.excerpt,
     cover: row.cover,
+    coverStyle: row.coverStyle,
+    coverColor: row.coverColor,
+    coverColor2: row.coverColor2,
     bannerStyle: row.bannerStyle,
+    bannerImage: row.bannerImage,
     bannerColor: row.bannerColor,
     bannerColor2: row.bannerColor2,
+    coverFocalX: row.coverFocalX,
+    coverFocalY: row.coverFocalY,
+    bannerFocalX: row.bannerFocalX,
+    bannerFocalY: row.bannerFocalY,
     status: row.status,
     publishedAt: row.publishedAt,
     pinned: row.pinned,
@@ -198,9 +206,18 @@ export async function createAdminPost(input: PostWrite) {
       content: normalizePostContent(input.content),
       excerpt: input.excerpt ?? null,
       cover: input.cover ?? null,
+      coverStyle:
+        input.coverStyle ?? (input.cover ? "image" : "none"),
+      coverColor: input.coverColor ?? null,
+      coverColor2: input.coverColor2 ?? null,
       bannerStyle: input.bannerStyle ?? "cover",
+      bannerImage: input.bannerImage ?? input.cover ?? null,
       bannerColor: input.bannerColor ?? null,
       bannerColor2: input.bannerColor2 ?? null,
+      coverFocalX: input.coverFocalX ?? 50,
+      coverFocalY: input.coverFocalY ?? 50,
+      bannerFocalX: input.bannerFocalX ?? 50,
+      bannerFocalY: input.bannerFocalY ?? 50,
       status: schedule.status,
       publishedAt: schedule.publishedAt,
       pinned: input.pinned ?? false,
@@ -233,9 +250,17 @@ export async function updateAdminPost(id: number, input: PostPatch) {
       content: true,
       excerpt: true,
       cover: true,
+      coverStyle: true,
+      coverColor: true,
+      coverColor2: true,
       bannerStyle: true,
+      bannerImage: true,
       bannerColor: true,
       bannerColor2: true,
+      coverFocalX: true,
+      coverFocalY: true,
+      bannerFocalX: true,
+      bannerFocalY: true,
       passwordHash: true,
       categoryId: true,
       tags: { select: { tagId: true } },
@@ -290,11 +315,22 @@ export async function updateAdminPost(id: number, input: PostPatch) {
     (input.authorName !== undefined && nextAuthorName !== current.authorName) ||
     (input.excerpt !== undefined && (input.excerpt ?? null) !== current.excerpt) ||
     (input.cover !== undefined && (input.cover ?? null) !== current.cover) ||
+    (input.coverStyle !== undefined && input.coverStyle !== current.coverStyle) ||
+    (input.coverColor !== undefined &&
+      (input.coverColor ?? null) !== current.coverColor) ||
+    (input.coverColor2 !== undefined &&
+      (input.coverColor2 ?? null) !== current.coverColor2) ||
     (input.bannerStyle !== undefined && input.bannerStyle !== current.bannerStyle) ||
+    (input.bannerImage !== undefined &&
+      (input.bannerImage ?? null) !== current.bannerImage) ||
     (input.bannerColor !== undefined &&
       (input.bannerColor ?? null) !== current.bannerColor) ||
     (input.bannerColor2 !== undefined &&
       (input.bannerColor2 ?? null) !== current.bannerColor2) ||
+    (input.coverFocalX !== undefined && input.coverFocalX !== current.coverFocalX) ||
+    (input.coverFocalY !== undefined && input.coverFocalY !== current.coverFocalY) ||
+    (input.bannerFocalX !== undefined && input.bannerFocalX !== current.bannerFocalX) ||
+    (input.bannerFocalY !== undefined && input.bannerFocalY !== current.bannerFocalY) ||
     nextPasswordHash !== current.passwordHash ||
     nextCategoryId !== current.categoryId ||
     (input.tagIds !== undefined &&
@@ -321,9 +357,17 @@ export async function updateAdminPost(id: number, input: PostPatch) {
         content: nextContent,
         excerpt: input.excerpt,
         cover: input.cover,
+        coverStyle: input.coverStyle,
+        coverColor: input.coverColor,
+        coverColor2: input.coverColor2,
         bannerStyle: input.bannerStyle,
+        bannerImage: input.bannerImage,
         bannerColor: input.bannerColor,
         bannerColor2: input.bannerColor2,
+        coverFocalX: input.coverFocalX,
+        coverFocalY: input.coverFocalY,
+        bannerFocalX: input.bannerFocalX,
+        bannerFocalY: input.bannerFocalY,
         status: schedule?.status,
         publishedAt: schedule?.publishedAt,
         pinned: input.pinned,

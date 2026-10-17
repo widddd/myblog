@@ -18,6 +18,7 @@ export async function GET(request: Request) {
       page,
       pageSize,
       url.searchParams.get("kind"),
+      url.searchParams.get("album"),
     );
     return jsonPage(result.data, result.total, result.page, result.pageSize);
   } catch (error) {

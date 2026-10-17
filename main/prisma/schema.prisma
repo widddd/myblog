@@ -19,9 +19,21 @@ model Post {
   content      String
   excerpt      String?
   cover        String?
-  bannerStyle  String       @default("cover") // cover | solid | gradient
+  // 列表卡封面自己的形态：image | solid | gradient | none。
+  // 与 bannerStyle 解耦，互不覆盖。
+  coverStyle   String       @default("image")
+  coverColor   String?
+  coverColor2  String?
+  bannerStyle  String       @default("cover") // cover（与封面一致） | image | solid | gradient
+  bannerImage  String?
   bannerColor  String?
   bannerColor2 String?
+  // 封面图在列表卡片里的焦点（0–100，百分比）；50/50 = 居中。
+  coverFocalX  Int          @default(50)
+  coverFocalY  Int          @default(50)
+  // 封面图在文章详情 Banner 里的焦点；与卡片分开，允许同一张图各裁各的重点。
+  bannerFocalX Int          @default(50)
+  bannerFocalY Int          @default(50)
   passwordHash String?
   status       String       @default("draft") // draft | scheduled | published
   publishedAt  DateTime?
@@ -179,6 +191,55 @@ model Upload {
   size      Int
   variants  String   @default("{}") // JSON: {thumb, thumb2, content}
   createdAt DateTime @default(now())
+  // 相册归属：**单归属**，为空 = 未分类（见 docs/albums-spec.md D2）。
+  // 相册只收图片（image/*）；视频/音频不参与相册。
+  albumId   Int?
+  album     Album?   @relation("AlbumUploads", fields: [albumId], references: [id], onDelete: SetNull)
+  // 卷归属：相册内的一"卷"（一次拍摄 / 一组照片），为空 = 本相册里「未分类」，照样展示。
+  // 不变量：volume.albumId 必须等于 albumId（写入层守，见 lib/albums/admin.ts）。
+  // 删卷只解绑（SetNull），照片留在相册里变成未分类。
+  volumeId  Int?
+  volume    AlbumVolume? @relation("VolumeUploads", fields: [volumeId], references: [id], onDelete: SetNull)
+  // 被哪些相册选作了封面（删媒体时封面自动置空，相册回落到第一张图）
+  coverOf   Album[]  @relation("AlbumCover")
+
+  @@index([albumId])
+  @@index([volumeId])
+}
+
+// 相册：对外公开的独立页面 /albums/{slug}（见 docs/albums-spec.md）。
+// 照片按「上传时间倒序」排在相册里，顺序字段留到版式定稿后再说。
+model Album {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique
+  title       String
+  description String   @default("")
+  // 封面：手动选本相册里的一张；为空则用第一张
+  coverId     Int?
+  cover       Upload?  @relation("AlbumCover", fields: [coverId], references: [id], onDelete: SetNull)
+  // 关掉：相册列表里不出现、详情页 404、文章灯箱的「查看相册」按钮也不出现
+  enabled     Boolean  @default(true)
+  sort        Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  uploads     Upload[] @relation("AlbumUploads")
+  // 卷（一次拍摄 / 一组照片）：详情页按卷展示，每卷是一叠可展开的照片
+  volumes     AlbumVolume[] @relation("AlbumVolumes")
+}
+
+// 相册里的一"卷"：详情页按卷展示、每卷一叠可展开（版式定稿见 demo/album-page）。
+// 卷只有标题 + 排序，**没有日期字段**——组头显示的日期由本卷照片的上传时间实时算（不存冗余）。
+model AlbumVolume {
+  id        Int      @id @default(autoincrement())
+  albumId   Int
+  album     Album    @relation("AlbumVolumes", fields: [albumId], references: [id], onDelete: Cascade)
+  title     String   @default("")
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  uploads   Upload[] @relation("VolumeUploads")
+
+  @@index([albumId, sort])
 }
 
 // 首页模块目录：内置模块 + 管理员自建模块（见 docs/home-modules-spec.md）

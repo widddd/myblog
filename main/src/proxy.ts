@@ -8,6 +8,7 @@ import {
 } from "@/lib/auth/login-limit";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
+import { permissionsPolicyFor } from "@/lib/security/permissions-policy";
 import { getClientIp } from "@/lib/utils/fingerprint";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -23,12 +24,17 @@ function withSecurityHeaders(
     "Content-Security-Policy",
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
   );
-  response.headers.set(
-    "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=()",
-  );
 
   const { pathname } = request.nextUrl;
+  /**
+   * 麦克风只在真正渲染「发瞬间」发布区的页面放开（`self` = 同源页面自己可用）。
+   * 目前是 `/admin`（概览页快速发瞬间）与 `/admin/moments`；判定收口在
+   * `lib/security/permissions-policy.ts`，别在这里重写路径列表。
+   *
+   * 只放开发瞬间入口、且只放开麦克风：camera / geolocation 继续全站禁用。
+   */
+  response.headers.set("Permissions-Policy", permissionsPolicyFor(pathname));
+
   if (
     pathname === "/admin" ||
     pathname.startsWith("/admin/") ||

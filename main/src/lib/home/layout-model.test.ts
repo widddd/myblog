@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  applyDropToEntries,
   normalizePlacement,
-  resolveDropPlacement,
   samePlacement,
   toAreas,
   type PlacedLike,
@@ -94,39 +92,19 @@ test("空布局不会抛错", () => {
   assert.deepEqual(toAreas([]), []);
 });
 
-test("落回原格时 samePlacement 为真，不改其它模块", () => {
-  const origin = { row: 2, col: 1, colSpan: 6 };
-  const next = resolveDropPlacement(origin, {
-    row: 2,
-    col: 1,
-    colSpan: 6,
-    adopt: false,
-  });
-  assert.equal(samePlacement(origin, next), true);
-
-  const moved = applyDropToEntries(
-    [placed(1, 2, 1, 6), placed(2, 2, 7, 6)],
-    1,
-    next,
+test("同一个格子的判定只看行列跨度", () => {
+  assert.equal(
+    samePlacement(
+      { row: 2, col: 1, colSpan: 6 },
+      { row: 2, col: 1, colSpan: 6 },
+    ),
+    true,
   );
-  assert.deepEqual(
-    moved.map((item) => `${item.moduleId}:${item.row}:${item.col}-${item.colSpan}`),
-    ["1:2:1-6", "2:2:7-6"],
-  );
-});
-
-test("拖到空行时其它模块让位，原行只剩邻居", () => {
-  const next = resolveDropPlacement(
-    { row: 2, col: 1, colSpan: 6 },
-    { row: 4, col: 1, adopt: false },
-  );
-  const preview = applyDropToEntries(
-    [placed(1, 2, 1, 6), placed(2, 2, 7, 6), placed(3, 3, 1, 9)],
-    1,
-    next,
-  );
-  assert.deepEqual(
-    toAreas(preview).map((area) => `${area.row}:${area.col}-${area.colSpan}`),
-    ["2:7-6", "3:1-9", "4:1-6"],
+  assert.equal(
+    samePlacement(
+      { row: 2, col: 1, colSpan: 6 },
+      { row: 2, col: 1, colSpan: 3 },
+    ),
+    false,
   );
 });

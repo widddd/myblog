@@ -4,6 +4,7 @@ import { clearBackupManifests } from "@/lib/backup/manifests";
 import { clearPlainBackups } from "@/lib/backup/plain";
 import { deleteBackupFile, listBackups } from "@/lib/backup/files";
 import { clearRestoreArtifacts } from "@/lib/backup/restore";
+import { clearAllBackupUploads } from "@/lib/backup/uploads";
 import { revalidatePublicContent } from "@/lib/admin/revalidate";
 import { prisma } from "@/lib/db";
 import { clearUpdatePackages } from "@/lib/update/files";
@@ -57,6 +58,7 @@ export type DataClearResult = {
     momentVisibilityGroups: number;
     comments: number;
     uploads: number;
+    albums: number;
     backupSecrets: number;
     admins: number;
     staticPages: number;
@@ -302,6 +304,8 @@ async function clearFileArtifacts(): Promise<{
     }
     const ephemeral = await clearPlainBackups();
     await clearBackupManifests();
+    // 备份没了，上传队列的记录也必须跟着清（否则列表上会留下永远传不完的幽灵）
+    await clearAllBackupUploads();
 
     const updatePackages = await clearUpdatePackages();
     const updateSidecars = await clearUpdateSidecars();
@@ -349,6 +353,7 @@ export async function clearDatabase(
           momentVisibilityGroups: 0,
           comments: 0,
           uploads: 0,
+          albums: 0,
           backupSecrets: 0,
           admins: admins.count,
           staticPages: 0,
@@ -368,6 +373,9 @@ export async function clearDatabase(
       const tags = await tx.tag.deleteMany();
       const penNames = await tx.penName.deleteMany();
       const staticPages = await tx.staticPage.deleteMany();
+      // 卷在相册之前删：卷一删，它里面的照片只是回到「未分类」（Upload.volumeId SetNull）
+      await tx.albumVolume.deleteMany();
+      const albums = await tx.album.deleteMany();
       const uploads = await tx.upload.deleteMany();
       const backupSecrets = await tx.backupSecret.deleteMany();
       const admins = deleteAdmin ? await tx.adminUser.deleteMany() : { count: 0 };
@@ -383,6 +391,7 @@ export async function clearDatabase(
         momentVisibilityGroups: momentVisibilityGroups.count,
         comments: commentReplies.count + topLevelComments.count,
         uploads: uploads.count,
+        albums: albums.count,
         backupSecrets: backupSecrets.count,
         admins: admins.count,
         staticPages: staticPages.count,
@@ -426,6 +435,7 @@ async function executeClear(targets: readonly DataClearTarget[]): Promise<DataCl
     comments: deleted.comments,
     penNames: deleted.penNames,
     staticPages: deleted.staticPages,
+    albums: deleted.albums,
     localObjects: storage.local,
     cosObjects: storage.cos,
     admins: deleted.admins,

@@ -56,6 +56,10 @@
 - 预约恢复的备份不能直接删除（须先取消预约）
 - 已预约程序更新时不能再预约恢复（反之亦然）；更新覆盖的是程序文件，不是 `blog.db`
 
+### 6a. 2026-10-03 补：恢复的重启也有额度
+
+`data/restore-pending.json` 同样记 `restartAttempts`，到点最多排 3 次重启。恢复是在**启动时**应用的（`instrumentation.ts` → `applyPendingRestore()`），连试 3 次都没成功（包坏了、加密包的口令随重启丢了）就说明重启解决不了：调度器会取消预约并写一条 `error` 日志，站点不再每分钟被打断一次。重新设一次重启时间会重置额度（`updatePendingRestart()` 写 `restartAttempts: 0`）。同理见 [app-update-spec.md](app-update-spec.md) §4 与 P-133。
+
 ### 7. 审批
 
 - [x] 用户已要求增加一键恢复脚本或按钮

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
 import {
   ArchiveIcon,
   ChatBubbleIcon,
@@ -12,6 +13,8 @@ import {
 import { DashboardView } from "@/components/admin/DashboardView";
 import { MomentCompose } from "@/components/admin/MomentCompose";
 import { resolveBackupEncrypt } from "@/lib/backup/encrypt-policy";
+import { normalizeBackupAtTime, resolvePeriodDays } from "@/lib/backup/schedule";
+import { isSmartBlogApp } from "@/lib/client/detect";
 import { prisma } from "@/lib/db";
 import { loadMomentComposeData } from "@/lib/moments/compose-data";
 import { APP_RELEASE_LABEL } from "@/lib/release";
@@ -76,6 +79,7 @@ export default async function AdminDashboardPage() {
     cards,
     lastBackupAt,
     backupPeriodDays,
+    backupAtTime,
     backupKeep,
     cosBucket,
     cosRegion,
@@ -112,6 +116,7 @@ export default async function AdminDashboardPage() {
     getDashboardCards(),
     getSetting<string | null>("lastBackupAt"),
     getSetting<number>("backupPeriodDays"),
+    getSetting<string>("backupAtTime"),
     getSetting<number>("backupKeep"),
     getSetting<string>("cosBucket"),
     getSetting<string>("cosRegion"),
@@ -206,8 +211,10 @@ export default async function AdminDashboardPage() {
             全部瞬间
           </Link>
         </div>
-        {/* 与 /admin/moments 的发布区同一个组件：输入框 + 图片按钮 + 可见范围（详细设置在右侧抽屉） */}
+        {/* 与 /admin/moments 的发布区同一个组件：输入框 + 图片按钮 + 语音按钮 + 可见范围（详细设置在右侧抽屉）。
+            appMode 同样按 UA 判定：概览页这张卡也能发瞬间，麦克风按钮的行为必须与瞬间页完全一致 */}
         <MomentCompose
+          appMode={isSmartBlogApp((await headers()).get("user-agent"))}
           globalDays={composeData.globalDays}
           groups={composeData.groups}
           maxImages={composeData.maxImages}
@@ -271,7 +278,7 @@ export default async function AdminDashboardPage() {
               <p className="admin-status-row__meta">
                 {backupEncrypt.enabled
                   ? `加密备份要手动输入口令，不会自动执行 · 保留 ${backupKeep} 份 · ${backupLabel}`
-                  : `每 ${backupPeriodDays} 天一次 · 保留 ${backupKeep} 份 · ${backupLabel}`}
+                  : `每 ${resolvePeriodDays(backupPeriodDays)} 天 ${normalizeBackupAtTime(backupAtTime)} 自动备份 · 保留 ${backupKeep} 份 · ${backupLabel}`}
               </p>
             </div>
           </div>

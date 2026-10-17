@@ -7,6 +7,12 @@ import { logger } from "@/lib/utils/logger";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+/**
+ * 上传一个文件。multipart 字段：`file`、`kind`、音频的 `duration`，
+ * 以及图片可选的 `albumId` / `volumeId`（媒体库上传预览里选的相册与卷）。
+ * 字段解析与校验都在 `handleUpload()` 里（`volumeId` 必须与 `albumId` 同时给且属于该相册，
+ * **写盘之前**就拒掉，不留孤儿文件）——这里只负责鉴权与错误映射。
+ */
 export async function POST(request: Request) {
   try {
     await requireAdmin();

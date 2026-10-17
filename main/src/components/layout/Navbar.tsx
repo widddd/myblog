@@ -133,14 +133,18 @@ export function Navbar({ siteName, isAdmin = false }: NavbarProps) {
                 跳到后台并带 marker，概览页会直接把外观面板打开——前台不引入 admin.css，
                 面板的样式在后台那边，所以这里不原地弹。 */}
             {isAdmin ? (
-              <Link
+              // 必须用 <a> 做文档级跳转，不能换回 Next <Link>：
+              // Permissions-Policy 是顶层文档策略，从公共页面软导航进后台会使
+              // 后台继续沿用 public 文档的 microphone=()。
+              // eslint-disable-next-line @next/next/no-html-link-for-pages -- 需要文档级跳转，不能软导航
+              <a
                 aria-label="外观设置"
                 className="nav-icon-btn"
                 href="/admin?appearance=1"
                 title="外观设置"
               >
                 <ColorWheelIcon aria-hidden="true" />
-              </Link>
+              </a>
             ) : null}
             <div
               className={cn(

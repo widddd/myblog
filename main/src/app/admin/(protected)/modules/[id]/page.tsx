@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { ModuleEditor } from "@/components/admin/ModuleEditor";
+import { HomeModuleRenderer } from "@/components/home/HomeModuleRenderer";
+import { loadHomeData } from "@/lib/home/data";
 import { getHomeModule } from "@/lib/home/layout";
 
 export const metadata: Metadata = {
@@ -24,5 +26,10 @@ export default async function AdminModuleEditPage({
     notFound();
   }
 
-  return <ModuleEditor module={item.module} />;
+  // 预览走前台的渲染器（同一份实现 + 同一份真实数据），
+  // 所以编辑器里看到的观感与首页一致，不存在「后台一套、前台另一套」。
+  const data = await loadHomeData([item], 1);
+  const preview = <HomeModuleRenderer data={data} module={item.module} preview />;
+
+  return <ModuleEditor module={item.module} preview={preview} />;
 }

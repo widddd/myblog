@@ -19,9 +19,21 @@ export type StorageObject = StorageObjectStat & {
   range: StorageByteRange | null;
 };
 
+export type StoragePutOptions = {
+  publicRead?: boolean;
+  /**
+   * 上传的字节进度（**只有真的走网络的驱动**会调用，本地写盘不报）。
+   *
+   * `loaded`/`total` 是**本次对象**的字节数，不是整个任务的：
+   * 一次 finalize 要传原图和缩略图两个对象，累加与换算由调用方负责
+   * （见 `lib/uploads/progress.ts`），驱动只老实报自己这一份。
+   */
+  onProgress?: (loaded: number, total: number) => void;
+};
+
 export interface StorageDriver {
   readonly name: StorageDriverName;
-  put(key: string, data: Uint8Array): Promise<void>;
+  put(key: string, data: Uint8Array, options?: StoragePutOptions): Promise<void>;
   putFile(
     key: string,
     filePath: string,

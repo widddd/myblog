@@ -3,21 +3,26 @@ import Link from "next/link";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Pagination } from "@/components/common/Pagination";
 import { PostList } from "@/components/home/PostCard";
+import type { HomeMoment } from "@/lib/moments/types";
 import type { PostCardModel, TaxonomyItem } from "@/lib/posts/types";
 
 export function PostsModule({
   listing,
   categories,
   showCategoryBar = true,
+  momentLimit,
 }: {
   listing: {
     posts: PostCardModel[];
     total: number;
     page: number;
     pageSize: number;
+    /** 用来穿插进文章流的瞬间（与瞬间模块共用同一份取数） */
+    moments?: HomeMoment[];
   };
   categories: TaxonomyItem[];
   showCategoryBar?: boolean;
+  momentLimit?: number;
 }) {
   return (
     <div className="home-posts">
@@ -39,7 +44,11 @@ export function PostsModule({
           description="运行 pnpm db:seed 写入演示数据，或到后台发布第一篇。"
         />
       ) : (
-        <PostList posts={listing.posts} />
+        <PostList
+          momentLimit={momentLimit}
+          moments={listing.moments ?? []}
+          posts={listing.posts}
+        />
       )}
       <Pagination
         basePath="/"

@@ -43,7 +43,14 @@ export type PendingRestore = {
   name: string;
   requestedAt: string;
   restartAt: string | null;
+  /** 为这份预约排过几次重启（落盘，用法同 `lib/update/pending.ts`，见 P-133 家族） */
+  restartAttempts?: number;
 };
+
+/** 恢复连续失败多少次后不再自动重启（恢复是在启动时应用的，重启解决不了就该停手）。 */
+export const MAX_PENDING_RESTORE_RESTARTS = 3;
+
+export type RestoreRestartDecision = "idle" | "restart" | "abandon";
 
 const pendingPassphrases = new Map<string, string>();
 
@@ -105,6 +112,7 @@ export async function readPendingRestore(
       name: parsed.name,
       requestedAt: parsed.requestedAt,
       restartAt: parseRestartAt(parsed.restartAt),
+      restartAttempts: parseRestartAttempts(parsed.restartAttempts),
     };
   } catch (error) {
     if (isNodeNotFoundError(error)) {
@@ -140,6 +148,7 @@ export async function requestPendingRestore(
     name,
     requestedAt: new Date().toISOString(),
     restartAt: null,
+    restartAttempts: 0,
   };
   if (passphrase) {
     setPendingRestorePassphrase(name, passphrase);
@@ -159,6 +168,12 @@ function parseRestartAt(value: unknown): string | null {
   return value;
 }
 
+/** 重启计数：只认非负整数，旧版本的 pending 里没有这个键。 */
+function parseRestartAttempts(value: unknown): number {
+  const attempts = Number(value);
+  return Number.isInteger(attempts) && attempts > 0 ? attempts : 0;
+}
+
 export function isPendingRestoreDue(
   pending: PendingRestore | null,
   now = Date.now(),
@@ -168,6 +183,31 @@ export function isPendingRestoreDue(
   }
   const at = Date.parse(pending.restartAt);
   return !Number.isNaN(at) && at <= now;
+}
+
+/**
+ * 「到点了该怎么办」的**唯一裁决点**（纯函数）：
+ * 与更新共用同一套思路——额度用尽就停手，别再靠重启碰运气（P-133 家族）。
+ */
+export function decidePendingRestoreRestart(
+  pending: PendingRestore | null,
+  now: number = Date.now(),
+  maxAttempts: number = MAX_PENDING_RESTORE_RESTARTS,
+): RestoreRestartDecision {
+  if (!isPendingRestoreDue(pending, now)) {
+    return "idle";
+  }
+  return (pending?.restartAttempts ?? 0) >= maxAttempts ? "abandon" : "restart";
+}
+
+/** 记一次「已排重启」，落盘后再返回。返回累计次数。 */
+export async function notePendingRestoreRestart(
+  pending: PendingRestore,
+  databasePath = resolveDatabasePath(),
+): Promise<number> {
+  const attempts = (pending.restartAttempts ?? 0) + 1;
+  await writePendingRestore({ ...pending, restartAttempts: attempts }, databasePath);
+  return attempts;
 }
 
 async function writePendingRestore(
@@ -195,7 +235,8 @@ export async function updatePendingRestart(
   if (!("restartNow" in input) && Date.parse(restartAt) <= Date.now()) {
     throw new BackupError("VALIDATION_ERROR", "预约重启时间必须晚于现在", 400);
   }
-  const pending: PendingRestore = { ...current, restartAt };
+  // 重新给一次重启额度：否则「停手」之后用户手动再设时间也永远不会重启
+  const pending: PendingRestore = { ...current, restartAt, restartAttempts: 0 };
   await writePendingRestore(pending, databasePath);
   logger.info(
     "restartNow" in input ? "已选择立刻重启并恢复" : "已设定预约重启时间",

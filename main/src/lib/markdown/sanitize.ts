@@ -297,6 +297,8 @@ export const sanitizeSchema: Options = {
   ...defaultSchema,
   tagNames: [
     ...(defaultSchema.tagNames ?? []),
+    // 折叠组转换后的元素名（大写，由 components.ImageGroup 接住；见 image-group.ts 文件头）
+    "ImageGroup",
     "video",
     "audio",
     "figure",
@@ -304,6 +306,13 @@ export const sanitizeSchema: Options = {
   ],
   attributes: {
     ...defaultSchema.attributes,
+    // 折叠组：`rehypeImageGroups` 在 sanitize **之前**把 <ImageGroup> 转成
+    // <ImageGroup class="post-image-group">，不放行这个元素名与 className 会被当场剥掉
+    // （元素被剥=内容一起没；类名被剥=组件认不出来，退回原生标签）。
+    // details / summary 保留给"没注册组件时"的兜底路径与用户手写的 <details>。
+    ImageGroup: ["className"],
+    details: ["className"],
+    summary: ["className"],
     figure: ["className"],
     figcaption: ["className"],
     audio: ["controls", "loop", "preload", "src", "title"],

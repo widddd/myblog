@@ -8,6 +8,11 @@ import {
   resolveDashboardCards,
   type DashboardCards,
 } from "@/lib/admin/dashboard-cards";
+import {
+  DEFAULT_BACKUP_AT_TIME,
+  DEFAULT_BACKUP_PERIOD_DAYS,
+  normalizeBackupAtTime,
+} from "@/lib/backup/schedule";
 import { prisma } from "@/lib/db";
 import { normalizeVisibilityDays } from "@/lib/moments/visibility";
 import { DEFAULT_STATIC_PAGES_DIR } from "@/lib/pages/directories";
@@ -18,12 +23,17 @@ export const DEFAULT_SETTINGS = {
   announcement: "",
   banner: "",
   pageSize: 10,
-  backupPeriodDays: 3,
+  // 周期备份：每 N 天的 HH:MM（服务器本地时间）。默认值单一事实源在 lib/backup/schedule.ts
+  backupPeriodDays: DEFAULT_BACKUP_PERIOD_DAYS,
+  backupAtTime: DEFAULT_BACKUP_AT_TIME,
   backupKeep: 5,
   uploadMaxSizeMB: 10,
   uploadMaxImagesPerBatch: 9,
   homeModuleOpacity: 32,
   homeBackdropOpacity: 100,
+  // 首页小徽标（分类、标签、瞬间）的颜色与底色不透明度；空 = 跟随主题色
+  homeBadgeColor: "",
+  homeBadgeOpacity: 16,
   siteUrl: "",
   siteStartedAt: "",
   lastBackupAt: null,
@@ -189,6 +199,8 @@ export async function getPublicSettings() {
     pageSize,
     homeModuleOpacity,
     homeBackdropOpacity,
+    homeBadgeColor,
+    homeBadgeOpacity,
     siteUrl,
     siteStartedAt,
   ] = await Promise.all([
@@ -198,6 +210,8 @@ export async function getPublicSettings() {
     getSetting<number>("pageSize"),
     getSetting<number>("homeModuleOpacity"),
     getSetting<number>("homeBackdropOpacity"),
+    getSetting<string>("homeBadgeColor"),
+    getSetting<number>("homeBadgeOpacity"),
     getSetting<string>("siteUrl"),
     getSetting<string>("siteStartedAt"),
   ]);
@@ -213,6 +227,13 @@ export async function getPublicSettings() {
     homeBackdropOpacity: clampPercent(
       homeBackdropOpacity ?? DEFAULT_SETTINGS.homeBackdropOpacity,
     ),
+    homeBadgeColor:
+      typeof homeBadgeColor === "string" && /^#[0-9A-Fa-f]{6}$/.test(homeBadgeColor)
+        ? homeBadgeColor
+        : "",
+    homeBadgeOpacity: clampPercent(
+      homeBadgeOpacity ?? DEFAULT_SETTINGS.homeBadgeOpacity,
+    ),
     siteUrl: siteUrl ?? DEFAULT_SETTINGS.siteUrl,
     siteStartedAt: siteStartedAt ?? DEFAULT_SETTINGS.siteStartedAt,
   };
@@ -224,6 +245,7 @@ export type AdminSettings = {
   banner: string;
   pageSize: number;
   backupPeriodDays: number;
+  backupAtTime: string;
   backupKeep: number;
   backupLocalMaxMB: number;
   localMediaMaxMB: number;
@@ -234,6 +256,8 @@ export type AdminSettings = {
   momentVisibleDays: number;
   homeModuleOpacity: number;
   homeBackdropOpacity: number;
+  homeBadgeColor: string;
+  homeBadgeOpacity: number;
   siteUrl: string;
   siteStartedAt: string;
   lastBackupAt: string | null;
@@ -278,6 +302,7 @@ export async function getAdminSettings(): Promise<AdminSettings> {
       values.backupPeriodDays,
       DEFAULT_SETTINGS.backupPeriodDays,
     ),
+    backupAtTime: normalizeBackupAtTime(values.backupAtTime),
     backupKeep: asSettingNumber(values.backupKeep, DEFAULT_SETTINGS.backupKeep),
     backupLocalMaxMB: asSettingNumber(
       values.backupLocalMaxMB,
@@ -305,6 +330,14 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     homeBackdropOpacity: asSettingNumber(
       values.homeBackdropOpacity,
       DEFAULT_SETTINGS.homeBackdropOpacity,
+    ),
+    homeBadgeColor: asSettingString(
+      values.homeBadgeColor,
+      DEFAULT_SETTINGS.homeBadgeColor,
+    ),
+    homeBadgeOpacity: asSettingNumber(
+      values.homeBadgeOpacity,
+      DEFAULT_SETTINGS.homeBadgeOpacity,
     ),
     siteUrl: asSettingString(values.siteUrl, DEFAULT_SETTINGS.siteUrl),
     siteStartedAt: asSettingString(

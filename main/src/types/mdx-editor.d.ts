@@ -48,8 +48,16 @@ export function toolbarPlugin(options: {
 
 export type ImageUploadHandler = ((image: File) => Promise<string>) | null;
 
+/**
+ * 预览地址改写：`ImageEditor` 渲染前会 `await` 它，拿返回值当 `<img src>`。
+ * 实现见 `src/editor/plugins/image/ImageEditor.tsx` 的 `imagePreviewHandler$` 分支。
+ * 本站用它把"刚在本机选过、还没上云"的图直接指向本机 blob（见 lib/client/local-preview.ts）。
+ */
+export type ImagePreviewHandler = ((imageSource: string) => Promise<string>) | null;
+
 export function imagePlugin(options?: {
   imageUploadHandler?: ImageUploadHandler;
+  imagePreviewHandler?: ImagePreviewHandler;
   disableImageResize?: boolean;
   EditImageToolbar?: ComponentType<{
     nodeKey: string;
@@ -70,6 +78,17 @@ export function useMdastNodeUpdater<T = unknown>(): (
   node: Partial<T>,
 ) => void;
 export function useLexicalNodeRemove(): () => void;
+
+/**
+ * 嵌套编辑区（自写 JSX 组件外壳时用它渲染组件内部内容）。
+ * 只在 `components/admin/ImageGroupJsxEditor.tsx` 用；类型按那边的调用来声明。
+ */
+export function NestedLexicalEditor<T>(props: {
+  block?: boolean;
+  contentEditableProps?: Record<string, unknown>;
+  getContent: (mdastNode: T) => unknown;
+  getUpdatedMdastNode: (mdastNode: T, children: unknown) => T;
+}): ReactNode;
 export function useNestedEditorContext(): {
   parentEditor: import("lexical").LexicalEditor;
   lexicalNode: { getKey: () => string };

@@ -27,6 +27,11 @@ export const DATA_CLEAR_DELETE_ORDER = [
   "Tag",
   "PenName",
   "StaticPage",
+  // 相册：相册是内容，跟着清；相册与图片的归属是 Upload.albumId（SetNull），
+  // 所以「删相册」与「删媒体」谁先谁后都不会撞外键（见 docs/albums-spec.md §3.2）。
+  // 卷（AlbumVolume）排在相册前：卷一删，它里面的照片只是回到「未分类」（Upload.volumeId SetNull）。
+  "AlbumVolume",
+  "Album",
   "Upload",
   "BackupSecret",
 ] as const;

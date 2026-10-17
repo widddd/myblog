@@ -36,7 +36,8 @@ export function SetupForm({ recovery = false }: { recovery?: boolean }) {
         };
 
     try {
-      const csrfToken = await fetchCsrfToken();
+      // 与登录同一口径：创建/重建管理员前强制重新签发（旧 cookie 的签名可能已经失效）
+      const csrfToken = await fetchCsrfToken({ refresh: true });
       const response = await fetch("/api/auth/setup", {
         method: "POST",
         headers: {

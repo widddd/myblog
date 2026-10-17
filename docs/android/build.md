@@ -1,4 +1,4 @@
-﻿# build.md — Android 客户端工具链与构建
+# build.md — Android 客户端工具链与构建
 
 > 工程在 `androidapp/`（与 `main/` 平级）。**不是** `main/android/` —— 放 `main/` 里会被 `main/tsconfig.json` 的 `**/*.ts` 与 ESLint 扫到。
 > 所有版本号都是本机实测结论，不是"照文档抄的默认值"。
@@ -53,7 +53,27 @@ Kotlin stdlib 强制 2.2.10
 `F libc: Fatal signal 4 (SIGILL) ... DEBUG: ABI: 'x86_64'` —— 非法指令，因为是 ARM 机器码在 x86 上执行。
 排查时 `crash buffer` 可能是空的，别被"没崩溃日志"误导，要看 `DEBUG` 行里的 ABI。
 
-**确认包里到底是什么架构**：`aapt2 dump badging <apk> | Select-String "native-code"`，应只列一个 ABI。
+**确认包里到底是什么架构**：`aapt2 dump badging <apk> | Select-String "native-code"`，应只列一个 ABI。**2026-10 起 Gradle 里加了 `ndk { abiFilters += gvAbi }`**：ffmpeg 的 AAR 里两套 so 都在，不过滤会把包撑大一倍（实测 debug 包只留 `lib/x86_64/*`）。
+
+## 3b. 视频压缩的 ffmpeg（依赖、ABI、许可证，2026-10）
+
+```kotlin
+// 只在有对应 ABI 时才加（armeabi-v7a 没有 ffmpeg 包，见下）
+if (ffmpegEnabled) implementation("dev.ffmpegkit-maintained:ffmpeg-kit-min-gpl:8.1.7")
+buildConfigField("boolean", "FFMPEG_ENABLED", ffmpegEnabled.toString())
+```
+
+| 事项 | 实测/决定 |
+|---|---|
+| 为什么不是原版 | `com.arthenica:ffmpeg-kit-*` 2025-04 退役并**从仓库下架**（照老文章写坐标必然 `Could not find …`），且不支持 16 KB 页对齐 |
+| 用的坐标 | `dev.ffmpegkit-maintained:ffmpeg-kit-min-gpl:8.1.7`（Maven Central 的社区维护 drop-in 包；SDK 35、16KB 对齐、包名仍是 `com.arthenica.ffmpegkit`） |
+| 为什么 `-gpl` | 要 `libx264` 就只能选 `*-gpl`；**该 AAR 是 GPL-3.0，整个 App 按 GPL-3.0 分发**（用户决策，见 [../moment-video-spec.md](../moment-video-spec.md)）。LGPL 档没有 x264，只能用系统 MediaCodec |
+| ABI | 该包**只发 `arm64-v8a` + `x86_64`**：`-PgvAbi=armeabi-v7a` 时 `ffmpegEnabled=false` —— 不加依赖、`BuildConfig.FFMPEG_ENABLED=false`、相册里勾选框置灰（**降级而不是构建失败**） |
+| 体积 | 实测 debug APK（x86_64）单看 ffmpeg 那几支 so：`libavcodec.so` 15.2 MB、`libavfilter.so` 3.7 MB、`libavformat.so` 2.4 MB、`libffmpegkit.so` 0.5 MB、`libc++_shared.so` 1.6 MB…（`libxul.so` 165 MB 才是大头） |
+| API 形状 | **以 `javap` 实读为准**（P-181）：`executeWithArgumentsAsync(String[], FFmpegSessionCompleteCallback, LogCallback, StatisticsCallback)`；只有 `cancel()` / `cancel(long sessionId)`；`Statistics.getTime()` 是 `double` 毫秒。AAR 解开后 `jni/{arm64-v8a,x86_64}/libavcodec.so` 内可搜到 `libx264` 字样（编码器确实在包里） |
+| **必须手补的传递依赖** | `implementation("com.arthenica:smart-exception-java:0.2.1")` —— 维护版 AAR 的 **POM 里没有 `<dependencies>` 段**，`FFmpegKitConfig` 静态初始化要用的 `com.arthenica.smartexception.java.Exceptions` 不会被打进包；缺了它**第一次点压缩就闪退**（`FATAL EXCEPTION: NoClassDefFoundError`，见 P-183）。同时调用点要 `catch (Throwable)` —— `Error` 不是 `Exception` |
+| 时长硬规则 | **视频 > 30 分钟一律不许发**（`CompressPolicy.MAX_DURATION_MS`，与站点 `lib/moments/compose-rules.ts` 同口径）。它是产品规则不是压缩策略：**勾选框关掉、设备没带 ffmpeg（armeabi-v7a）时同样拦**，拦在选择阶段（停留相册 + 一句人话），不启动 ffmpeg |
+| 线程与内存 | ffmpeg 参数固定带 `-threads 2`（`CompressPolicy.FFMPEG_THREADS`）：HEVC 长视频按默认"核数"路解码会把帧缓冲与内存撑爆。压缩前还查一次可用空间（`requiredFreeBytes()` = 源 + 两遍产物），不够就直接不编 |
 
 ## 4. 构建与安装
 
@@ -65,18 +85,23 @@ D:\AndroidSDK\platform-tools\adb.exe shell am force-stop com.smartblog.app
 D:\AndroidSDK\platform-tools\adb.exe shell am start -n com.smartblog.app/.MainActivity
 ```
 
-**起始地址是构建期注入的**（`BuildConfig.START_URL`），改地址不用改源码：
+**起始地址是构建期注入的**（`BuildConfig.START_URL`；缺省 = `https://bruccese.com`，不再进地址表单）：
 
 ```powershell
-.\gradlew.bat :app:assembleDebug -PstartUrl=http://10.0.2.2:3000/admin/login
-.\gradlew.bat :app:assembleDebug "-PstartUrl="        # 留空：输入框不预填，由用户自己填
+# 模拟器：指向宿主机的 dev server（10.0.2.2 是模拟器 NAT 约定的宿主回环）
+.\gradlew.bat :app:assembleDebug -PstartUrl=http://10.0.2.2:3000
+# 缺省（不传参数）= 生产默认地址 https://bruccese.com，见 AppUrl.kt
+.\gradlew.bat :app:assembleDebug
 ```
 
 | 场景 | URL |
 |---|---|
-| 模拟器（默认） | `http://10.0.2.2:3000` —— `10.0.2.2` 是模拟器 NAT 约定的**宿主机回环**地址，不是 `127.0.0.1`（那是模拟器自己） |
-| 真机 | 建议传空 `-PstartUrl=`，让用户在首启页自己填（地址存在 App 里，与构建无关） |
-| 生产 | `-PstartUrl=https://<域名>`（必须 HTTPS，见下） |
+| 默认（生产） | `https://bruccese.com` —— App 首启直达，用户可从右下角 ⋮ 改（存在 App 里，与构建无关） |
+| 模拟器 | `-PstartUrl=http://10.0.2.2:3000`（`10.0.2.2` 是模拟器 NAT 约定的**宿主机回环**地址，不是 `127.0.0.1`——那是模拟器自己） |
+| 生产（换域名） | 改 `AppUrl.DEFAULT_SITE_URL` 一处即可；构建期覆盖用 `-PstartUrl=https://<域名>` |
+
+> ⚠️ `-PstartUrl=` 传空串会**退回 `AppUrl.DEFAULT_SITE_URL`**（老文档说"留空让用户自己填"，那条已作废：首启不再有地址表单）。
+> ⚠️ **换默认域名时**把旧默认值追加进 `AppUrl.LEGACY_DEFAULT_URLS`，否则老装机里那个"构建期默认值"会被当成用户自定义地址一直用下去。
 
 **出真机包**（ABI 也是构建期注入，见 §3）：
 
@@ -137,7 +162,34 @@ D:\AndroidSDK\platform-tools\adb.exe -s emulator-5554 emu kill
 | **打开应用列表（应用抽屉）** | 在模拟器主屏幕上**从底部向上滑**；或先按 Home 键（底部中间圆点）再上滑。App 名字是 **SmartBlog**，蓝色「和自己对话」气泡图标 |
 | 回主屏 | `adb shell input keyevent 3` |
 | 看当前前台是谁 | `adb shell dumpsys activity activities \| findstr mResumedActivity` |
-| 首启填站点地址 | 模拟器里填 `http://10.0.2.2:3000`（`10.0.2.2` 是模拟器约定的宿主机地址，不是 `127.0.0.1`） |
+| 改 App 里的地址（不改代码） | 右下角 ⋮ →「修改网站地址」；或直接改 `shared_prefs/smartblog.xml`（见下） |
+
+> ⚠️ **直接改 `shared_prefs/smartblog.xml` 的手艺**（验证时很有用：不用重新构建就能让 App 指向别的端口）：
+> 必须先 `am force-stop`，否则 App 内存里那份缓存会在退出时把文件覆盖回去。
+> ```powershell
+> & $adb shell am force-stop com.smartblog.app
+> # 写一个 <map><string name="site_url">http://10.0.2.2:3011/probe</string></map>（UTF-8 无 BOM）
+> & $adb push prefs.xml /data/local/tmp/smartblog.xml
+> & $adb shell "run-as com.smartblog.app cp /data/local/tmp/smartblog.xml shared_prefs/smartblog.xml"
+> ```
+> 验完记得 `run-as com.smartblog.app rm -f shared_prefs/smartblog.xml` 复位。
+
+## 5b. 宿主纯逻辑的 JVM 单测（不需要模拟器）
+
+`app/src/test/java/com/smartblog/app/` 下的测试跑在 JVM 上，**秒级**，不需要模拟器也不需要设备：
+
+```powershell
+cd D:\code_projects\myblog\androidapp
+.\gradlew.bat :app:testDebugUnitTest --console=plain        # 结果 XML: app\build\test-results\testDebugUnitTest\
+```
+
+只依赖 `testImplementation("junit:junit:4.13.2")` 与 `testImplementation("org.json:json:20240303")`（见 `app/build.gradle.kts`，两者都只进测试期、不进 APK）。**不引 Robolectric**：那一层要么用真机/模拟器验（见 [debug.md](debug.md)），要么把逻辑抽成不依赖 Android 的纯函数再单测——`AppUrl.kt`（地址规则）与 `PushRules.kt`（通知层判定）就是这么抽的。
+
+> ⚠️ **`org.json` 必须用真实现**：`android.jar` 里它只有桩，JVM 单测一调就 `Method optString in org.json.JSONObject not mocked`。别用 `unitTests.isReturnDefaultValues = true` 糊过去（那会让 `JSONObject` 返回假值，测试看着绿、实际什么都没验证）。
+
+> ⚠️ **改 `-PstartUrl` 时加 `--no-build-cache --no-configuration-cache`**（或 `--rerun-tasks`）：Gradle 会拿旧缓存里那份 `BuildConfig` 重建 APK，参数看着生效、装的却是旧地址（实测 `pm clear` 后 App 进了 `https://bruccese.com` 而不是 dev server）。装完用 `adb logcat -s SmartBlog:I` 看第一行 `进入站点：…` 确认。
+
+> 加测试文件后要按**用例名**确认它真的跑了（`TEST-com.smartblog.app.AppUrlTest.xml` 里的 `tests=` 计数）——Gradle 会复用在跑的任务，只看 `BUILD SUCCESSFUL` 可能什么都没执行。
 
 > ⚠️ **真机也插着的时候**：`adb` 会同时看到模拟器和真机，不带 `-s` 的命令会报 `more than one device`——统一带 `-s emulator-5554`（脚本里已自动探测串号）。
 > ⚠️ **同一个 AVD 不能起两个实例**（会互相锁冲突），所以脚本先探测、已在跑就直接复用。
@@ -164,7 +216,7 @@ D:\AndroidSDK\platform-tools\adb.exe -s emulator-5554 emu kill
 
 **为什么这些 `.so` 没被压缩**：AGP 默认 `extractNativeLibs=false`（`useLegacyPackaging=false`）——`.so` 按页对齐、以 **stored** 方式放进 APK，安装时不解包、运行时直接 mmap，省内存也省启动时间。代价就是 `lib/` 那 167 MB 几乎原样占用。
 
-**这些体积和站点代码无关**：APK 里**一行博客代码都没有**——站点是 `main/` 的 Next.js（542 个 ts/tsx、约 5.7 万行），全部从服务器加载。壳自己的源码只有约 1000 行 Kotlin（`MainActivity.kt` 904 + `AlbumPickerView.kt` 496）。
+**这些体积和站点代码无关**：APK 里**一行博客代码都没有**——站点是 `main/` 的 Next.js（542 个 ts/tsx、约 5.7 万行），全部从服务器加载。壳自己的源码只有约 2430 行 Kotlin（`MainActivity.kt` 901 + `PickerViews.kt` 449 + `AlbumPickerView.kt` 496 + `FormPrompts.kt` 334 + `HostUi.kt` 247）。
 
 **想瘦身**：内核不可约（`libxul.so` 是编译产物）。能做的只有：**只打一个 ABI**（已做，见 §3；双 ABI 等于翻倍）、开 R8 + 资源压缩（`isMinifyEnabled` 目前是 `false`，能省的是 dex 那几 MB，对内核无效）。
 
@@ -173,4 +225,4 @@ D:\AndroidSDK\platform-tools\adb.exe -s emulator-5554 emu kill
 ## 7. HTTP 与 cookie 的两条前提
 
 1. **局域网明文 HTTP 只适合自用调试**。dev 下 `lib/auth/session.ts` 的 `secure: process.env.NODE_ENV === "production"` 为 `false`，所以 `http://` 下 session/CSRF cookie 能正常回传；**生产必须 HTTPS**，否则 cookie 不回传、登录必然失败。
-2. App 侧明文访问会**弹一次警告**（`maybeWarnInsecure`，用 `NetworkSecurityPolicy.isCleartextTrafficPermitted(url)` 判定，不维护地址表）。
+2. App 侧明文访问会**弹一次警告**（`maybeWarnInsecure`，**看 URL 协议**，不维护地址表；曾经用 `NetworkSecurityPolicy.isCleartextTrafficPermitted()` 判定，但清单开了 `usesCleartextTraffic` 之后那个 API 永远返回 true，等于把警告悄悄关掉——详见 [architecture.md](architecture.md) §6）。

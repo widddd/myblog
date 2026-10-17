@@ -27,12 +27,14 @@
   --heo-red: #f04a63;
   --heo-radius: 12px;
   --heo-navbar-height: 60px;
-  --h-unit: clamp(7px, 1dvh, 11px);
   --style-border: 1px solid var(--heo-card-border);
   --home-blur: 0px;
   --home-veil: 0;
   --home-module-fill: 32%;
   --home-backdrop-opacity: 1;
+  /* 「1% 视口高度」的单位量。前台就是 1vh；后台画框把它换成「设计视口高 ÷ 100」，
+     这样画框里的 Banner（100vh / 70vh）算的是模拟视口，而不是后台窗口的高度。 */
+  --vh-unit: 1vh;
   --admin-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --admin-fast: 160ms;
   --admin-mid: 220ms;
@@ -728,18 +730,20 @@ html:has(.home-page) .site-footer {
   mask-image: linear-gradient(to bottom, transparent 0%, #000 58%);
 }
 
+/* Banner 的高度走 `--vh-unit`（前台 = 1vh，后台画框 = 设计视口高 ÷ 100）：
+   画框里必须按**模拟视口**算，否则 100vh 用后台窗口高度，预览比前台高一截。 */
 .home-banner {
   position: relative;
   z-index: 1;
   overflow: hidden;
-  height: 100vh;
+  height: calc(var(--vh-unit) * 100);
   min-height: 520px;
   color: #fff;
   background: transparent;
 }
 
 .home-banner--large {
-  height: 70vh;
+  height: calc(var(--vh-unit) * 70);
   min-height: 420px;
 }
 
@@ -866,28 +870,133 @@ html:has(.home-page) .site-footer {
   position: relative;
   z-index: 1;
   min-width: 0;
+  /* 默认就是「按宽度」的容器：自适应格子由内容撑高，只该用 max-width 查询；
+     真的配了固定高度的那一支由 `.is-hfixed` / `.is-m-hfixed` 升级成 `size`。
+     ⚠️ 这两条写在 `.home-grid__cell.is-hfixed` 之前，顺序有意为之：同权重时后者赢。 */
+  container-type: inline-size;
+  container-name: home-mod;
 }
 
-.home-grid__cell.is-fixed {
-  height: calc(var(--cell-h) * var(--h-unit));
-  max-height: calc(var(--cell-h) * var(--h-unit));
+/* 固定高度的格子：`--cell-h` 由 `lib/home/grid.ts` 直接给出 CSS 长度（`420px`；0 时格子
+   不带 `is-hfixed`，走自适应）。以前是 `calc(数字 * --h-unit)` 的「视口百分比」，调高度只把
+   格子撑高、模块本身没长（用户反馈），见 P-139。
+
+   ⚠️ **标记必须按视口分开**：桌面 `is-hfixed`、手机 `is-m-hfixed`。用一个标记写两边，
+   就会在「只有一边配了固定高度」时把另一边也钉上高度 + `container-type: size`
+   （手机档 340px 会把桌面的 380px 顶掉，反之亦然）。 */
+.home-grid__cell.is-hfixed {
+  height: var(--cell-h, auto);
+  max-height: var(--cell-h, none);
   overflow: hidden;
   container-type: size;
   container-name: home-mod;
 }
 
-.home-grid__cell.is-hug {
-  container-type: inline-size;
-  container-name: home-mod;
+/* 模块自己的东西要塞进格子：能收缩 + 撑满（`.dash-welcome` / `.dash-moments` 的
+   `height: 100%` 只有在祖先有确定高度时才成立，缺了这一层它们会塌成内容高度，见 P-139）。 */
+.home-grid__cell > * {
+  min-height: 0;
 }
 
-/* Banner 下沿被内容压住，保持原本 -48px 的叠压观感 */
-.home-grid__area:has(.home-grid__cell--banner) {
+.home-grid__cell.is-hfixed > * {
+  height: 100%;
+}
+
+/* ══ 矮格子的自适应兜底 ══════════════════════════════════════════════════════════
+   给模块配了固定高度（hPct > 0）时，格子就是那个高度，内容多出来只会被裁掉。
+   下面这组**容器查询**让「内容多的模块」在矮盒子里自己收手：先收紧间距，
+   再撤掉纯装饰（欢迎卡的漂浮泡泡），最后保证文字自己滚动 —— 而不是全挤成一团。
+
+   ⚠️ 查询的是**格子自己**建立的尺寸容器（`.home-grid__cell` 的 `container: home-mod`，
+   固定高度时是 `size`、自适应时是 `inline-size`）。所以：
+   - 自适应（hPct = 0，`inline-size`）的格子**永远不会命中**这些 `max-height` 查询 ——
+     内容由它自己撑开，不该被收缩（P-139）；
+   - 千万别给 `.dash-welcome` 自己写 `container-type: size`：它会被自己的 `height: 100%`
+     绕成循环依赖，直接塌成 0 高。 */
+@container home-mod (max-height: 300px) {
+  .dash-welcome {
+    padding: 16px 18px;
+  }
+
+  .dash-welcome h2 {
+    font-size: 1.5rem;
+  }
+
+  .dash-chips {
+    --chip-h: 56px;
+    --chip-gap: 9px;
+    --chip-offset: 30px;
+    right: -20px;
+    width: 132px;
+  }
+
+  .dash-chip {
+    min-width: 54px;
+    border-radius: 18px;
+  }
+}
+
+/* 矮到装不下装饰：泡泡整块撤掉，给文字留出整幅宽度 */
+@container home-mod (max-height: 240px) {
+  .dash-chips {
+    display: none;
+  }
+
+  .dash-welcome {
+    padding: 14px 16px;
+  }
+
+  .dash-welcome h2 {
+    font-size: 1.25rem;
+  }
+
+  .dash-links {
+    right: 16px;
+    bottom: 14px;
+    left: 16px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .dash-moments {
+    gap: 10px;
+    padding: 12px;
+  }
+}
+
+/* 矮格子里的文字自己滚动，而不是被裁一半 */
+.home-grid__cell.is-fixed .dash-moments__copy,
+.home-grid__cell.is-m-fixed .dash-moments__copy {
+  overflow: auto hidden;
+  overscroll-behavior: contain;
+}
+
+/* 格子里塞进模块自己的东西（自建模块包裹 / 积木栈 / 覆盖层预览）都要能收缩 */
+.home-grid__cell > * {
+  min-height: 0;
+}
+
+.home-grid__cell.is-fixed > *,
+.home-grid__cell.is-m-fixed > * {
+  height: 100%;
+}
+
+/* Banner 下沿被内容压住，保持原本 -48px 的叠压观感。
+   ⚠️ **只在 Banner 独占这一格时**拉：同一个格子里还堆了别的模块时（用户把模块拖到 Banner 上
+   就会这样），再拉 64px 会让那一行整体压进后面模块 —— 实测 27px 的重叠。 */
+.home-grid__area:has(.home-grid__cell--banner):not(.is-stack) {
   z-index: 0;
   margin-bottom: calc(-48px - var(--grid-gap));
 }
 
-.home-grid__cell--banner .home-banner {
+/* Banner 的高度由它**自己的预设**决定（`home-banner--full/large/medium` = 100vh/70vh/420px），
+   格子（`hPct: 0` = 自适应）跟着它走 —— banner 不参与 `hPct` 那套像素高度。
+
+   ⚠️ 只在格子**固定高度**时接管（那时 banner 填满格子）；自适应时**什么都别写** ——
+   写 `height: 100%` 会被祖先的确定高度压成内容高度，写 `height: auto` 又会把 100vh
+   干掉、只剩 `min-height`（实测塌成 520px）。两条都踩过，见 P-139。 */
+.home-grid__cell--banner.is-hfixed .home-banner {
   height: 100%;
   min-height: 0;
 }
@@ -897,6 +1006,136 @@ html:has(.home-page) .site-footer {
 .home-grid .dash-moments {
   width: 100%;
   height: 100%;
+}
+
+/* ══ 首页模块的「基本样式」═════════════════════════════════════════════════════
+   后端只下发**用户真正配过**的那几个变量（`lib/home/style.ts`），并且同时给出
+   `data-mod-style="--mod-text --mod-radius …"`。两条规则：
+
+   1. `.home-module[data-mod-style~="--mod-x"] { --mod-x: 兜底主题值 }`
+      = 「没配过我就跟随站点主题」。缺了这段，下面的面板会用一个空变量把
+      主题色/圆角整片刷没（见 docs/pitfalls.md P-137）。
+   2. 只在这个容器里重绑主题变量（`--heo-radius` / `--heo-theme` /
+      `--heo-secondtext`），不直接写 `color` / `background` —— 站点自己的
+      `.glass-card`、`.post-card` 等仍然照常生效，写进 HTML 的 `var(--heo-*)` 也跟着变，
+      用户的代码不必为了「基本样式」改一行。 */
+.home-module,
+.home-popup[data-mod-style] {
+  --mod-font-size: inherit;
+  --mod-align: left;
+  --mod-radius: var(--heo-radius);
+  --mod-btn-radius: var(--heo-radius);
+  --mod-accent: var(--heo-theme);
+  --mod-bg-dim: 0;
+}
+
+/* 字体只作用在**容器**上（继承会带到内容里）：内联给出的 `--mod-font` 由这里消费。
+   注意别把 font-family 写到文字元素上，否则用户自己写的 `.my-card__title` 会被压掉。 */
+.home-module[data-mod-style~="--mod-font"],
+.home-popup[data-mod-style~="--mod-font"] {
+  font-family: var(--mod-font);
+}
+
+/* 字号 / 对齐：写到「模块根元素 + 直接子级」两层。
+   子级那一层是给浮层外壳用的（变量写在外壳上，正文是它的孩子）。 */
+.home-module[data-mod-style~="--mod-font-size"],
+.home-module[data-mod-style~="--mod-align"],
+.home-module[data-mod-style~="--mod-font-size"] > .home-custom,
+.home-module[data-mod-style~="--mod-align"] > .home-custom,
+.home-module[data-mod-style~="--mod-font-size"] > .home-block-stack,
+.home-module[data-mod-style~="--mod-align"] > .home-block-stack,
+.home-popup[data-mod-style~="--mod-font-size"],
+.home-popup[data-mod-style~="--mod-align"] {
+  font-size: var(--mod-font-size);
+  text-align: var(--mod-align);
+}
+
+/* 文字颜色：重绑站点主题变量而不是直接写 color —— 这样站点自己的 `.glass-card`、
+   卡片、widget 仍然照常生效，写进 HTML 的 `var(--heo-secondtext)` 也跟着变。 */
+.home-module[data-mod-style~="--mod-text"],
+.home-module[data-mod-style~="--mod-text"] [data-mod-style~="--mod-text"],
+.home-popup[data-mod-style~="--mod-text"],
+.home-popup[data-mod-style~="--mod-text"] [data-mod-style~="--mod-text"] {
+  --heo-secondtext: var(--mod-text);
+}
+
+.home-module[data-mod-style~="--mod-heading"],
+.home-popup[data-mod-style~="--mod-heading"] {
+  --heo-text: var(--mod-heading);
+}
+
+.home-module[data-mod-style~="--mod-accent"],
+.home-popup[data-mod-style~="--mod-accent"] {
+  --heo-theme: var(--mod-accent);
+}
+
+.home-module[data-mod-style~="--mod-radius"],
+.home-popup[data-mod-style~="--mod-radius"] {
+  --heo-radius: var(--mod-radius);
+}
+
+/* 底色 / 圆角 / 内边距 / 阴影：直接落到模块自己的盒子上。
+   `!important` 是为了压过 `.glass-card`（同一元素上的外观，0,1,0 同权重靠顺序也压不住
+   跨文件的改动：这里显式认下「用户配了就是用户赢」）。 */
+.home-module[data-mod-style~="--mod-bg"],
+.home-module[data-mod-style~="--mod-bg-image"],
+.home-popup[data-mod-style~="--mod-bg"],
+.home-popup[data-mod-style~="--mod-bg-image"] {
+  background-color: var(--mod-bg);
+  background-image: var(--mod-bg-image);
+  background-size: cover;
+  background-position: center;
+}
+
+.home-module[data-mod-style~="--mod-radius"],
+.home-popup[data-mod-style~="--mod-radius"] {
+  border-radius: var(--mod-radius);
+}
+
+.home-module[data-mod-style~="--mod-padding"] {
+  padding: var(--mod-padding) !important;
+}
+
+.home-module[data-mod-style~="--mod-shadow"] {
+  box-shadow: var(--mod-shadow) !important;
+}
+
+/* 背景图压暗：用模块自己的伪元素，不动内联 style（内联那条要留给图片本身） */
+.home-module[data-mod-style~="--mod-bg-dim"],
+.home-popup[data-mod-style~="--mod-bg-dim"] {
+  position: relative;
+  isolation: isolate;
+}
+
+.home-module[data-mod-style~="--mod-bg-dim"]::before,
+.home-popup[data-mod-style~="--mod-bg-dim"]::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, var(--mod-bg-dim));
+  content: "";
+  pointer-events: none;
+}
+
+/* 积木全走这套变量：积木没写 CSS，但「基本样式」照样要作用于它
+   （覆盖层模块的正文由用户自己写 HTML，所以这里只管模块内部，不碰浮层容器本身） */
+.home-module[data-mod-style~="--mod-btn-width"] .heo-button {
+  width: var(--mod-btn-width);
+  justify-content: var(--mod-btn-justify);
+}
+
+.home-module[data-mod-style~="--mod-btn-radius"] .heo-button,
+.home-block-stack[data-mod-style~="--mod-btn-radius"] .heo-button {
+  border-radius: var(--mod-btn-radius);
+}
+
+.home-module[data-mod-style~="--mod-btn-bg"] .heo-button {
+  background: var(--mod-btn-bg);
+}
+
+.home-module[data-mod-style~="--mod-btn-text"] .heo-button {
+  color: var(--mod-btn-text);
 }
 
 /* 自建模块 */
@@ -1048,24 +1287,57 @@ html:has(.home-page) .site-footer {
   font-size: 0.82rem;
 }
 
+/* 泡泡列：一列、上下无缝滚动。
+   - 密度（每屏几颗）由 `--chip-h` / `--chip-gap` 两个变量决定，值由组件按「一屏几颗」算出来
+     （见 `lib/home/chips.ts` 的 `chipRailStyle()`），所以后台改数字就能从稀疏变密集；
+   - `rowup` 把整列整体上移**半列**（列表在组件里复制了一份），到点即可无缝接回开头；
+   - 用 `translate` 而不是 `transform: translateY()`：`translate: 0 -50%` 是「自身高度的 50%」，
+     在 flex 列里算得准，也不会跟其它 transform 打架。 */
 .dash-chips {
+  --chip-h: 86px;
+  --chip-gap: 12px;
+  --chip-offset: 48px;
+  --chip-duration: 26s;
   position: absolute;
   top: 0;
   right: -12px;
   display: flex;
   width: 168px;
-  height: 220%;
+  height: 100%;
   flex-direction: column;
-  gap: 12px;
-  animation: rowup 28s linear infinite;
+  gap: var(--chip-gap);
+  animation: rowup-scroll var(--chip-duration) linear infinite;
 }
 
+@keyframes rowup-scroll {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 -50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-chips {
+    animation: none;
+  }
+}
+
+/* 泡泡按内容自适应宽度，**不许被压窄**：
+   原来固定 `width: 86px` + `word-break: break-all`，列宽小的机器上「物理」会被拆成
+   一列竖排的字（用户反馈图）。改成 min-width + nowrap，宽度跟着字走。 */
 .dash-chip {
   display: grid;
-  width: 86px;
-  height: 86px;
+  width: max-content;
+  min-width: 64px;
+  max-width: 132px;
+  height: var(--chip-h);
+  /* 不许被挤扁：列高由内容决定，装不下就让容器滚（`rowup-scroll` 动画负责往上带），
+     否则泡泡会被均摊成十几像素高的扁片（用户反馈「泡泡特别矮」，见 P-139） */
+  flex: 0 0 auto;
   overflow: hidden;
-  padding: 6px;
+  padding: 6px 12px;
   place-items: center;
   border-radius: 22px;
   color: #fff;
@@ -1073,12 +1345,12 @@ html:has(.home-page) .site-footer {
   font-weight: 800;
   line-height: 1.15;
   text-align: center;
-  word-break: break-all;
+  white-space: nowrap;
   box-shadow: 0 2px 16px -3px rgba(0, 0, 0, 0.15);
 }
 
 .dash-chip:nth-child(even) {
-  margin-left: 48px;
+  margin-left: var(--chip-offset);
 }
 
 .dash-links {
@@ -1107,6 +1379,347 @@ html:has(.home-page) .site-footer {
 
 .dash-link--life {
   background: linear-gradient(to right, #e38100, #ffc848);
+}
+
+/* ══ 覆盖层模块（弹出模块 / 推荐应用）═════════════════════════════════════════
+   这些模块**不占格点流**（HomeGrid 摘掉，HomeFloat 画），所以这一层必须是
+   `position: fixed` 且 z-index 高于所有格子 —— 但**低于灯箱(200)与顶栏进度(240)**。
+
+   ⚠️ `.home-float` / `.home-float__slot` 上**不能有 transform / filter / container-type**，
+   它们会给 fixed 元素造包含块，弹窗就不再贴视口了（见 P-135）。 */
+.home-float {
+  --float-z: 100;
+  --float-top: calc(var(--heo-navbar-height, 60px) + 18px);
+  --float-gap: 18px;
+}
+
+.home-float__slot {
+  display: contents;
+}
+
+.home-float__slot.is-start {
+  --float-inline-start: var(--grid-pad, 16px);
+  --float-inline-end: auto;
+}
+
+.home-float__slot.is-center {
+  --float-inline-start: auto;
+  --float-inline-end: auto;
+}
+
+.home-float__slot.is-end {
+  --float-inline-start: auto;
+  --float-inline-end: var(--grid-pad, 16px);
+}
+
+.home-popup {
+  /* 宽度跟着模块的列跨度走：4/12 列 ≈ 视口 1/3，夹在 280–440px 之间 */
+  --float-w: clamp(280px, calc(var(--cell-col-span, 4) / 12 * 100vw), 440px);
+  position: fixed;
+  z-index: var(--float-z);
+  width: var(--float-w);
+  max-width: calc(100vw - 32px);
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--heo-secondtext) 14%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--heo-card-bg) 94%, transparent);
+  box-shadow: 0 18px 48px -20px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(14px);
+  opacity: 0;
+}
+
+/* 自定义浮层关掉玻璃卡（`config.card === false`）时，外壳只留定位、不参与外观：
+   卡片长什么样完全交给用户写的 HTML/CSS。 */
+.home-popup--plain {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.home-popup--plain .home-popup__close {
+  top: -6px;
+  right: -6px;
+  background: var(--heo-card-bg);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+/* 同一个角落启用多个覆盖层模块时自动往下错开，不叠在一起 */
+.home-float__slot + .home-float__slot .home-popup--top-right {
+  --float-top: calc(var(--heo-navbar-height, 60px) + 18px + 196px);
+}.home-float__slot + .home-float__slot .home-popup--bottom-right {
+  --float-gap: 196px;
+}
+
+/* 出场位置：四个角 + 居中提示框 */
+.home-popup--top-right {
+  top: var(--float-top);
+  right: var(--float-inline-end);
+  left: var(--float-inline-start);
+}
+
+.home-popup--bottom-right {
+  right: var(--float-inline-end);
+  bottom: var(--float-gap);
+  left: var(--float-inline-start);
+}
+
+.home-popup--left {
+  top: 50%;
+  right: var(--float-inline-end);
+  left: var(--float-inline-start);
+  translate: 0 -50%;
+}
+
+.home-popup--center {
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+}
+
+/* 从画面外滑入：左 / 右两款按边推入，居中那款是淡入 + 放大。
+   动画常驻（不是挂一个 class 才播），`--float-delay` 把「进页面几秒后出现」也交给 CSS，
+   组件因此不需要计时器（见 PopupModule 里的说明）。 */
+.home-popup--enter-left {
+  animation: home-popup-in-left 0.42s cubic-bezier(0.16, 1, 0.3, 1) var(--float-delay, 0ms) forwards;
+}
+
+.home-popup--enter-right {
+  animation: home-popup-in-right 0.42s cubic-bezier(0.16, 1, 0.3, 1) var(--float-delay, 0ms) forwards;
+}
+
+.home-popup--enter-center {
+  animation: home-popup-in-center 0.34s cubic-bezier(0.16, 1, 0.3, 1) var(--float-delay, 0ms) forwards;
+}
+
+/* 延迟等待期间不许点（此时它是透明的，但仍在布局里）。
+   ⚠️ 这必须是个**临时态**：`pointer-events: none` 的元素会被 elementFromPoint 跳过、
+   也没法点关闭叉叉。组件在延迟结束后会把这个 class 摘掉（见 PopupModule 的 effect）。 */
+.home-popup.is-delayed {
+  pointer-events: none;
+}
+
+/* 记住过关闭 / 已经退场：彻底收起来 */
+.home-popup.is-skipped {
+  display: none;
+}
+
+@keyframes home-popup-in-left {
+  from {
+    opacity: 0;
+    translate: calc(var(--float-w) * -1 - 32px) var(--entry-y, 0);
+  }
+  to {
+    opacity: 1;
+    translate: 0 var(--entry-y, 0);
+  }
+}
+
+@keyframes home-popup-in-right {
+  from {
+    opacity: 0;
+    translate: calc(var(--float-w) + 32px) var(--entry-y, 0);
+  }
+  to {
+    opacity: 1;
+    translate: 0 var(--entry-y, 0);
+  }
+}
+
+@keyframes home-popup-in-center {
+  from {
+    opacity: 0;
+    scale: 0.94;
+    translate: -50% -50%;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+    translate: -50% -50%;
+  }
+}
+
+/* 带 translate 位移的那两款把位移交给 keyframes，这里补回它们自己的偏移量 */
+.home-popup--left {
+  --entry-y: -50%;
+}
+
+.home-popup.is-leaving {
+  animation: none;
+  opacity: 0;
+  transition: opacity 0.22s ease, scale 0.22s ease;
+  scale: 0.98;
+  pointer-events: none;
+}
+
+.home-popup__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--heo-secondtext) 14%, transparent);
+  color: var(--heo-secondtext);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.home-popup__close:hover {
+  background: color-mix(in srgb, var(--heo-secondtext) 24%, transparent);
+}
+
+.home-popup__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-popup__image {
+  width: 100%;
+  max-height: 132px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.home-popup__title {
+  margin: 0;
+  padding-right: 22px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.home-popup__text {
+  margin: 0;
+  color: var(--heo-secondtext);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.home-popup__action {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--heo-theme);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.home-popup--center .home-popup__action {
+  align-self: center;
+}
+
+.home-popup__action.is-plain {
+  background: var(--heo-secondbg);
+  color: var(--heo-secondtext);
+}
+
+/* —— 推荐应用卡：白卡 + 方形图标 + 一句说明 + 下载按钮 —— */
+.home-app-promo {
+  padding: 18px;
+  background: var(--heo-card-bg);
+}
+
+.home-app-promo__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 18px;
+}
+
+.home-app-promo__logo {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--heo-secondbg);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.5);
+}
+
+.home-app-promo__logo img,
+.home-app-promo__logo-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.home-app-promo__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.home-app-promo__badge {
+  color: var(--heo-theme);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.home-app-promo__title {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.home-app-promo__text {
+  margin: 0;
+  color: var(--heo-secondtext);
+  font-size: 0.82rem;
+}
+
+/* 参照图里「立即下载」是个**小按钮**，不是通栏 —— 桌面档按内容宽度靠左；手机档再拉满 */
+.home-app-promo__action {
+  display: block;
+  width: fit-content;
+  margin-top: 12px;
+  padding: 8px 20px;
+  border-radius: 12px;
+  background: var(--heo-theme);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.home-app-promo__action.is-plain {
+  background: var(--heo-secondbg);
+  color: var(--heo-secondtext);
+}
+
+/* 后台画布 / 手机画框里的静态预览：不固定定位，免得盖住整块画布。
+   画布用的是 `.home-editor__float-slot`（覆盖层在画框里的槽位），两处都要解。 */
+.home-float.is-preview .home-popup,
+.home-editor__float-slot .home-popup,
+.home-editor__preview .home-popup {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  max-width: none;
+  translate: none;
+  scale: none;
+  animation: none;
+  opacity: 1;
+}
+
+.home-float.is-preview .home-float__slot {
+  display: block;
 }
 
 .home-uptime {
@@ -1148,6 +1761,8 @@ html:has(.home-page) .site-footer {
 }
 
 .dash-moments {
+  --dash-line-height: 26px;
+  --dash-line-gap: 8px;
   display: flex;
   gap: 1.25ch;
   width: 100%;
@@ -1181,7 +1796,7 @@ html:has(.home-page) .site-footer {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--dash-line-gap);
   overflow: hidden;
 }
 
@@ -1189,6 +1804,7 @@ html:has(.home-page) .site-footer {
   display: block;
   overflow: hidden;
   color: var(--heo-fontcolor);
+  line-height: var(--dash-line-height);
   text-decoration: none;
   white-space: nowrap;
   transition:
@@ -1248,7 +1864,8 @@ html:has(.home-page) .site-footer {
   grid-template-columns: 1fr 1fr;
 }
 
-.dash-moments__row.is-portrait img:only-child {
+.dash-moments__row.is-portrait img:only-child,
+.dash-moments__row.is-portrait .dash-moments__video:only-child {
   grid-column: 1;
 }
 
@@ -1261,23 +1878,12 @@ html:has(.home-page) .site-footer {
   border-radius: 6px;
 }
 
-@container home-mod (max-width: 360px) {
-  .dash-moments {
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .dash-moments__copy {
-    flex: 0 0 45%;
-    max-height: none;
-  }
-
-  .dash-moments__falls {
-    flex: 1 1 55%;
-    width: auto;
-    max-width: none;
-    min-height: 0;
-  }
+/* 视频瓦片：与图片同一套几何（按原视频宽高比），首帧预览 + 自绘播放器。 */
+.dash-moments__row .dash-moments__video {
+  width: 100%;
+  height: auto;
+  aspect-ratio: var(--moment-w, 4) / var(--moment-h, 3);
+  border-radius: 6px;
 }
 
 @keyframes moment-float {
@@ -1309,6 +1915,303 @@ html:has(.home-page) .site-footer {
   .dash-moments__float,
   .dash-moments__track.is-rolling {
     animation: none;
+  }
+}
+
+/* 首页相册模块：一条缓慢横向滚动的相册照片预览（见 components/home/modules/AlbumsModule.tsx） */
+.home-albums {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.home-albums__head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex: 0 0 auto;
+}
+
+.home-albums__head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.home-albums__head a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.home-albums__hint {
+  color: var(--heo-secondtext);
+  font-size: 0.78rem;
+}
+
+.home-albums__viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.home-albums__track {
+  display: flex;
+  gap: 8px;
+  height: 100%;
+  width: max-content;
+}
+
+.home-albums__track.is-rolling {
+  animation: album-roll var(--album-speed, 60s) linear infinite;
+}
+
+.home-albums__row {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  height: 100%;
+}
+
+.home-albums__item {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--heo-secondbg);
+  /* 宽度跟着图自己的比例走（缺失按 4:3 兜底），高度统一 = 格子高度 */
+  aspect-ratio: var(--album-w, 4) / var(--album-h, 3);
+}
+
+.home-albums__item img {
+  object-fit: cover;
+}
+
+.home-albums__item:hover {
+  outline: 2px solid var(--heo-theme);
+  outline-offset: -2px;
+}
+
+.home-albums__empty {
+  margin: auto;
+  color: var(--heo-secondtext);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+@keyframes album-roll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-albums__track.is-rolling {
+    animation: none;
+  }
+}
+
+/* 首页「相册卡片」模块：一本相册一张卡，封面是这本相册的一叠照片（见
+   components/home/modules/AlbumCardsModule.tsx）。与上面那条滚动预览的区别：
+   这里是**整本相册**（标题 + 张数 + 日期区间），点卡进这本相册。
+
+   抽出动作与 /albums 列表卡**同一个动作、同一个执行器**（几何在 lib/albums/pile.ts，
+   执行在 lib/albums/use-pile-spread.ts）：首帧就是叠放态（同一左缘、尺寸已是终值、第一张
+   在最上面），进页面约 1s 后由那一份执行器写 left / transform 触发过渡，后面几张依次向右抽出。
+   时长与缓动**刻意为与 albums.css 的 `--album-spread-*` 同值**（两处看到的是同一个动作）。 */
+.home-album-cards {
+  --album-spread-ease: cubic-bezier(0.33, 0, 0.67, 1);
+  --album-spread-ms: 420ms;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  overflow: hidden;
+  padding: 16px 16px 12px;
+  animation: slide-in 0.6s 0.08s both;
+}
+
+.home-album-cards__head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex: 0 0 auto;
+}
+
+.home-album-cards__head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.home-album-cards__head a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.home-album-cards__hint {
+  color: var(--heo-secondtext);
+  font-size: 0.78rem;
+}
+
+/* 卡片行：横向滑动 + 逐张吸附（scroll-snap）。
+   纵向留出 10px：卡片悬停会往上抬 2px，不加内边距就会被 `overflow: hidden` 切掉顶边。 */
+.home-album-cards__row {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 14px;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 0;
+  list-style: none;
+  overflow: auto hidden;
+  /* 卡片在横向滚动容器里贴顶；`align-items: center` 会让它们被行高居中出现裂缝 */
+  align-items: flex-start;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.home-album-cards__row::-webkit-scrollbar {
+  display: none;
+}
+
+.home-album-cards__card {
+  flex: 0 0 auto;
+  height: 100%;
+  /* 卡片是**偏方**的（宽/高 ≈ 1）：一叠照片撑起来的卡，太扁会让封面缩成一条。
+     宽度最终由「格子高度 × 这个比值」定，再加上 `max-width` 兜住窄格子。 */
+  aspect-ratio: 1 / 1;
+  /* 一张整卡 + 下一张的边：上限保证「能看到下一条」，不然就不像一条可以翻的相册带 */
+  max-width: 58%;
+  scroll-snap-align: start;
+}
+
+.home-album-cards__link {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform 220ms var(--album-spread-ease),
+    box-shadow 220ms var(--album-spread-ease);
+}
+
+.home-album-cards__card:hover .home-album-cards__link {
+  transform: translateY(-2px);
+}
+
+/* 封面那一叠：后面的张从这条边向右依次抽出，露出的宽度与左缘由 pileLayer() 算好。
+   这里只是外壳（定尺寸 + 居中 + 裁切边角），真正的几何在下面的 `__pile` / `__layer`。 */
+.home-album-cards__stack {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* 「一叠」自己是一个定尺的盒子：宽 = 封面区宽（撑满），高 = 封面区高 × 组件量出来的占比。
+   照片的宽高比要走 `--pile-ar`，而"叠高"在 CSS 里推不出来（高度来自 flex，宽度要
+   反过来由它算）—— 所以那是**量一次**得到的（组件在 layout effect 里写 `--album-vh`，
+   量的是**整叠那一张**的高度 = 封面区宽 × 整叠占比 ÷ 宽高比；见 P-152 / P-153 同款做法）。 */
+.home-album-cards__pile {
+  --pile-ar: 1.2;
+  --album-vh: 1;
+  position: relative;
+  width: 100%;
+  height: calc(100% * var(--album-vh));
+}
+
+.home-album-cards__layer {
+  position: absolute;
+  top: 0;
+  bottom: auto;
+  left: 0;
+  z-index: 1;
+  overflow: hidden;
+  /* 宽度是**被谁决定**这件事必须写对：层宽取自**一叠的宽**（`--pile-w` = pileLayer 的乘数，
+     首帧就写死），高度才由宽高比推出来。反过来（高度定宽）会让整叠缩成叠的一半 —— 实测过：
+     叠 211 宽、图只有 109 宽，封面像块小邮票贴在卡中间。
+     `calc` 里只能用乘数，不能写百分比字面量（那会让声明非法被静默丢掉，P-132）。 */
+  width: calc(100% * var(--pile-w, 1));
+  height: auto;
+  aspect-ratio: var(--pile-ar, 1.2);
+  border-radius: 10px;
+  background: var(--heo-secondbg);
+  box-shadow:
+    0 0 0 3px var(--heo-card-bg, #fff),
+    var(--heo-shadow-border, 0 0 0 1px rgba(0, 0, 0, 0.06));
+  /* 倾斜绕底边中点转，矮层才不会因为转角抬起底边 */
+  transform-origin: center bottom;
+  /* 只过渡 left 与 transform —— 尺寸从头到尾不变（第一张连 left / transform 都不改，所以它纹丝不动）。
+     `left` 的首帧是 0，终帧由 usePileSpread() 在布局提交之后写（写入即过渡）。 */
+  transition:
+    left var(--album-spread-ms) var(--album-spread-ease),
+    transform var(--album-spread-ms) var(--album-spread-ease);
+  /* 逐张错峰：延迟由组件按层写内联 `--pile-delay`（transition 简写会把 delay 归零，这行要在它后面） */
+  transition-delay: var(--pile-delay, 0ms);
+}
+
+.home-album-cards__layer img {
+  object-fit: cover;
+}
+
+.home-album-cards__meta {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.home-album-cards__title {
+  overflow: hidden;
+  font-size: 0.95rem;
+  font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home-album-cards__info {
+  overflow: hidden;
+  color: var(--heo-secondtext);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home-album-cards__empty {
+  margin: auto;
+  color: var(--heo-secondtext);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+/* 后台画布预览：不跑抽出动作，静置在终态（组件把 `instant` 交给 usePileSpread()，
+   那一份执行器直接写终帧；这里再关掉过渡，保证它连补间都没有） */
+.is-preview .home-album-cards__layer {
+  transition: none;
+}
+
+/* 关掉动效偏好：几何一样算，只是不补间 —— 直接展示**终态**（位置/角度取自组件按
+   pileSpread() 写的那两个内联变量，所以首帧就是终态，不会先叠一下再跳）。
+   `!important` 是必须的：组件给每一层写了内联 `left: 0%`（叠放态），
+   内联样式只有 `!important` 的规则能盖掉（同 P-128 的教训）。 */
+@media (prefers-reduced-motion: reduce) {
+  .home-album-cards__layer {
+    left: var(--pile-left, 0%) !important;
+    transform: rotate(var(--pile-rotate, 0deg)) !important;
+    transition: none;
   }
 }
 
@@ -1483,6 +2386,33 @@ html:has(.home-page) .site-footer {
   color: var(--heo-red);
 }
 
+/* 首页徽标统一口径（后台「首页外观」可调颜色与底色不透明度）：
+   分类 chip、文章标签、瞬间小标共用；密码/置顶等状态色保持红色语义。 */
+.home-shell {
+  --home-badge-color: var(--heo-theme);
+  --home-badge-opacity: 16%;
+}
+
+.home-shell .chip:not(.chip--locked):not(.chip--pin),
+.home-shell .home-moment__tag,
+.home-shell .tag-row a,
+.home-editor__device .chip:not(.chip--locked):not(.chip--pin),
+.home-editor__device .home-moment__tag,
+.home-editor__device .tag-row a {
+  background: color-mix(
+    in srgb,
+    var(--home-badge-color) var(--home-badge-opacity),
+    transparent
+  );
+  color: var(--home-badge-color);
+}
+
+.home-shell .tag-row a,
+.home-editor__device .tag-row a {
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
 .post-card__title {
   display: -webkit-box;
   overflow: hidden;
@@ -1613,6 +2543,166 @@ html:has(.home-page) .site-footer {
   font-size: 0.78rem;
 }
 
+/* —— 首页文章流里穿插的瞬间卡（一个卡片一条瞬间）——
+   尺寸口径：**卡片宽度先取文章卡的一半**，图片按自己的比例排。
+   多图时每张占满固定的行高、宽度按原图比例算，所以：
+     - 竖屏截图 → 窄条，横屏截图 → 宽条，都不会被拉成怪比例；
+     - 极宽的图（手机截屏这类 2:1 以上）用 object-fit: cover 从中间裁，
+       不裁的话宽度会顶满整行、卡片立刻变成一张巨大的横幅。 */
+.home-moment {
+  --home-moment-media-h: 132px;
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  /* 电脑端先占文章卡的一半；内容（图多 / 文字长）顶得开就自己长到满宽。
+     注意不能用 `min(50%, max-content)` —— min() 只吃长度，intrinsic 关键字会被整条丢弃
+     （整条 width 会静默失效，卡片还是满宽）。 */
+  width: fit-content;
+  min-width: 50%;
+  max-width: 100%;
+  justify-self: start;
+  padding: 14px 18px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-moment__hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.home-moment__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-moment__tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--heo-theme-op);
+  color: var(--heo-theme);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.home-moment__head time {
+  color: var(--heo-secondtext);
+  font-size: 0.76rem;
+}
+
+.home-moment__text {
+  margin: 0;
+  color: var(--heo-fontcolor);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  /* 最多 3 行，溢出省略：首页卡片高度必须可预期 */
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 图片条：一行排开，每张按原图比例定宽、统一行高 */
+.home-moment__media {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  width: 100%;
+  gap: 6px;
+  align-items: flex-start;
+  border-radius: 10px;
+}
+
+.home-moment__cell {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 auto;
+  height: var(--home-moment-media-h);
+  max-width: 55%;
+  aspect-ratio: var(--moment-w, 4) / var(--moment-h, 3);
+  border-radius: 10px;
+  background: var(--heo-secondbg);
+}
+
+.home-moment__cell .cover-media,
+.home-moment__cell img,
+.home-moment__cell .moment-video-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+/* 单图：整图看得见（contain，不裁），宽高都有上限，竖图不会把卡片顶成整屏 */
+.home-moment__cover {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-width: calc(var(--home-moment-cover-h, 168px) * var(--moment-w, 4) / var(--moment-h, 3));
+  aspect-ratio: var(--moment-w, 4) / var(--moment-h, 3);
+  border-radius: 10px;
+  background: var(--heo-secondbg);
+}
+
+.home-moment__cover .cover-media,
+.home-moment__cover img,
+.home-moment__cover .moment-video-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.home-moment__cover .moment-video-preview__media {
+  object-fit: contain;
+}
+
+/* 只有视频入口需要压过整卡链接；图片仍交给链接做“点卡进瞬间”。 */
+.home-moment__cell .moment-video-preview,
+.home-moment__cover .moment-video-preview {
+  position: relative;
+  z-index: 2;
+}
+
+/* 图片超过 3 张：底部渐隐 + 右下角「+N」，交代「底下还有」 */
+.home-moment__fade {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 46%;
+  border-radius: 0 0 10px 10px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--heo-card-bg) 82%, transparent)
+  );
+  pointer-events: none;
+}
+
+.home-moment__more {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.52);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -1656,6 +2746,7 @@ html:has(.home-page) .site-footer {
 }
 
 .cover-media img,
+.cover-fill,
 .cover-fallback {
   width: 100%;
   height: 100%;
@@ -2170,6 +3261,179 @@ html:has(.home-page) .site-footer {
   box-shadow: var(--heo-shadow-border);
 }
 
+/* ==== 折叠组（文章正文里的一批图）====
+   语法是 <ImageGroup title="…">…</ImageGroup>，渲染前由 lib/markdown/image-group.ts
+   转成 <ImageGroup class="post-image-group">，再交给 components/post/ImageGroupView.tsx 接住：
+   收起 = 一叠照片（底下的逐层缩一点、各转一个小角度、往右扇开一点），
+   左右滑动翻看、点一下展开；展开 = 每张照片同时向下滑到自己那一格，点图进灯箱看原图。
+
+   动画模型照搬 demo/fold-image：**卡片全部绝对定位，两个状态都用 `top` 表达**，
+   差异交给 CSS 过渡补间（不用 FLIP、不做运行时翻转测量）。几何（每张的 top/transform/z-index
+   与视口高度）由组件的 layout effect 量好写成内联样式；这里只管外观与时长。
+   绝对定位下的 `top` 会触发该卡片自己的布局，但它是脱离文档流的，不会带着整页重排。 */
+.ig {
+  position: relative;
+  margin: 20px 0;
+  /* 折叠组所有过渡共用这一组值：容器高度 + 每张照片的 top/transform。
+     想整体变快变慢只改这两个时长；缓动是三次方（easeInOutCubic），与 demo 一致。 */
+  --ig-collapse-ms: 280ms;
+  --ig-expand-ms: 340ms;
+  --ig-ease: cubic-bezier(0.33, 0, 0.67, 1);
+  --ig-ms: var(--ig-collapse-ms);
+}
+
+.ig.is-expanded {
+  --ig-ms: var(--ig-expand-ms);
+}
+
+.ig__viewport {
+  position: relative;
+  /* SSR / 水合前的兜底高度：JS 量好之后会用内联 height 覆盖它。
+     没有它的话，首屏会先把整组图排成一列闪一下。 */
+  height: 320px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--heo-secondbg);
+  cursor: zoom-in;
+  /* 横向滑动留给牌堆翻页，纵向留给页面滚动 */
+  touch-action: pan-y;
+  transition: height var(--ig-ms) var(--ig-ease);
+}
+
+.ig.is-expanded .ig__viewport {
+  height: auto;
+  cursor: auto;
+  touch-action: auto;
+  background: transparent;
+}
+
+.ig__viewport:focus-visible {
+  outline: 2px solid var(--heo-theme);
+  outline-offset: 3px;
+}
+
+.ig__track {
+  position: relative;
+}
+
+.ig__card {
+  /* 绝对定位是这套动画的前提：位置由内联 top 表达，才能"滑到自己的格子"。
+     时长与缓动跟容器高度同一套；**不设 transition-delay** —— 所有照片同时起步、
+     用时一致（错峰会让"一起滑下去"变成"排队往下钻"）。 */
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  transition:
+    top var(--ig-ms) var(--ig-ease),
+    transform var(--ig-ms) var(--ig-ease);
+}
+
+/* 水合前（JS 还没写内联 z-index）的兜底层级：序号靠前 = 压在上面 */
+.ig:not(.is-expanded) .ig__card {
+  z-index: calc(9 - var(--ig-i, 0));
+}
+
+/* 行距不写 margin：卡片是绝对定位，margin 会叠加在 `top` 上，把 JS 算好的行位推歪 */
+.ig__card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  border-radius: 14px;
+  /* 一圈底色描边（不是 border，免得改变盒模型把高度算错）：照片像"洗出来的一张"，
+     叠放时底下那几张的边缘才读得出来 —— 只有阴影的话灰调照片会糊在模糊底色里。 */
+  box-shadow: 0 0 0 3px var(--heo-card-bg), var(--heo-shadow-border);
+}
+
+.ig__card[data-active] img {
+  box-shadow: 0 0 0 3px var(--heo-card-bg), var(--heo-shadow);
+}
+
+/* 收起态「展开 N」浮在牌堆左侧（跟系统相册的叠放一个位置）；展开态变成列尾的普通按钮 */
+.ig__pill {
+  position: absolute;
+  /* 牌堆里的卡片带内联 z-index（1..N），这里必须压过它们 */
+  z-index: 900;
+  top: 50%;
+  left: 14px;
+  padding: 8px 16px;
+  transform: translateY(-50%);
+  border: 1px solid var(--heo-card-border);
+  border-radius: 999px;
+  background: var(--heo-maskbgdeep);
+  backdrop-filter: blur(10px);
+  color: var(--heo-fontcolor);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.24s ease,
+    border-color 0.24s ease;
+}
+
+.ig__pill:hover {
+  border-color: var(--heo-theme);
+  background: var(--heo-hover-fill);
+}
+
+.ig.is-expanded .ig__pill {
+  position: static;
+  width: fit-content;
+  margin: 14px auto 0;
+  transform: none;
+}
+
+.ig__hint {
+  display: block;
+  margin-top: 10px;
+  color: var(--heo-secondtext);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.ig__others {
+  margin-top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ig__viewport,
+  .ig__card {
+    transition: none;
+  }
+}
+
+/* 组里没有图片（或被降级成原生 details）时，兜底观感 */
+.post-image-group > summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--heo-secondtext);
+  font-size: 0.92rem;
+  font-weight: 600;
+  /* 自绘箭头：默认三角在深色主题下几乎看不见 */
+  list-style: none;
+}
+
+.post-image-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.post-image-group > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 8px;
+  transition: transform 0.2s ease;
+}
+
+.post-image-group[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.post-image-group > summary:focus-visible {
+  outline: 2px solid var(--heo-theme);
+  outline-offset: -2px;
+}
+
 .post-content table {
   display: block;
   max-width: 100%;
@@ -2437,6 +3701,34 @@ html:has(.home-page) .site-footer {
   font-size: 1.7rem;
 }
 
+/* 「查看相册」：只有图片属于某个启用中的相册时才渲染（灯箱右下角，避开右上关闭键） */
+.lightbox__album {
+  position: fixed;
+  z-index: 4;
+  right: 16px;
+  bottom: 16px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  max-width: min(70vw, 320px);
+  padding: 8px 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 99px;
+  background: rgba(20, 24, 38, 0.72);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lightbox__album:hover {
+  border-color: #5ec8f5;
+  color: #cdeeff;
+}
+
 .password-gate {
   display: grid;
   gap: 14px;
@@ -2598,9 +3890,408 @@ html:has(.home-page) .site-footer {
   font-size: 0.8rem;
 }
 
+/* 从首页瞬间卡跳进来时的高亮（MomentHighlight 加 3 秒 class）：
+   底色 + 描边从强到弱淡出，并停在被点的那张卡上。 */
+@keyframes moment-flash {
+  0% {
+    box-shadow:
+      0 0 0 2px var(--heo-theme),
+      0 0 26px color-mix(in srgb, var(--heo-theme) 45%, transparent);
+    background-color: color-mix(in srgb, var(--heo-theme) 14%, var(--heo-card-bg));
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: var(--heo-card-bg);
+  }
+}
+
+.moment-card--flash {
+  position: relative;
+  z-index: 1;
+  animation: moment-flash 2.4s ease-out both;
+}
+
 .moment-card p {
   margin: 8px 0 0;
   white-space: pre-wrap;
+}
+
+/* ── 瞬间视频：首帧预览 + 自绘播放器 ───────────────────────────────────────── */
+.moment-video-preview {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #23293a, #10131b);
+  color: #fff;
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.moment-video-preview__media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.moment-video-preview[data-ready="true"] .moment-video-preview__media {
+  opacity: 1;
+}
+
+.moment-video-preview__shade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(circle at center, transparent 30%, rgb(0 0 0 / 18%) 100%),
+    linear-gradient(180deg, transparent 60%, rgb(0 0 0 / 38%));
+  pointer-events: none;
+}
+
+.moment-video-preview__play {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 36%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 52%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 26%);
+  font-size: 17px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.moment-video-preview__duration {
+  position: absolute;
+  z-index: 2;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 58%);
+  color: #fff;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.moment-video-player {
+  position: fixed;
+  z-index: 400;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  background: rgb(4 6 12 / 82%);
+  backdrop-filter: blur(10px);
+}
+
+.moment-video-player__panel {
+  display: flex;
+  overflow: hidden;
+  width: min(960px, 100%);
+  max-height: calc(100dvh - 24px);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 16px;
+  background: #0b0d14;
+  box-shadow: 0 28px 80px rgb(0 0 0 / 48%);
+  color: #fff;
+  flex-direction: column;
+}
+
+.moment-video-player__top {
+  display: flex;
+  min-height: 48px;
+  padding: 4px 6px 4px 16px;
+  align-items: center;
+  gap: 12px;
+}
+
+.moment-video-player__title {
+  overflow: hidden;
+  flex: 1 1 auto;
+  color: rgb(255 255 255 / 86%);
+  font-size: 0.94rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moment-video-player__stage {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  min-height: 0;
+  flex: 1 1 auto;
+  place-items: center;
+  background: #000;
+}
+
+.moment-video-player__video {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(70dvh, 720px);
+  object-fit: contain;
+  cursor: pointer;
+}
+
+/* 真全屏与浏览器拒绝 Fullscreen API 时的视口兜底：两者都保留自绘控件。 */
+.moment-video-player[data-expanded="true"],
+.moment-video-player:fullscreen {
+  padding: 0;
+  background: #000;
+  backdrop-filter: none;
+}
+
+.moment-video-player[data-expanded="true"] .moment-video-player__panel,
+.moment-video-player:fullscreen .moment-video-player__panel {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+}
+
+.moment-video-player[data-expanded="true"] .moment-video-player__top,
+.moment-video-player:fullscreen .moment-video-player__top {
+  padding-top: max(4px, env(safe-area-inset-top));
+}
+
+.moment-video-player[data-expanded="true"] .moment-video-player__extra,
+.moment-video-player:fullscreen .moment-video-player__extra {
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.moment-video-player[data-expanded="true"] .moment-video-player__video,
+.moment-video-player:fullscreen .moment-video-player__video {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.moment-video-player__center-btn {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  padding: 0 0 0 4px;
+  border: 1px solid rgb(255 255 255 / 34%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 58%);
+  color: #fff;
+  cursor: pointer;
+  font-size: 25px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
+
+.moment-video-player__controls {
+  display: grid;
+  padding: 4px 12px 0;
+  align-items: center;
+  gap: 10px;
+  grid-template-columns: 48px auto minmax(0, 1fr) auto;
+}
+
+.moment-video-player__extra {
+  display: flex;
+  padding: 0 12px 8px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.moment-video-player__icon-btn {
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 7%);
+  color: #fff;
+  cursor: pointer;
+  font-size: 1.08rem;
+  line-height: 1;
+}
+
+.moment-video-player__icon-btn:hover {
+  background: rgb(255 255 255 / 14%);
+}
+
+.moment-video-player__fullscreen {
+  width: auto;
+  min-width: 62px;
+  padding: 0 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.moment-video-player__time {
+  color: rgb(255 255 255 / 72%);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.moment-video-player__range {
+  --video-progress: 0%;
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.moment-video-player__range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--heo-theme) 0 var(--video-progress),
+    rgb(255 255 255 / 22%) var(--video-progress) 100%
+  );
+}
+
+.moment-video-player__range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 22%);
+}
+
+.moment-video-player__range::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--heo-theme);
+}
+
+.moment-video-player__range::-webkit-slider-thumb {
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  appearance: none;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--heo-theme);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 34%);
+}
+
+.moment-video-player__range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--heo-theme);
+}
+
+.moment-video-player__volume {
+  width: min(150px, 36vw);
+}
+
+@media (max-width: 640px) {
+  .moment-video-preview__play {
+    width: 44px;
+    height: 44px;
+  }
+
+  .moment-video-player {
+    padding:
+      max(8px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+  }
+
+  .moment-video-player__panel {
+    max-height: calc(100dvh - 16px);
+    border-radius: 14px;
+  }
+
+  .moment-video-player__video {
+    max-height: 58dvh;
+  }
+
+  /* 手机竖屏视频直接占满当前视口：不再被 58dvh 卡成中间一条。
+     横屏继续沿用上面的 58dvh 卡片尺寸（用户口径：横屏现状即可）。 */
+  .moment-video-player[data-portrait="true"] {
+    padding: 0;
+    background: #000;
+    backdrop-filter: none;
+  }
+
+  .moment-video-player[data-portrait="true"] .moment-video-player__panel {
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    background: #000;
+  }
+
+  .moment-video-player[data-portrait="true"] .moment-video-player__top {
+    padding-top: max(4px, env(safe-area-inset-top));
+  }
+
+  .moment-video-player[data-portrait="true"] .moment-video-player__extra {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .moment-video-player[data-portrait="true"] .moment-video-player__video {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .moment-video-player__controls {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 4px 8px;
+  }
+
+  .moment-video-player__controls .moment-video-player__range {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .moment-video-player__range::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+    margin-top: -8px;
+  }
+
+  .moment-video-player__range::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+  }
 }
 
 .moment-grid {
@@ -2629,13 +4320,166 @@ html:has(.home-page) .site-footer {
 .moment-grid[data-count="1"] img {
   aspect-ratio: var(--moment-w, 4) / var(--moment-h, 3);
   object-fit: contain;
-  max-height: min(50dvh, calc(var(--h-unit) * 50));
+  max-height: min(50dvh, 420px);
   background: var(--heo-secondbg);
+}
+
+/* 视频格：首帧预览 + 自绘播放器；单条视频与单图同一个「按原比例 contain」口径。 */
+.moment-grid__cell--video .moment-video-preview {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+}
+
+.moment-grid[data-count="1"] .moment-video-preview {
+  aspect-ratio: var(--moment-w, 4) / var(--moment-h, 3);
+  max-height: min(50dvh, 420px);
+}
+
+.moment-grid[data-count="1"] .moment-video-preview__media {
+  object-fit: contain;
+}
+
+.moment-grid__cell--video {
+  cursor: default;
+}
+
+/* ── 语音（2026，见 docs/moment-audio-spec.md） ────────────────────────────────
+   播放入口与图片/视频**分区**：语音是"听"的媒体，塞进按比例排的九宫格里没有意义，
+   统一渲染在格子下面的一条播放行里（发布会话里那版带删除按钮，走 onRemove）。 */
+
+.moment-audios {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.moment-audio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--heo-secondtext) 14%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--heo-card-bg) 92%, transparent);
+}
+
+.moment-audio__play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--heo-theme) 16%, transparent);
+  color: var(--heo-theme);
+  cursor: pointer;
+}
+
+.moment-audio__play:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.moment-audio__wave {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+  height: 28px;
+  color: var(--heo-secondtext);
+}
+
+.moment-audio__wave i {
+  flex: 1 1 0;
+  min-width: 1px;
+  max-width: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.32;
+  transition: opacity 0.12s ease;
+}
+
+.moment-audio__wave i[data-played="true"] {
+  background: var(--heo-theme);
+  opacity: 0.9;
+}
+
+.moment-audio__wave.is-compact {
+  height: 18px;
+}
+
+.moment-audio__time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--heo-secondtext);
+}
+
+.moment-audio__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--heo-secondtext);
+  cursor: pointer;
+}
+
+.moment-audio__remove:hover {
+  background: color-mix(in srgb, var(--heo-red) 14%, transparent);
+  color: var(--heo-red);
+}
+
+.moment-audio__remove:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.moment-audio__download {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--heo-theme);
+}
+
+/* 首页瞬间卡里的语音小标：那张卡整体是一个 <Link>，所以这里只画"波形 + 时长"，不放播放控件 */
+.home-moment__voice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--heo-card-bg) 82%, transparent);
+  color: var(--heo-secondtext);
+}
+
+.home-moment__voice-icon {
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+
+.home-moment__voice .moment-audio__wave {
+  height: 18px;
+}
+
+.home-moment__voice-time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .moment-grid.is-expanded {
   grid-template-columns: minmax(0, 1fr) minmax(72px, 22%);
-  max-height: min(50dvh, calc(var(--h-unit) * 50));
+  max-height: min(50dvh, 420px);
   align-items: start;
   overflow-y: auto;
 }
@@ -2648,7 +4492,7 @@ html:has(.home-page) .site-footer {
 .moment-grid.is-expanded .moment-grid__cell.is-expanded img {
   aspect-ratio: var(--moment-w, 4) / var(--moment-h, 3);
   object-fit: contain;
-  max-height: min(50dvh, calc(var(--h-unit) * 50));
+  max-height: min(50dvh, 420px);
   background: var(--heo-secondbg);
 }
 
@@ -3070,20 +4914,33 @@ html:has(.home-page) .site-footer {
 }
 
 @media (max-width: 959px), ((hover: none) and (max-height: 540px)) {
+  /* 走手机套时目录要**排在正文前面**（用户口径：手机视图应该是目录在上面）。
+     侧栏在 DOM 里位于正文之后，这里用 order 提到最前；正文/评论保持 0；
+     每段按内容高度排，别让侧栏被压成一条、内容溢出到正文上。 */
   .layout {
     flex-direction: column;
+    align-items: stretch;
   }
 
   .layout__aside {
+    order: -1;
     width: 100%;
+    height: auto;
   }
 
   .layout__aside .sticky-stack {
     position: static;
+    /* ReadingProgress 会给侧栏写内联 `top`（滚动进度偏移，实测 76px）。
+       走手机套后它是 static，**static 元素的 `top` 依然生效**（会整体下移压到正文上），
+       所以这里必须显式清掉。 */
+    top: auto;
+    height: auto;
+    align-items: start;
   }
 
   .layout__aside .post-sidebar {
     position: relative;
+    top: auto;
   }
 
   .post-sidebar__toggle {
@@ -3119,24 +4976,183 @@ html:has(.home-page) .site-footer {
     grid-row: var(--m-cell-row);
   }
 
-  .home-grid:not([data-vp]) .home-grid__cell.is-m-fixed {
-    height: calc(var(--m-cell-h) * var(--h-unit));
-    max-height: calc(var(--m-cell-h) * var(--h-unit));
+  /* 手机档的高度：先清掉桌面那套（`is-hfixed` 的 `--cell-h` 会跟着媒体查询一起生效），
+     再按手机自己的标记装上 `--m-cell-h`（P-139）。 */
+  .home-grid:not([data-vp]) .home-grid__cell.is-hfixed {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    container-type: inline-size;
+  }
+
+  /* Banner 在手机档也归「自适应」：高度由它自己的预设给（`--full` 是 100vh），
+     桌面那套 `--cell-h` 不能跟过来，否则手机上会被钉成桌面高度。 */
+  .home-grid:not([data-vp]) .home-grid__cell--banner.is-hfixed {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .home-grid:not([data-vp]) .home-grid__cell.is-m-hfixed {
+    height: var(--m-cell-h, auto);
+    max-height: var(--m-cell-h, none);
     overflow: hidden;
     container-type: size;
     container-name: home-mod;
   }
 
-  .home-grid:not([data-vp]) .home-grid__cell.is-m-hug {
-    height: auto;
-    max-height: none;
-    container-type: inline-size;
-    container-name: home-mod;
+  .home-grid:not([data-vp]) .home-grid__cell.is-m-hfixed > * {
+    height: 100%;
+  }
+
+  /* 覆盖层模块走手机套：宽度交给视口，位置固定在底部（四个角在窄屏没意义）。
+     宽度用 `!important` 是因为宽度来自内联的 `--cell-col-span`，媒体查询盖不住自定义属性（P-128）。 */
+  .home-popup {
+    --float-w: 100%;
+    right: 10px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    left: 10px;
+    top: auto;
+    width: auto !important;
+    max-width: none;
+    padding: 16px;
+  }
+
+  .home-popup--center {
+    top: 50%;
+    right: 16px;
+    bottom: auto;
+    left: 16px;
+    translate: 0 -50%;
+  }
+
+  /* 横向滑入在窄屏等于「从屏幕外飞进来」，观感很吵；改成向上浮起 */
+  .home-popup--enter-left,
+  .home-popup--enter-right {
+    animation: home-popup-in-mobile 0.34s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes home-popup-in-mobile {
+    from {
+      opacity: 0;
+      translate: 0 var(--entry-y, 0) 24px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 var(--entry-y, 0);
+    }
+  }
+
+  /* 手机档贴底，多张同样要错开（否则只会看到最上面那张） */
+  .home-float__slot + .home-float__slot .home-popup {
+    bottom: calc(174px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .home-app-promo__logo {
+    width: 48px;
+    height: 48px;
+    flex-basis: 48px;
+  }
+
+  .home-app-promo__action {
+    width: 100%;
+  }
+
+  /* 泡泡按内容自适应，被格子裁掉的那部分靠右溢出即可（用户反馈：被压成竖排字）。
+     ⚠️ 字号必须给一个**真的值**：`clamp(0.7rem, 2.2vw, 1.05rem)` 在 390–504px 的视口里
+     中间值只有 8.6–11.1px，会被下限 0.7rem(=11.2px) 顶掉 —— 下限就是最终值，
+     字小到「物理」只剩一行半高。手机档直接钉 16px。 */
+  .dash-chips {
+    --chip-h: 62px;
+    --chip-gap: 10px;
+    --chip-offset: 24px;
+    width: 132px;
+  }
+
+  .dash-chip {
+    min-width: 64px;
+    padding: 6px 12px;
+    border-radius: 18px;
+    font-size: 1rem;
   }
 
   .home-grid:not([data-vp]) .home-grid__cell--banner {
     grid-column: 1 / -1;
     margin-inline: calc(var(--grid-pad) * -1);
+  }
+
+  /* 瞬间模块的手机版式：容器查询按「格子实际宽度」判定，手机格子宽度取决于设备与
+     用户设的列跨度，靠它兜不住（只有 <360px 才命中，多数手机落在 340–355px，
+     结果就是左文右图各挤一半、图只剩一列）。这里直接按「走手机套」的同一个断点钉死，
+     后台手机画框（data-vp="mobile"）也能预览到同一套版式。 */
+  .home-grid:not([data-vp]) .home-grid__cell--moments .dash-moments,
+  .home-grid[data-vp="mobile"] .home-grid__cell--moments .dash-moments {
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 12px 10px;
+  }
+
+  .home-grid:not([data-vp]) .home-grid__cell--moments .dash-moments__copy,
+  .home-grid[data-vp="mobile"] .home-grid__cell--moments .dash-moments__copy {
+    flex: 0 0 auto;
+    max-height: none;
+  }
+
+  .home-grid:not([data-vp]) .home-grid__cell--moments .dash-moments__copy h2,
+  .home-grid[data-vp="mobile"] .home-grid__cell--moments .dash-moments__copy h2 {
+    margin-bottom: 6px;
+    font-size: 1rem;
+  }
+
+  /* 至少留 3 行可见：手机上格子高度只有 32–36vh，文案是被容器裁短的，
+     不给底线就只剩一行半。 */
+  .home-grid:not([data-vp]) .home-grid__cell--moments .dash-moments__lines,
+  .home-grid[data-vp="mobile"] .home-grid__cell--moments .dash-moments__lines {
+    flex: 0 0 auto;
+    min-height: calc(var(--dash-line-height, 24px) * 3);
+    justify-content: flex-start;
+    gap: var(--dash-line-gap, 6px);
+  }
+
+  .home-grid:not([data-vp]) .home-grid__cell--moments .dash-moments__line,
+  .home-grid[data-vp="mobile"] .home-grid__cell--moments .dash-moments__line {
+    line-height: var(--dash-line-height, 24px);
+  }
+
+  .home-grid:not([data-vp]) .home-grid__cell--moments .dash-moments__falls,
+  .home-grid[data-vp="mobile"] .home-grid__cell--moments .dash-moments__falls {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+    min-height: 0;
+  }
+
+  /* 手机档的瞬间卡：三列方图在 400px 宽的卡片里只剩 ~80px 一张，
+     改两列（4/5 竖图），单张仍走原比例。 */
+  .moment-grid:not(.is-expanded) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-moment {
+    --home-moment-media-h: 118px;
+    /* 手机档一律满宽，不再按内容伸缩 */
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+    padding: 12px 14px;
+  }
+
+  .home-moment__text {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .home-moment__cell {
+    max-width: 62%;
+  }
+
+  .home-moment__cover {
+    --home-moment-cover-h: 156px;
   }
 
   .moment-masonry {
@@ -3159,9 +5175,133 @@ html:has(.home-page) .site-footer {
   }
 }
 
+/* ══ 后台手机画框（`data-vp="mobile"`）══════════════════════════════════════════
+   后台窗口通常比 959px 宽，走不到上面那个媒体查询；但画框里的预览必须是**真手机的几何**
+   —— 所以这一组规则在 `[data-vp="mobile"]` 下无条件生效（P-127 的口径：版式切换跟「走手机套」
+   的那条断点走，选择器同时覆盖真机 `.home-grid:not([data-vp])` 与后台手机画框）。
+
+   ⚠️ 下面每一条都与 `@media (max-width: 959px), ((hover: none) and (max-height: 540px))`
+   里同名的 `.home-grid:not([data-vp])` 规则**一一对应**，改一边必须改另一边，
+   否则「预览 ≠ 前台」会从这条缝里长回来。 */
 .home-grid[data-vp="mobile"] {
   --grid-max: 100%;
   grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.home-grid[data-vp="mobile"] .home-grid__area {
+  display: contents;
+}
+
+.home-grid[data-vp="mobile"] .home-grid__area.is-sticky {
+  position: static;
+}
+
+.home-grid[data-vp="mobile"] .home-grid__area.is-bleed {
+  margin-inline: 0;
+}
+
+.home-grid[data-vp="mobile"] .home-grid__area:has(.home-grid__cell--banner) {
+  margin-bottom: 0;
+}
+
+.home-grid[data-vp="mobile"] .home-grid__cell {
+  grid-column: var(--m-cell-col) / span var(--m-cell-col-span);
+  grid-row: var(--m-cell-row);
+}
+
+.home-grid[data-vp="mobile"] .home-grid__cell.is-hfixed {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  container-type: inline-size;
+}
+
+.home-grid[data-vp="mobile"] .home-grid__cell--banner {
+  grid-column: 1 / -1;
+  margin-inline: calc(var(--grid-pad) * -1);
+}
+
+.home-grid[data-vp="mobile"] .home-grid__cell--banner.is-hfixed {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.home-grid[data-vp="mobile"] .home-grid__cell.is-m-hfixed {
+  height: var(--m-cell-h, auto);
+  max-height: var(--m-cell-h, none);
+  overflow: hidden;
+  container-type: size;
+  container-name: home-mod;
+}
+
+.home-grid[data-vp="mobile"] .home-grid__cell.is-m-hfixed > * {
+  height: 100%;
+}
+
+/* 模块**内部**的手机档版式：上面那些 `@media (max-width: 959px)` / `(max-width: 720px)`
+   里的规则只认**窗口宽度**，而后台窗口是电脑宽 —— 手机画框里的文章卡/瞬间卡/泡泡
+   就会停在电脑版式（实测：`.post-card` 还是横排、高度差 335px）。
+   这里把只与首页模块内容相关的那几条按 `[data-vp="mobile"]` 复刻一份（同样是一一对应的口径）。
+
+   ⚠️ 改上面媒体块里这几条时，必须同步改这里；只有「会出现在首页格子里的内容」才需要复刻，
+   导航栏 / 页脚 / 搜索框这些不在格子里的一律不管。 */
+.home-grid[data-vp="mobile"] .dash-chips {
+  --chip-h: 62px;
+  --chip-gap: 10px;
+  --chip-offset: 24px;
+  width: 132px;
+}
+
+.home-grid[data-vp="mobile"] .dash-chip {
+  min-width: 64px;
+  padding: 6px 12px;
+  border-radius: 18px;
+  font-size: 1rem;
+}
+
+.home-grid[data-vp="mobile"] .moment-grid:not(.is-expanded) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.home-grid[data-vp="mobile"] .home-moment {
+  --home-moment-media-h: 118px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  justify-self: stretch;
+}
+
+.home-grid[data-vp="mobile"] .home-moment__text {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.home-grid[data-vp="mobile"] .home-moment__cell {
+  max-width: 62%;
+}
+
+.home-grid[data-vp="mobile"] .home-moment__cover {
+  --home-moment-cover-h: 156px;
+}
+
+.home-grid[data-vp="mobile"] .moment-masonry {
+  columns: 1;
+}
+
+.home-grid[data-vp="mobile"] .post-card {
+  height: auto;
+  flex-direction: column;
+}
+
+.home-grid[data-vp="mobile"] .post-card__cover,
+.home-grid[data-vp="mobile"] .post-card__body {
+  width: 100%;
+}
+
+.home-grid[data-vp="mobile"] .post-card__cover {
+  height: auto;
+  aspect-ratio: 16 / 9;
 }
 
 @media (max-width: 720px) {
@@ -3258,5 +5398,11 @@ html:has(.home-page) .site-footer {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* 动效被上面掐掉后，高亮也得看得见（否则点进来毫无反馈）：改成静态描边 */
+  .moment-card--flash {
+    box-shadow: 0 0 0 2px var(--heo-theme);
+    background-color: color-mix(in srgb, var(--heo-theme) 12%, var(--heo-card-bg));
   }
 }

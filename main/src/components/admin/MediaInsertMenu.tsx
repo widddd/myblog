@@ -116,7 +116,7 @@ export function MediaInsertMenu({
         {libraryMode ? (
           <MediaLibraryPicker
             disabled={busy}
-            kind={kind}
+            kinds={[kind]}
             maxCount={1}
             onPickMany={(files) => {
               const file = files[0];

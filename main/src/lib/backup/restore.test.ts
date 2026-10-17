@@ -28,12 +28,43 @@ import { BackupError } from "./errors";
 import { BACKUP_DIR, resolveBackupPath } from "./files";
 import { isImportBackupFileName } from "./filename";
 import {
+  MAX_PENDING_RESTORE_RESTARTS,
   applyDatabaseSnapshot,
+  decidePendingRestoreRestart,
   isPendingRestoreDue,
   restoreFromBackup,
   stageImportedBackup,
+  type PendingRestore,
 } from "./restore";
 import type { StorageDriver } from "@/lib/storage/types";
+
+test("预约恢复「到点该怎么办」：连试 N 次都失败就停手，不再拿重启碰运气", () => {
+  const due: PendingRestore = {
+    name: "myblog-20261001-214323.tar.gz",
+    requestedAt: "2026-10-01T13:00:00.000Z",
+    restartAt: "2026-10-01T14:00:00.000Z",
+  };
+  const now = Date.parse("2026-10-01T15:00:00.000Z");
+
+  assert.equal(decidePendingRestoreRestart(null, now), "idle");
+  assert.equal(decidePendingRestoreRestart({ ...due, restartAt: null }, now), "idle");
+  assert.equal(
+    decidePendingRestoreRestart({ ...due, restartAt: "2026-10-01T16:00:00.000Z" }, now),
+    "idle",
+  );
+  assert.equal(decidePendingRestoreRestart(due, now), "restart");
+  assert.equal(
+    decidePendingRestoreRestart({ ...due, restartAttempts: 1 }, now),
+    "restart",
+  );
+  assert.equal(
+    decidePendingRestoreRestart(
+      { ...due, restartAttempts: MAX_PENDING_RESTORE_RESTARTS },
+      now,
+    ),
+    "abandon",
+  );
+});
 
 function createSqliteFile(filePath: string, marker: string) {
   const db = new Database(filePath);

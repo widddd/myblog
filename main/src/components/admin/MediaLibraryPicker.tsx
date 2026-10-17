@@ -17,22 +17,26 @@ type ListPayload = {
 };
 
 /**
- * 媒体库选择器：点选多张（可跨分页），底部「加入 N 张」一次性回调 `onPickMany`。
- * 发布多图瞬间一次要选好几张，原来"点一张就关弹窗"太费手；
+ * 媒体库选择器：点选多个（可跨分页），底部「加入 N 个」一次性回调 `onPickMany`。
+ * 发布多图瞬间一次要选好几个，原来"点一张就关弹窗"太费手；
  * 编辑器那条链路（`MediaInsertMenu`）仍是单张插入，两个入口各自保留自己的行为。
- * （`maxCount` 由调用方按剩余可放张数给出，超出的条目直接点不动。）
+ * （`maxCount` 由调用方按剩余可放个数给出，超出的条目直接点不动。）
+ *
+ * 2026-10 起 `kinds` 可以是多个（瞬间配图 = `["image","video"]`）：
+ * 服务端 `?kind=` 支持逗号分隔多值，单值行为不变（见 docs/moment-video-spec.md）。
  */
 export function MediaLibraryPicker({
-  kind,
+  kinds,
   disabled,
   maxCount,
   onPickMany,
 }: {
-  kind: AdminUploadKind;
+  kinds: AdminUploadKind[];
   disabled?: boolean;
   maxCount?: number;
   onPickMany: (files: AdminUploadResult[]) => void;
 }) {
+  const kindsKey = kinds.join(",");
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<AdminUploadResult[]>([]);
   const [total, setTotal] = useState(0);
@@ -49,7 +53,9 @@ export function MediaLibraryPicker({
         setError("");
       }
     }, 0);
-    void adminJson<ListPayload>(`/api/admin/uploads?page=${page}&pageSize=12&kind=${kind}`)
+    void adminJson<ListPayload>(
+      `/api/admin/uploads?page=${page}&pageSize=12&kind=${encodeURIComponent(kindsKey)}`,
+    )
       .then((payload) => {
         if (cancelled) {
           return;
@@ -71,7 +77,7 @@ export function MediaLibraryPicker({
       cancelled = true;
       window.clearTimeout(start);
     };
-  }, [kind, page]);
+  }, [kindsKey, page]);
 
   const pages = Math.max(1, Math.ceil(total / 12));
   const pickedList = [...picked.values()];
@@ -95,8 +101,8 @@ export function MediaLibraryPicker({
   return (
     <div className="admin-media-picker">
       <p className="admin-muted">
-        点选多张（可跨页），选好后点底部按钮一次性加入
-        {maxCount !== undefined ? `；最多 ${maxCount} 张` : ""}
+        点选多个（可跨页），选好后点底部按钮一次性加入
+        {maxCount !== undefined ? `；最多 ${maxCount} 个` : ""}
       </p>
       {error ? (
         <p className="admin-error" role="alert">
@@ -168,14 +174,14 @@ export function MediaLibraryPicker({
         </div>
       ) : null}
       <div className="admin-media-picker__actions">
-        <span className="admin-muted">已选 {pickedList.length} 张</span>
+        <span className="admin-muted">已选 {pickedList.length} 个</span>
         <button
           className="admin-btn admin-btn--sm"
           disabled={disabled || pickedList.length === 0}
           onClick={() => onPickMany(pickedList)}
           type="button"
         >
-          加入 {pickedList.length > 0 ? pickedList.length : ""} 张
+          加入 {pickedList.length > 0 ? pickedList.length : ""} 个
         </button>
       </div>
     </div>

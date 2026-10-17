@@ -47,9 +47,16 @@ export default async function AdminHomePage() {
     );
   }
 
-  const [homeModuleOpacity, homeBackdropOpacity] = await Promise.all([
+  const [
+    homeModuleOpacity,
+    homeBackdropOpacity,
+    homeBadgeColor,
+    homeBadgeOpacity,
+  ] = await Promise.all([
     getSetting<number>("homeModuleOpacity"),
     getSetting<number>("homeBackdropOpacity"),
+    getSetting<string>("homeBadgeColor"),
+    getSetting<number>("homeBadgeOpacity"),
   ]);
 
   return (
@@ -59,6 +66,9 @@ export default async function AdminHomePage() {
           homeModuleOpacity ?? DEFAULT_SETTINGS.homeModuleOpacity,
         homeBackdropOpacity:
           homeBackdropOpacity ?? DEFAULT_SETTINGS.homeBackdropOpacity,
+        homeBadgeColor: homeBadgeColor ?? DEFAULT_SETTINGS.homeBadgeColor,
+        homeBadgeOpacity:
+          homeBadgeOpacity ?? DEFAULT_SETTINGS.homeBadgeOpacity,
       }}
       initial={entries}
       previews={previews}

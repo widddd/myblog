@@ -43,3 +43,11 @@ export const restorePutSchema = z.union([
 export const backupEncryptPutSchema = z.object({
   enabled: z.boolean(),
 });
+
+/**
+ * 「把这份本地备份补传到 COS」：只收一个受管文件名。
+ * 上传本身走 `lib/backup/uploads.ts` 的后台队列，这个端点只负责排队。
+ */
+export const backupPushPostSchema = z.object({
+  name: z.string().refine(isManagedBackupFileName, "备份文件名不合法"),
+});

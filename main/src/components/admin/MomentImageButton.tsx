@@ -6,10 +6,15 @@ import { useEffect, useRef, useState } from "react";
 import { AdminDialog } from "@/components/admin/AdminDialog";
 import { MediaLibraryPicker } from "@/components/admin/MediaLibraryPicker";
 import type { AdminUploadResult } from "@/lib/client/upload";
+import { MEDIA_UPLOAD_MIME_TYPES } from "@/lib/upload/limits";
 
 /**
- * 发布区的「插入图片」按钮：图标按钮（不带文字），点开一个小卡片给两条路径
- * —— 从本地上传 / 从媒体库选（媒体库用**弹窗**，支持一次勾选多张）。
+ * 发布区的「插入媒体」按钮：图标按钮（不带文字），点开一个小卡片给两条路径
+ * —— 从本地上传 / 从媒体库选（媒体库用**弹窗**，支持一次勾选多个）。
+ *
+ * 2026-10 起支持视频：`accept` 是**图片 + 视频**（不含音频）——这个 accept 也是
+ * Android 宿主「弹自有相册还是系统选择器」的判据（见 docs/moment-video-spec.md）。
+ * 一条瞬间最多 1 个视频的规则在 `MomentCompose` 里守（这里只负责选文件）。
  */
 export function MomentImageButton({
   disabled,
@@ -58,19 +63,19 @@ export function MomentImageButton({
   return (
     <div className="moment-compose__media" ref={rootRef}>
       <button
-        aria-label={`插入图片（已选 ${count}/${max}）`}
+        aria-label={`插入图片或视频（已选 ${count}/${max}）`}
         aria-haspopup="dialog"
         className="moment-compose__icon-btn"
         disabled={disabled || full}
         onClick={() => setOpen((current) => !current)}
-        title={full ? `最多 ${max} 张图片` : "插入图片"}
+        title={full ? `最多 ${max} 个` : "插入图片 / 视频"}
         type="button"
       >
         <ImageIcon width={18} height={18} />
         {count > 0 ? <span className="moment-compose__count">{count}</span> : null}
       </button>
       {open ? (
-        <div className="moment-compose__pop" role="dialog" aria-label="插入图片">
+        <div className="moment-compose__pop" role="dialog" aria-label="插入图片 / 视频">
           <button
             className="moment-compose__pop-item"
             onClick={() => inputRef.current?.click()}
@@ -89,12 +94,12 @@ export function MomentImageButton({
             从媒体库选择（可多选）
           </button>
           <p className="moment-compose__pop-hint">
-            还可以放 {remaining} 张，拖动可调整顺序
+            还可以放 {remaining} 个，拖动可调整顺序；一条瞬间最多 1 个视频
           </p>
         </div>
       ) : null}
       <input
-        accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+        accept={MEDIA_UPLOAD_MIME_TYPES.join(",")}
         hidden
         multiple
         onChange={(event) => {
@@ -114,11 +119,11 @@ export function MomentImageButton({
         wide
       >
         <p className="admin-dialog__lead">
-          一次可勾选多张（可翻页继续选），选好后点「加入」一次性放进这条瞬间。
+          一次可勾选多个（可翻页继续选），选好后点「加入」一次性放进这条瞬间。
         </p>
         <MediaLibraryPicker
           disabled={disabled}
-          kind="image"
+          kinds={["image", "video"]}
           maxCount={remaining}
           onPickMany={(files) => {
             onPickFromLibrary(files);

@@ -4,6 +4,8 @@ export type WaterfallImage = {
   height: number;
   portrait: boolean;
   fallback?: string;
+  /** 视频瓦片：不渲染 <img>，画 ▶ 占位块（站点不生成视频封面，见 docs/moment-video-spec.md） */
+  video?: boolean;
 };
 
 export type WaterfallRow =
@@ -23,6 +25,7 @@ export function toWaterfallImage(image: {
   width?: number;
   height?: number;
   fallback?: string;
+  video?: boolean;
 }): WaterfallImage {
   const width = image.width && image.width > 0 ? image.width : 4;
   const height = image.height && image.height > 0 ? image.height : 3;
@@ -32,6 +35,7 @@ export function toWaterfallImage(image: {
     height,
     portrait: isPortrait(width, height),
     fallback: image.fallback,
+    video: image.video,
   };
 }
 

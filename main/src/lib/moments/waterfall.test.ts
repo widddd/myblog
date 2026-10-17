@@ -22,6 +22,19 @@ test("missing size counts as landscape", () => {
   assert.equal(toWaterfallImage({ src: "x" }).portrait, false);
 });
 
+test("video tiles keep the flag and the aspect ratio", () => {
+  const tile = toWaterfallImage({
+    src: "video.mp4",
+    width: 1920,
+    height: 1080,
+    video: true,
+  });
+  assert.equal(tile.video, true);
+  assert.equal(tile.portrait, false);
+  // 图片不传 video 时保持 undefined（渲染端据此走 <img>）
+  assert.equal(toWaterfallImage({ src: "x" }).video, undefined);
+});
+
 test("all landscapes are one per row", () => {
   const rows = layoutWaterfall([
     img("a", 800, 400),

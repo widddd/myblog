@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { CoverMedia } from "@/components/common/CoverMedia";
+import { PostCover } from "@/components/common/PostCover";
 import { PostList } from "@/components/home/PostCard";
 import { CategoriesWidget } from "@/components/widgets/CategoriesWidget";
 import { RecentPostsWidget } from "@/components/widgets/RecentPostsWidget";
@@ -78,7 +79,7 @@ export function BlockRenderer({
               href={postHref(post)}
               key={post.publicId}
             >
-              <CoverMedia alt={post.title} src={post.cover} title={post.title} />
+              <PostCover alt={post.title} post={post} />
               <div className="mini-card__title">{post.title}</div>
             </Link>
           ))}

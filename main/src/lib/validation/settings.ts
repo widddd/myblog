@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { ADMIN_ACCENT_KEYS } from "@/lib/admin/accents";
 import { resolveDashboardCards } from "@/lib/admin/dashboard-cards";
+import { BACKUP_LIMITS, isBackupAtTime } from "@/lib/backup/schedule";
 import { MOMENT_VISIBILITY_DAYS_MAX } from "@/lib/moments/visibility";
 import { normalizeDirectory, STATIC_PAGE_SEGMENT_MAX } from "@/lib/pages/directories";
 import type { SettingKey } from "@/lib/settings";
@@ -12,11 +13,14 @@ export const WRITABLE_SETTING_KEYS = [
   "banner",
   "pageSize",
   "backupPeriodDays",
+  "backupAtTime",
   "backupKeep",
   "uploadMaxSizeMB",
   "uploadMaxImagesPerBatch",
   "homeModuleOpacity",
   "homeBackdropOpacity",
+  "homeBadgeColor",
+  "homeBadgeOpacity",
   "siteUrl",
   "siteStartedAt",
   "updateGithubRepo",
@@ -47,6 +51,15 @@ export const settingsPutSchema = z
     momentVisibleDays: z.number().int().min(0).max(MOMENT_VISIBILITY_DAYS_MAX),
     homeModuleOpacity: z.number().int().min(0).max(100),
     homeBackdropOpacity: z.number().int().min(0).max(100),
+    // 空串 = 跟随主题色；有值必须是 #RRGGBB
+    homeBadgeColor: z
+      .string()
+      .trim()
+      .max(7)
+      .refine((value) => !value || /^#[0-9A-Fa-f]{6}$/.test(value), {
+        message: "首页徽标颜色须为 #RRGGBB 或留空",
+      }),
+    homeBadgeOpacity: z.number().int().min(0).max(100),
     siteUrl: z
       .string()
       .max(200)
@@ -96,9 +109,25 @@ export const settingsPutSchema = z
         }
         return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(trimmed);
       }, "开始时间须为本地日期时间，或留空"),
-    backupPeriodDays: z.number().int().min(1).max(365),
-    backupKeep: z.number().int().min(1).max(30),
-    backupLocalMaxMB: z.number().int().min(64).max(10240),
+    backupPeriodDays: z
+      .number()
+      .int()
+      .min(BACKUP_LIMITS.periodDays.min)
+      .max(BACKUP_LIMITS.periodDays.max),
+    // 周期备份的时刻：HH:MM（服务器本地时间）。**先 trim 再校验**——不 trim 的话
+    // 「 03:30 」会先撞长度上限、报一句和格式无关的错。**不合法就报错、不静默回落默认值**：
+    // 静默回落会让「设成 25:00」看起来保存成功（读取侧 normalizeBackupAtTime 仍兜脏值）。
+    backupAtTime: z
+      .string()
+      .max(16)
+      .transform((value) => value.trim())
+      .refine(isBackupAtTime, { message: "备份时刻须为 HH:MM，例如 03:30" }),
+    backupKeep: z.number().int().min(BACKUP_LIMITS.keep.min).max(BACKUP_LIMITS.keep.max),
+    backupLocalMaxMB: z
+      .number()
+      .int()
+      .min(BACKUP_LIMITS.localMaxMB.min)
+      .max(BACKUP_LIMITS.localMaxMB.max),
     localMediaMaxMB: z.number().int().min(64).max(10240),
     uploadMaxSizeMB: z.number().int().min(1).max(50),
   uploadMaxImagesPerBatch: z.number().int().min(1).max(50),

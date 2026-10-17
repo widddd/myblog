@@ -35,7 +35,9 @@ export function LoginForm({ next = "/admin" }: { next?: string }) {
     const password = String(form.get("password") || "");
 
     try {
-      const csrfToken = await fetchCsrfToken();
+      // 登录前**强制重新签发**：浏览器里可能还留着上一个会话的 csrf cookie，
+      // 复用它会撞上「签名对不上当前 csrfSecret」的 403（见 lib/client/csrf.ts）
+      const csrfToken = await fetchCsrfToken({ refresh: true });
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: {

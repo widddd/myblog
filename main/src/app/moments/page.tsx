@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Pagination } from "@/components/common/Pagination";
 import { SiteShell } from "@/components/layout/SiteShell";
+import { MomentHighlight } from "@/components/moment/MomentHighlight";
 import { MomentList } from "@/components/moment/MomentList";
 import { listApprovedComments } from "@/lib/comments/service";
 import { listPublicMoments } from "@/lib/moments/query";
@@ -71,6 +72,8 @@ export default async function MomentsPage({
         pageSize={listing.pageSize}
         total={listing.total}
       />
+      {/* 从首页瞬间卡跳进来时（/moments#moment-12）滚动到那条并短暂高亮 */}
+      <MomentHighlight />
     </SiteShell>
   );
 }
